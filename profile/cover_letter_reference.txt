@@ -1,0 +1,43 @@
+Dear Hiring Manager,
+
+I am excited to apply for the {{title}} position at {{company}}.
+
+I bring 4+ years of hands-on experience building scalable, high-performance microservices and distributed systems — most recently at Decentro Tech, where I lead critical identity and verification services.
+
+
+🏢 DECENTRO TECH (April 2025 – Present)
+
+At Decentro, I architected and deployed:
+• The Beacon Service — for GST and MCA data extraction
+• The full CKYC Module — integrating directly with the CERSAI registry
+
+I led end-to-end development of bulk flows (SFTP uploads, OTP-based fetches, callbacks, metering, and entitlement checks) and integrated third-party providers like SIGNZY, ZOOP, Truecaller, and Shiprocket.
+
+Tech used: Java Spring Boot · Python FastAPI/Flask · OpenSearch · Redis · MySQL · MongoDB · AWS Lambda/EC2/S3 · Docker
+
+
+🏢 PAYTM (2023 – 2024)
+
+At Paytm, I delivered measurable ML and infrastructure wins:
+• Reduced ML model inference latency by 40% via optimized FastAPI deployments
+• Built OCR pipelines for Aadhaar/PAN extraction with 99.9% accuracy
+• Developed a Face Match API using AWS Rekognition — boosted KYC success rates by 25%
+• Designed async processing pipelines with Kafka and Redis
+• Set up real-time monitoring with Grafana/Prometheus
+• Accelerated releases with Docker, Kubernetes, and Jenkins CI/CD
+
+
+🎓 IIT (BHU) VARANASI
+
+I hold a B.Tech + M.Tech from IIT (BHU) Varanasi (CGPA 7.64), with top ranks in IIT JEE and AIEEE. My background also spans full-stack leadership at startups, SaaS product development, and civil services preparation — which sharpened my discipline and structured problem-solving.
+
+
+I am particularly drawn to {{company}} given its emphasis on {{skills}}, and I am confident my track record of delivering reliable, low-latency systems would let me contribute meaningfully from day one.
+
+I would welcome the opportunity to discuss how my experience aligns with your goals.
+
+Thank you for considering my application.
+
+Best regards,
+Abhay Jain
++91 93581 61425

@@ -1,0 +1,22 @@
+# Facts for auto-answering recruiter questions (RAG retrieval source).
+# Add values here — never invent PAN/UAN; leave blank to queue for manual answer.
+
+pan: "ARKPJ1134H"
+uan: "Yes"
+notice_period_days: 60
+serving_notice: false
+last_working_day: "12/06/2026"
+reason_for_change: >
+  Looking for a senior backend/platform role with broader ownership, strong engineering
+  culture, and opportunities to build scalable systems end-to-end.
+interview_available: "Yes"
+has_job_offers: false
+date_of_birth: "13/02/1993"
+willing_to_relocate: "Yes"
+preferred_locations:
+  - Remote
+  - Anywhere in India
+ai_backend_use_cases: >
+  At WECP I integrated OpenAI APIs for adaptive assessments. At Paytm I built ML model
+  deployment infrastructure with Python FastAPI, including OCR and face-match services on AWS.
+  Created Artistic QR code using Hugging Face and Stable Diffusion.

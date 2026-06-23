@@ -1,0 +1,346 @@
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import AsyncIterator
+
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+
+from .page_load import ensure_page_ready, goto_settled
+
+from .chrome_profile import assert_chrome_profile_available, resolve_chrome_profile_dir
+from .config import AppConfig
+from .login import wait_for_manual_login
+
+logger = logging.getLogger("job_apply")
+
+VerifyFn = Callable[[Page, str], Awaitable[bool]]
+
+STEALTH_INIT_SCRIPT = (
+    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+)
+
+
+def _session_path(config: AppConfig, platform: str) -> Path:
+    return config.auth_sessions_dir / f"{platform}.json"
+
+
+async def _create_ephemeral_context(
+    playwright,
+    config: AppConfig,
+    storage_path: Path | None,
+) -> tuple[Browser, BrowserContext]:
+    browser = await playwright.chromium.launch(
+        headless=config.browser.headless,
+        slow_mo=config.browser.slow_mo_ms,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    context_kwargs: dict = {
+        "viewport": {"width": 1440, "height": 1080},
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "locale": "en-US",
+    }
+    if storage_path and storage_path.exists():
+        context_kwargs["storage_state"] = str(storage_path)
+
+    context = await browser.new_context(**context_kwargs)
+    await context.add_init_script(STEALTH_INIT_SCRIPT)
+    return browser, context
+
+
+async def _launch_chrome_profile_context(playwright, config: AppConfig) -> BrowserContext:
+    profile_dir = resolve_chrome_profile_dir(config)
+    assert_chrome_profile_available(profile_dir)
+
+    logger.info("Using Chrome profile: %s", profile_dir)
+    print(
+        f"\nUsing your Chrome profile: {profile_dir}\n"
+        "Google / Wellfound / Uplers cookies from this profile will be reused.\n"
+        "Quit Google Chrome completely (Cmd+Q) before running — do not open Chrome manually during the run.\n"
+    )
+
+    launch_kwargs: dict = {
+        "user_data_dir": str(profile_dir),
+        "headless": config.browser.headless,
+        "slow_mo": config.browser.slow_mo_ms,
+        "viewport": {"width": 1440, "height": 1080},
+        "locale": "en-US",
+        "args": [
+            "--disable-blink-features=AutomationControlled",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ],
+        "ignore_default_args": ["--enable-automation"],
+    }
+    if config.browser.chrome_channel:
+        launch_kwargs["channel"] = config.browser.chrome_channel
+
+    context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
+    await context.add_init_script(STEALTH_INIT_SCRIPT)
+    return context
+
+
+async def _save_session(context: BrowserContext, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    await context.storage_state(path=str(path))
+    logger.info("Saved browser session to %s", path)
+
+
+async def _prepare_page(context: BrowserContext, origin: str) -> Page:
+    """Use a fresh tab on the target site (Chrome profile restore can reopen unrelated tabs)."""
+    for existing in list(context.pages):
+        try:
+            await existing.close()
+        except Exception:
+            pass
+    page = await context.new_page()
+    await page.goto(origin, wait_until="load", timeout=90000)
+    from .page_load import ensure_page_ready
+
+    await ensure_page_ready(page, for_form=False)
+    return page
+
+
+async def _close_browser_context(browser: Browser | None, context: BrowserContext) -> None:
+    if browser is not None:
+        await browser.close()
+    else:
+        await context.close()
+
+
+@asynccontextmanager
+async def browser_session(
+    config: AppConfig,
+    *,
+    platform: str,
+    origin: str,
+    login_url: str,
+    cookies_path: Path,
+    inject_cookies_fn: Callable[[BrowserContext, Path], Awaitable[None]],
+    verify_fn: VerifyFn,
+    platform_label: str,
+) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    storage_path = _session_path(config, platform)
+    use_browser_auth = config.auth.method == "browser"
+    use_chrome_profile = config.browser.use_chrome_profile
+
+    async with async_playwright() as playwright:
+        browser: Browser | None
+        if use_chrome_profile:
+            browser = None
+            context = await _launch_chrome_profile_context(playwright, config)
+        else:
+            browser, context = await _create_ephemeral_context(
+                playwright,
+                config,
+                storage_path if use_browser_auth else None,
+            )
+
+        if not use_chrome_profile and not use_browser_auth and cookies_path.exists():
+            try:
+                await inject_cookies_fn(context, cookies_path)
+            except Exception as exc:
+                logger.warning("Cookie injection failed: %s", exc)
+
+        page = await _prepare_page(context, origin)
+        logger.info("Opening %s and verifying session...", platform_label)
+
+        logged_in = False
+        for attempt in range(3):
+            try:
+                logged_in = await verify_fn(page, config.user.expected_display_name)
+            except Exception as exc:
+                logger.debug("Login verify attempt %d failed: %s", attempt + 1, exc)
+                logged_in = False
+            if logged_in:
+                break
+            if attempt < 2:
+                await page.wait_for_timeout(3000)
+
+        if not logged_in and use_chrome_profile and storage_path.exists():
+            try:
+                import json
+
+                state = json.loads(storage_path.read_text(encoding="utf-8"))
+                cookies = [
+                    c
+                    for c in state.get("cookies", [])
+                    if "wellfound" in str(c.get("domain", ""))
+                ]
+                if cookies:
+                    await context.add_cookies(cookies)
+                    logged_in = await verify_fn(page, config.user.expected_display_name)
+                    if logged_in:
+                        logger.info("Restored Wellfound session from %s", storage_path)
+            except Exception as exc:
+                logger.debug("Could not restore saved session: %s", exc)
+
+        if not logged_in and not use_browser_auth and cookies_path.exists():
+            await page.goto(origin, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2000)
+            try:
+                logged_in = await verify_fn(page, config.user.expected_display_name)
+            except Exception:
+                logged_in = False
+
+        if not logged_in and use_browser_auth and not use_chrome_profile:
+            if config.browser.headless:
+                await _close_browser_context(browser, context)
+                raise RuntimeError(
+                    f"{platform_label} needs interactive Google login. "
+                    "Set browser.headless: false, or enable browser.use_chrome_profile: true"
+                )
+            logged_in = await wait_for_manual_login(
+                page,
+                verify_fn=verify_fn,
+                expected_name=config.user.expected_display_name,
+                platform_label=platform_label,
+                timeout_seconds=config.auth.login_timeout_seconds,
+                login_url=login_url,
+            )
+            if logged_in:
+                await _save_session(context, storage_path)
+
+        if not logged_in and use_chrome_profile:
+            if config.browser.headless:
+                await _close_browser_context(browser, context)
+                raise RuntimeError(
+                    f"Not logged in to {platform_label} via Chrome profile. "
+                    "Open Chrome, sign into Wellfound/Uplers with Google, quit Chrome, then retry."
+                )
+            print(
+                f"\n{platform_label} session could not be verified in the automation browser.\n"
+                "If you are already logged in via normal Chrome, this is usually bot-detection or a\n"
+                "temporary Wellfound block — wait 30–60 min, keep apply_workers low, then retry.\n"
+                "You can also sign in in the Playwright window below (same Google account).\n"
+            )
+            logged_in = await wait_for_manual_login(
+                page,
+                verify_fn=verify_fn,
+                expected_name=config.user.expected_display_name,
+                platform_label=platform_label,
+                timeout_seconds=config.auth.login_timeout_seconds,
+                login_url=origin,
+                try_google_button=True,
+            )
+            if logged_in:
+                await _save_session(context, storage_path)
+
+        if not logged_in and not use_browser_auth:
+            await _close_browser_context(browser, context)
+            raise RuntimeError(
+                f"Not logged in to {platform_label}. "
+                "Enable browser.use_chrome_profile, run `python main.py login`, "
+                "or use auth.method: cookies."
+            )
+
+        if not logged_in:
+            await _close_browser_context(browser, context)
+            raise RuntimeError(f"Could not log in to {platform_label}.")
+
+        logger.info("%s session ready for '%s'", platform_label, config.user.expected_display_name)
+        if use_chrome_profile and storage_path:
+            try:
+                await _save_session(context, storage_path)
+            except Exception as exc:
+                logger.debug("Could not snapshot session: %s", exc)
+        try:
+            yield browser, context, page
+        finally:
+            if use_browser_auth and not use_chrome_profile:
+                try:
+                    await _save_session(context, storage_path)
+                except Exception as exc:
+                    logger.warning("Could not save session: %s", exc)
+            await _close_browser_context(browser, context)
+
+
+@asynccontextmanager
+async def wellfound_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    from .wellfound.auth import WELLFOUND_ORIGIN, inject_cookies, verify_logged_in
+
+    async with browser_session(
+        config,
+        platform="wellfound",
+        origin=WELLFOUND_ORIGIN,
+        login_url=f"{WELLFOUND_ORIGIN}/login",
+        cookies_path=config.cookies_path("wellfound"),
+        inject_cookies_fn=inject_cookies,
+        verify_fn=verify_logged_in,
+        platform_label="Wellfound",
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def uplers_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    from .uplers.auth import UPLERS_ORIGIN, inject_cookies, verify_logged_in
+
+    async with browser_session(
+        config,
+        platform="uplers",
+        origin=UPLERS_ORIGIN,
+        login_url=f"{UPLERS_ORIGIN}/talent/login",
+        cookies_path=config.cookies_path("uplers"),
+        inject_cookies_fn=inject_cookies,
+        verify_fn=verify_logged_in,
+        platform_label="Uplers",
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def naukri_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    from .naukri.auth import NAUKRI_LOGIN, NAUKRI_ORIGIN, inject_cookies, verify_logged_in
+
+    async with browser_session(
+        config,
+        platform="naukri",
+        origin=NAUKRI_ORIGIN,
+        login_url=NAUKRI_LOGIN,
+        cookies_path=config.cookies_path("naukri"),
+        inject_cookies_fn=inject_cookies,
+        verify_fn=verify_logged_in,
+        platform_label="Naukri",
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def hirist_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    from .hirist.auth import HIRIST_LOGIN, HIRIST_ORIGIN, inject_cookies, verify_logged_in
+
+    async with browser_session(
+        config,
+        platform="hirist",
+        origin=HIRIST_ORIGIN,
+        login_url=HIRIST_LOGIN,
+        cookies_path=config.cookies_path("hirist"),
+        inject_cookies_fn=inject_cookies,
+        verify_fn=verify_logged_in,
+        platform_label="Hirist",
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def instahyre_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    from .instahyre.auth import INSTAHYRE_LOGIN, INSTAHYRE_ORIGIN, inject_cookies, verify_logged_in
+
+    async with browser_session(
+        config,
+        platform="instahyre",
+        origin=INSTAHYRE_ORIGIN,
+        login_url=INSTAHYRE_LOGIN,
+        cookies_path=config.cookies_path("instahyre"),
+        inject_cookies_fn=inject_cookies,
+        verify_fn=verify_logged_in,
+        platform_label="Instahyre",
+    ) as session:
+        yield session

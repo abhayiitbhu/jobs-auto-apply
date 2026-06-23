@@ -1,0 +1,11 @@
+[
+  {
+    "name": "_wellfound",
+    "value": "PASTE_YOUR_SESSION_COOKIE_VALUE_HERE",
+    "domain": ".wellfound.com",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "sameSite": "Lax"
+  }
+]

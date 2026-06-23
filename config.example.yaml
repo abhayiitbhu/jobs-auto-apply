@@ -1,0 +1,260 @@
+# Copy to config.yaml and customize.
+
+user:
+  name: "Abhay Jain"
+  email: "abhay.jain.cse11@itbhu.ac.in"
+  phone: "9358161425"
+  linkedin: "https://www.linkedin.com/in/abhay-jain"
+  expected_display_name: "abhay"
+
+profile:
+  headline: "Senior Backend Developer"
+  years_experience: 5
+  core_skills:
+    - Java
+    - Spring Boot
+    - Python
+    - FastAPI
+    - Flask
+    - AWS
+    - Kafka
+    - Redis
+    - MySQL
+    - MongoDB
+    - Docker
+    - Kubernetes
+    - Microservices
+    - System Design
+    - Platform Engineering
+  target_roles:
+    - Backend Engineer
+    - Java Developer
+    - Python Developer
+    - Platform Engineer
+    - System Architect
+    - Solution Architect
+    - Forward Deployed Engineer
+    - Staff Engineer
+  locations:
+    - India
+    - Bengaluru
+    - Mumbai
+    - Delhi NCR
+    - Hyderabad
+    - Pune
+    - Chennai
+    - Gurgaon
+    - Noida
+    - Remote
+  skip_companies:
+    - Decentro
+    - Savein
+    - WECP
+  # Skip frontend/UI titles (Senior Frontend Engineer, React Developer, etc.)
+  skip_frontend_roles: true
+  skip_qa_test_roles: true   # QA, SDET, test engineer, tester, etc.
+  skip_role_keywords: []
+
+compensation:
+  current_ctc_lpa: 38
+  current_fixed_lpa: 30
+  current_variable_lpa: 2
+  current_esops_lpa: 6
+  expected_ctc_lpa: 45
+
+cover_letter:
+  mode: dynamic          # dynamic | template
+  include_ctc: true
+  max_words: 200
+  reference_path: "profile/cover_letter_reference.txt"
+
+auth:
+  method: browser
+  sessions_dir: "data/sessions"
+  login_timeout_seconds: 300
+
+resume:
+  path: "resumeAbhay_repaired.pdf"
+  # Upload resume to Wellfound profile/edit before each run (first-time setup only)
+  sync_to_wellfound: false
+
+# Fallback static template (used when cover_letter.mode: template)
+cover_note: |
+  Hi {{company}} team,
+  I am applying for {{title}}. Open to roles across India.
+  Best, Abhay Jain
+
+wellfound:
+  enabled: true
+  cookies_file: "cookies.wellfound.json"
+  filters:
+    # true = use filters saved on your Wellfound profile; config roles/locations ignored
+    use_profile_filters: true
+    roles:
+      - "Backend Engineer"
+      - "Software Engineer"
+      - "Platform Engineer"
+    locations:
+      - "India"
+      - "Bengaluru"
+      - "Remote"
+    remote_policy: "some"
+    experience_levels:
+      - "Senior"
+    job_types:
+      - "Full-time"
+    keywords: "backend java python platform engineer system architect forward deployed"
+    skills:
+      - "Python"
+      - "Java"
+      - "AWS"
+    salary_min: 4000000
+    salary_currency: "INR"
+    include_no_salary: true
+    recently_active: "week"
+    sort: "newest"
+
+uplers:
+  enabled: true
+  cookies_file: "cookies.uplers.json"
+  filters:
+    keywords: "backend java python platform engineer architect"
+    skills:
+      - "Python"
+      - "Java"
+      - "AWS"
+    locations:
+      - "Remote"
+      - "India"
+    roles:
+      - "Backend Engineer"
+      - "Platform Engineer"
+    experience_years_min: 4
+    remote_only: false
+
+naukri:
+  enabled: true
+  cookies_file: "cookies.naukri.json"
+  filters:
+    keywords: "backend developer java python platform engineer system architect"
+    locations: []            # empty = India-wide (no city in search URL)
+    experience_min: 3        # Hirist minexp; Naukri uses experience_max only
+    experience_max: 6        # Naukri max experience (?experience=6, slider 0–6 yrs)
+    salary_min_lakhs: 35
+    remote_only: false
+    quick_apply_only: true   # only collect jobs with Quick apply on Naukri
+    max_pages: 10            # apply page 1, then pages 2–10
+
+hirist:
+  enabled: true
+  cookies_file: "cookies.hirist.json"
+  filters:
+    max_pages: 10            # apply each SRP page before moving to the next
+    experience_min: 4
+    experience_max: 6
+    # Direct category URLs (preferred) — experience/posting filters in the URL
+    search_urls:
+      - "https://www.hirist.tech/c/backend-development-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/c/emerging-technologies-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/k/python-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/k/java-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/k/nodejs-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/k/spring-jobs?minexp=4&maxexp=6&posting=3"
+    # Answers from data/user_memory.json; unknown questions → data/pending_questions.json
+    # Legacy keyword search (used when search_urls is empty):
+    keywords: ["python", "backend"]
+    cities: []               # empty = all India (no city in URL)
+    experience: "4-6"
+
+instahyre:
+  enabled: true
+  cookies_file: "cookies.instahyre.json"
+  filters:
+    # UI filter presets — Instahyre ignores pasted query-param URLs.
+    feeds:
+      - matching: true
+      - search: true
+        skills: "java,node,python"
+        years: 3
+      - search: true
+        skills: "java,node,python"
+        years: 4
+      - search: true
+        skills: "java,node,python"
+        years: 5
+    # Or legacy URL list (parsed into the same feeds):
+    # search_urls:
+    #   - "https://www.instahyre.com/candidate/opportunities/?matching=true"
+    # Legacy UI filters (used when search_urls is empty):
+    job_functions:
+      - "Backend Development"
+      - "Full-Stack Development"
+      - "Other Software Development"
+    locations:
+      - "Bengaluru"
+      - "Remote"
+    experience_years: 5
+    company_size: "All"
+
+application:
+  jobs_per_platform: 0          # 0 = unlimited
+  max_jobs_per_run: 0
+  require_review: false       # true = manual approve via review; false = auto apply on run
+  review_dir: "data/review"
+  delay_seconds_min: 2
+  delay_seconds_max: 5
+  apply_workers: 3            # keep low (2–3); high parallelism triggers Wellfound blocks
+  pipeline_apply: true
+  skip_external_ats: true
+  follow_external_from_wellfound: false
+  skip_location_blocked: true
+  skip_ineligible_salary: true
+  min_inr_salary_lpa: 25
+  apply_retries: 1            # retry once on apply failure, then skip
+  interactive_questions: false
+  confirm_new_answers: true    # Wellfound: confirm suggested answers before applying
+                                # Naukri/Hirist: queue new questions and prompt grouped at end of run
+  rag_answer_questions: true   # rule-based answers from profile/application_facts + compensation
+  one_job_per_company: true
+  enrich_workers: 4
+  dry_run: true
+
+# FreeModel / Groq LLM (LangChain) — auto-answers when RAG rules don't cover a question.
+llm:
+  enabled: true
+  provider: freemodel          # freemodel | groq
+  api_key: ""                  # FreeModel key (or env FREEMODEL_API_KEY / OPENAI_API_KEY)
+  base_url: "https://api.freemodel.dev"
+  model: gpt-5.5
+  temperature: 0.1
+  max_tokens: 256
+  auto_save: true              # save LLM answers to user_memory during apply
+  auto_answer_pending: true    # auto-fill pending questions at end of run (no prompts)
+  retry_pending_jobs: true     # re-apply to skipped jobs after high-confidence answers
+  min_confidence: 0.90         # answer only when model confidence >= this
+  use_faiss_memory: true       # use local FAISS index built from data/user_memory.json
+  rag_top_k: 5                 # top similar prior Q/A pairs passed to LLM via similarity_search
+  embeddings_model: sentence-transformers/all-MiniLM-L6-v2
+  faiss_index_dir: data/faiss
+
+workday:
+  password: ""
+  how_did_you_hear: "LinkedIn"
+  skip_voluntary_disclosures: true
+  max_form_pages: 10
+  address:
+    city: "Bengaluru"
+    state: "Karnataka"
+    country: "India"
+
+browser:
+  headless: false
+  slow_mo_ms: 100
+  use_chrome_profile: true
+  chrome_user_data_dir: ""
+  chrome_profile_name: "Default"
+  chrome_channel: "chrome"
+
+state:
+  applied_jobs_file: "data/applied_jobs.json"
+  log_file: "data/run.log"

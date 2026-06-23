@@ -1,0 +1,11 @@
+[
+  {
+    "name": "PASTE_SESSION_COOKIE_NAME",
+    "value": "PASTE_SESSION_COOKIE_VALUE",
+    "domain": ".uplers.com",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "sameSite": "Lax"
+  }
+]

@@ -1,0 +1,605 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass
+class UserConfig:
+    name: str
+    email: str
+    phone: str
+    linkedin: str
+    expected_display_name: str
+
+
+@dataclass
+class CompensationConfig:
+    current_ctc_lpa: float = 38.0
+    current_fixed_lpa: float = 30.0
+    current_variable_lpa: float = 2.0
+    current_esops_lpa: float = 6.0
+    expected_ctc_lpa: float = 45.0
+
+
+@dataclass
+class ProfileConfig:
+    headline: str = "Senior Backend / Platform Engineer"
+    years_experience: int = 5
+    core_skills: list[str] = field(default_factory=list)
+    target_roles: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    skip_companies: list[str] = field(default_factory=lambda: ["Decentro", "Savein", "WECP"])
+    skip_frontend_roles: bool = True
+    skip_qa_test_roles: bool = True
+    skip_role_keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CoverLetterConfig:
+    mode: str = "dynamic"  # dynamic | template
+    include_ctc: bool = True
+    max_words: int = 400
+    reference_path: str = "profile/cover_letter_reference.txt"
+
+
+@dataclass
+class ResumeConfig:
+    path: str
+    sync_to_wellfound: bool = False
+
+
+@dataclass
+class WellfoundFiltersConfig:
+    use_profile_filters: bool = True
+    roles: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    remote_policy: str = "some"
+    experience_levels: list[str] = field(default_factory=list)
+    job_types: list[str] = field(default_factory=list)
+    keywords: str = ""
+    skills: list[str] = field(default_factory=list)
+    salary_min: int | None = None
+    salary_currency: str = "INR"
+    include_no_salary: bool = True
+    recently_active: str | None = "week"
+    sort: str = "newest"
+
+
+@dataclass
+class UplersFiltersConfig:
+    keywords: str = ""
+    skills: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)
+    experience_years_min: int | None = 3
+    remote_only: bool = False
+
+
+@dataclass
+class NaukriFiltersConfig:
+    keywords: str = "backend developer"
+    locations: list[str] = field(default_factory=list)  # empty = India-wide (no city in URL)
+    experience_min: int | None = 3
+    experience_max: int | None = 8
+    salary_min_lakhs: float | None = None
+    remote_only: bool = False
+    quick_apply_only: bool = True
+    max_pages: int = 1  # SRP pages to scrape+apply per run (apply page 1, then page 2, …)
+
+
+@dataclass
+class HiristFiltersConfig:
+    search_urls: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=lambda: ["python", "backend"])
+    cities: list[str] = field(default_factory=list)  # empty = all India
+    experience: str = "2-5"  # 0-2, 2-5, 5-10, 10+ when using keyword search UI
+    experience_min: int | None = None  # minexp query param when building URLs
+    experience_max: int | None = None  # maxexp query param when building URLs
+    max_pages: int = 1  # SRP pages per search feed (apply page 1, then page 2, …)
+
+
+@dataclass
+class InstahyreFiltersConfig:
+    search_urls: list[str] = field(default_factory=list)
+    feeds: list[dict[str, Any]] = field(default_factory=list)
+    job_functions: list[str] = field(
+        default_factory=lambda: [
+            "Backend Development",
+            "Full-Stack Development",
+            "Other Software Development",
+        ]
+    )
+    locations: list[str] = field(default_factory=lambda: ["Bengaluru", "Remote"])
+    experience_years: int | None = 5
+    company_size: str = "All"  # Small, Medium, Large, All
+
+
+@dataclass
+class PlatformConfig:
+    enabled: bool
+    cookies_file: str
+    filters: (
+        WellfoundFiltersConfig
+        | UplersFiltersConfig
+        | NaukriFiltersConfig
+        | HiristFiltersConfig
+        | InstahyreFiltersConfig
+    )
+
+
+@dataclass
+class LLMConfig:
+    enabled: bool = False
+    provider: str = "groq"
+    api_key: str = ""
+    base_url: str = ""
+    model: str = "llama-3.3-70b-versatile"
+    temperature: float = 0.1
+    max_tokens: int = 256
+    auto_save: bool = True
+    auto_answer_pending: bool = True
+    retry_pending_jobs: bool = True
+    min_confidence: float = 0.9
+    use_faiss_memory: bool = True
+    rag_top_k: int = 5  # similar prior Q/A pairs passed to LLM via similarity_search
+    embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    faiss_index_dir: str = "data/faiss"
+
+
+@dataclass
+class ApplicationConfig:
+    jobs_per_platform: int = 0
+    max_jobs_per_run: int = 0
+    require_review: bool = False
+    review_dir: str = "data/review"
+    delay_seconds_min: int = 0
+    delay_seconds_max: int = 0
+    apply_workers: int = 10
+    skip_external_ats: bool = True
+    dry_run: bool = False
+    follow_external_from_wellfound: bool = False
+    skip_location_blocked: bool = True
+    skip_ineligible_salary: bool = True
+    min_inr_salary_lpa: float = 25.0
+    apply_retries: int = 1
+    interactive_questions: bool = True
+    confirm_new_answers: bool = True
+    rag_answer_questions: bool = True
+    one_job_per_company: bool = True
+    enrich_workers: int = 4
+    pipeline_apply: bool = True
+
+
+@dataclass
+class BrowserConfig:
+    headless: bool = False
+    slow_mo_ms: int = 100
+    # Reuse your installed Chrome profile (already signed into Google / Wellfound / Uplers)
+    use_chrome_profile: bool = True
+    chrome_user_data_dir: str = ""  # empty = auto-detect OS default Chrome folder
+    chrome_profile_name: str = "Default"  # Default, Profile 1, Profile 2, ...
+    chrome_channel: str = "chrome"  # use system Google Chrome (not bundled Chromium)
+
+
+@dataclass
+class AuthConfig:
+    # browser = sign in with Google once in a real browser (passkey/2FA works); session is saved
+    # cookies = legacy manual cookie export
+    method: str = "browser"
+    sessions_dir: str = "data/sessions"
+    login_timeout_seconds: int = 300
+
+
+@dataclass
+class StateConfig:
+    applied_jobs_file: str = "data/applied_jobs.json"
+    log_file: str = "data/run.log"
+
+
+@dataclass
+class WorkdayAddressConfig:
+    line1: str = ""
+    city: str = "Bengaluru"
+    state: str = "Karnataka"
+    postal_code: str = ""
+    country: str = "India"
+
+
+@dataclass
+class WorkdayConfig:
+    password: str = ""  # used for sign-in / create-account on Workday career sites
+    how_did_you_hear: str = "LinkedIn"
+    skip_voluntary_disclosures: bool = True
+    max_form_pages: int = 10
+    address: WorkdayAddressConfig = field(default_factory=WorkdayAddressConfig)
+
+
+@dataclass
+class AppConfig:
+    user: UserConfig
+    resume: ResumeConfig
+    profile: ProfileConfig
+    compensation: CompensationConfig
+    cover_letter: CoverLetterConfig
+    cover_note: str
+    wellfound: PlatformConfig
+    uplers: PlatformConfig
+    naukri: PlatformConfig
+    hirist: PlatformConfig
+    instahyre: PlatformConfig
+    workday: WorkdayConfig
+    llm: LLMConfig
+    application: ApplicationConfig
+    browser: BrowserConfig
+    auth: AuthConfig
+    state: StateConfig
+    base_dir: Path
+
+    @property
+    def resume_path(self) -> Path:
+        return self.base_dir / self.resume.path
+
+    @property
+    def cover_letter_reference_path(self) -> Path:
+        return self.base_dir / self.cover_letter.reference_path
+
+    @property
+    def applied_jobs_path(self) -> Path:
+        return self.base_dir / self.state.applied_jobs_file
+
+    @property
+    def log_path(self) -> Path:
+        return self.base_dir / self.state.log_file
+
+    @property
+    def auth_sessions_dir(self) -> Path:
+        p = self.base_dir / self.auth.sessions_dir
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def sessions_dir(self) -> Path:
+        """Alias used by browser session manager."""
+        return self.auth_sessions_dir
+
+    def cookies_path(self, platform: str) -> Path:
+        mapping = {
+            "wellfound": self.wellfound.cookies_file,
+            "uplers": self.uplers.cookies_file,
+            "naukri": self.naukri.cookies_file,
+            "hirist": self.hirist.cookies_file,
+            "instahyre": self.instahyre.cookies_file,
+        }
+        if platform not in mapping:
+            raise ValueError(f"Unknown platform: {platform}")
+        return self.base_dir / mapping[platform]
+
+
+def _section(data: dict[str, Any], key: str) -> dict[str, Any]:
+    value = data.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _wellfound_filters(data: dict[str, Any]) -> WellfoundFiltersConfig:
+    return WellfoundFiltersConfig(
+        use_profile_filters=bool(data.get("use_profile_filters", True)),
+        roles=list(data.get("roles", [])),
+        locations=list(data.get("locations", [])),
+        remote_policy=str(data.get("remote_policy", "some")),
+        experience_levels=list(data.get("experience_levels", [])),
+        job_types=list(data.get("job_types", [])),
+        keywords=str(data.get("keywords", "")),
+        skills=list(data.get("skills", [])),
+        salary_min=data.get("salary_min"),
+        salary_currency=str(data.get("salary_currency", "INR")),
+        include_no_salary=bool(data.get("include_no_salary", True)),
+        recently_active=data.get("recently_active"),
+        sort=str(data.get("sort", "newest")),
+    )
+
+
+def _uplers_filters(data: dict[str, Any]) -> UplersFiltersConfig:
+    return UplersFiltersConfig(
+        keywords=str(data.get("keywords", "")),
+        skills=list(data.get("skills", [])),
+        locations=list(data.get("locations", [])),
+        roles=list(data.get("roles", [])),
+        experience_years_min=data.get("experience_years_min", 3),
+        remote_only=bool(data.get("remote_only", False)),
+    )
+
+
+def _naukri_filters(data: dict[str, Any]) -> NaukriFiltersConfig:
+    loc = data.get("locations")
+    return NaukriFiltersConfig(
+        keywords=str(data.get("keywords", "backend developer")),
+        locations=list(loc) if isinstance(loc, list) else [],
+        experience_min=data.get("experience_min", 3),
+        experience_max=data.get("experience_max"),
+        salary_min_lakhs=data.get("salary_min_lakhs"),
+        remote_only=bool(data.get("remote_only", False)),
+        quick_apply_only=bool(data.get("quick_apply_only", True)),
+        max_pages=int(data.get("max_pages", 1)),
+    )
+
+
+def _hirist_filters(data: dict[str, Any]) -> HiristFiltersConfig:
+    kw = data.get("keywords", ["python", "backend"])
+    urls = data.get("search_urls", [])
+    cities = data.get("cities")
+    return HiristFiltersConfig(
+        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
+        keywords=list(kw) if isinstance(kw, list) else [str(kw)],
+        cities=list(cities) if isinstance(cities, list) else [],
+        experience=str(data.get("experience", "2-5")),
+        experience_min=data.get("experience_min"),
+        experience_max=data.get("experience_max"),
+        max_pages=int(data.get("max_pages", 1)),
+    )
+
+
+def _instahyre_filters(data: dict[str, Any]) -> InstahyreFiltersConfig:
+    urls = data.get("search_urls", [])
+    raw_feeds = data.get("feeds", [])
+    feeds = [f for f in raw_feeds if isinstance(f, dict)] if isinstance(raw_feeds, list) else []
+    return InstahyreFiltersConfig(
+        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
+        feeds=feeds,
+        job_functions=list(
+            data.get(
+                "job_functions",
+                [
+                    "Backend Development",
+                    "Full-Stack Development",
+                    "Other Software Development",
+                ],
+            )
+        ),
+        locations=list(data.get("locations", ["Bengaluru", "Remote"])),
+        experience_years=data.get("experience_years", 5),
+        company_size=str(data.get("company_size", "All")),
+    )
+
+
+def _platform_config(
+    raw: dict[str, Any],
+    key: str,
+    *,
+    default_cookies: str,
+    filter_fn,
+    enabled_default: bool = True,
+) -> PlatformConfig:
+    section = _section(raw, key)
+    if not section:
+        return PlatformConfig(enabled=False, cookies_file=default_cookies, filters=filter_fn({}))
+    return PlatformConfig(
+        enabled=bool(section.get("enabled", enabled_default)),
+        cookies_file=str(section.get("cookies_file", default_cookies)),
+        filters=filter_fn(_section(section, "filters") or section),
+    )
+
+
+def _profile_config(data: dict[str, Any]) -> ProfileConfig:
+    return ProfileConfig(
+        headline=str(data.get("headline", "Senior Backend / Platform Engineer")),
+        years_experience=int(data.get("years_experience", 5)),
+        core_skills=list(
+            data.get(
+                "core_skills",
+                [
+                    "Java",
+                    "Spring Boot",
+                    "Python",
+                    "FastAPI",
+                    "Flask",
+                    "AWS",
+                    "Kafka",
+                    "Redis",
+                    "MySQL",
+                    "MongoDB",
+                    "Docker",
+                    "Microservices",
+                    "System Design",
+                ],
+            )
+        ),
+        target_roles=list(
+            data.get(
+                "target_roles",
+                [
+                    "Backend Engineer",
+                    "Java Developer",
+                    "Python Developer",
+                    "Platform Engineer",
+                    "System Architect",
+                    "Forward Deployed Engineer",
+                ],
+            )
+        ),
+        locations=list(
+            data.get(
+                "locations",
+                [
+                    "India",
+                    "Bengaluru",
+                    "Mumbai",
+                    "Delhi NCR",
+                    "Hyderabad",
+                    "Pune",
+                    "Chennai",
+                    "Remote",
+                ],
+            )
+        ),
+        skip_companies=list(data.get("skip_companies", ["Decentro", "Savein", "WECP"])),
+        skip_frontend_roles=bool(data.get("skip_frontend_roles", True)),
+        skip_qa_test_roles=bool(data.get("skip_qa_test_roles", True)),
+        skip_role_keywords=list(data.get("skip_role_keywords", [])),
+    )
+
+
+def _compensation_config(data: dict[str, Any]) -> CompensationConfig:
+    return CompensationConfig(
+        current_ctc_lpa=float(data.get("current_ctc_lpa", 38)),
+        current_fixed_lpa=float(data.get("current_fixed_lpa", 30)),
+        current_variable_lpa=float(data.get("current_variable_lpa", 2)),
+        current_esops_lpa=float(data.get("current_esops_lpa", 6)),
+        expected_ctc_lpa=float(data.get("expected_ctc_lpa", 45)),
+    )
+
+
+def _cover_letter_config(data: dict[str, Any]) -> CoverLetterConfig:
+    return CoverLetterConfig(
+        mode=str(data.get("mode", "dynamic")),
+        include_ctc=bool(data.get("include_ctc", True)),
+        max_words=int(data.get("max_words", 400)),
+        reference_path=str(data.get("reference_path", "profile/cover_letter_reference.txt")),
+    )
+
+
+def _workday_config(data: dict[str, Any]) -> WorkdayConfig:
+    addr = _section(data, "address")
+    return WorkdayConfig(
+        password=str(data.get("password", "")),
+        how_did_you_hear=str(data.get("how_did_you_hear", "LinkedIn")),
+        skip_voluntary_disclosures=bool(data.get("skip_voluntary_disclosures", True)),
+        max_form_pages=int(data.get("max_form_pages", 10)),
+        address=WorkdayAddressConfig(
+            line1=str(addr.get("line1", "")),
+            city=str(addr.get("city", "Bengaluru")),
+            state=str(addr.get("state", "Karnataka")),
+            postal_code=str(addr.get("postal_code", "")),
+            country=str(addr.get("country", "India")),
+        ),
+    )
+
+
+def _llm_config(data: dict[str, Any]) -> LLMConfig:
+    api_key = str(data.get("api_key", "")).strip() or os.environ.get("GROQ_API_KEY", "").strip()
+    return LLMConfig(
+        enabled=bool(data.get("enabled", False)),
+        provider=str(data.get("provider", "groq")),
+        api_key=api_key,
+        base_url=str(data.get("base_url", "")).strip(),
+        model=str(data.get("model", "llama-3.3-70b-versatile")),
+        temperature=float(data.get("temperature", 0.1)),
+        max_tokens=int(data.get("max_tokens", 256)),
+        auto_save=bool(data.get("auto_save", True)),
+        auto_answer_pending=bool(data.get("auto_answer_pending", True)),
+        retry_pending_jobs=bool(data.get("retry_pending_jobs", True)),
+        min_confidence=float(data.get("min_confidence", 0.9)),
+        use_faiss_memory=bool(data.get("use_faiss_memory", True)),
+        rag_top_k=int(data.get("rag_top_k", 5)),
+        embeddings_model=str(
+            data.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")
+        ),
+        faiss_index_dir=str(data.get("faiss_index_dir", "data/faiss")),
+    )
+
+
+def load_config(path: Path) -> AppConfig:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid config file: {path}")
+
+    base_dir = path.parent.resolve()
+    user = _section(raw, "user")
+    resume = _section(raw, "resume")
+    application = _section(raw, "application")
+    browser = _section(raw, "browser")
+    auth = _section(raw, "auth")
+    state = _section(raw, "state")
+    workday = _workday_config(_section(raw, "workday"))
+    profile = _profile_config(_section(raw, "profile"))
+    compensation = _compensation_config(_section(raw, "compensation"))
+    cover_letter = _cover_letter_config(_section(raw, "cover_letter"))
+    llm = _llm_config(_section(raw, "llm"))
+
+    # Legacy flat config (wellfound-only)
+    if "wellfound" not in raw and "cookies" in raw:
+        legacy_cookies = str(_section(raw, "cookies").get("file", "cookies.json"))
+        wellfound = PlatformConfig(
+            enabled=True,
+            cookies_file=legacy_cookies,
+            filters=_wellfound_filters(_section(raw, "filters")),
+        )
+        uplers = _platform_config(raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters, enabled_default=False)
+        naukri = _platform_config(raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters, enabled_default=False)
+        hirist = _platform_config(raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters, enabled_default=False)
+        instahyre = _platform_config(raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters, enabled_default=False)
+    else:
+        wellfound = _platform_config(raw, "wellfound", default_cookies="cookies.wellfound.json", filter_fn=_wellfound_filters)
+        uplers = _platform_config(raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters)
+        naukri = _platform_config(raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters)
+        hirist = _platform_config(raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters)
+        instahyre = _platform_config(raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters)
+
+    return AppConfig(
+        user=UserConfig(
+            name=str(user.get("name", "Abhay Jain")),
+            email=str(user.get("email", "")),
+            phone=str(user.get("phone", "")),
+            linkedin=str(user.get("linkedin", "")),
+            expected_display_name=str(user.get("expected_display_name", "abhay")),
+        ),
+        resume=ResumeConfig(
+            path=str(resume.get("path", "resume.pdf")),
+            sync_to_wellfound=bool(resume.get("sync_to_wellfound", False)),
+        ),
+        profile=profile,
+        compensation=compensation,
+        cover_letter=cover_letter,
+        cover_note=str(raw.get("cover_note", "")).strip(),
+        wellfound=wellfound,
+        uplers=uplers,
+        naukri=naukri,
+        hirist=hirist,
+        instahyre=instahyre,
+        workday=workday,
+        llm=llm,
+        application=ApplicationConfig(
+            jobs_per_platform=int(application.get("jobs_per_platform", 0)),
+            max_jobs_per_run=int(application.get("max_jobs_per_run", application.get("jobs_per_platform", 0))),
+            require_review=bool(application.get("require_review", False)),
+            review_dir=str(application.get("review_dir", "data/review")),
+            delay_seconds_min=int(application.get("delay_seconds_min", 0)),
+            delay_seconds_max=int(application.get("delay_seconds_max", 0)),
+            apply_workers=int(application.get("apply_workers", 10)),
+            skip_external_ats=bool(application.get("skip_external_ats", True)),
+            dry_run=bool(application.get("dry_run", False)),
+            follow_external_from_wellfound=bool(application.get("follow_external_from_wellfound", False)),
+            skip_location_blocked=bool(application.get("skip_location_blocked", True)),
+            skip_ineligible_salary=bool(application.get("skip_ineligible_salary", True)),
+            min_inr_salary_lpa=float(application.get("min_inr_salary_lpa", 25)),
+            apply_retries=int(application.get("apply_retries", 1)),
+            interactive_questions=bool(application.get("interactive_questions", True)),
+            confirm_new_answers=bool(application.get("confirm_new_answers", True)),
+            rag_answer_questions=bool(application.get("rag_answer_questions", True)),
+            one_job_per_company=bool(application.get("one_job_per_company", True)),
+            enrich_workers=int(application.get("enrich_workers", 4)),
+            pipeline_apply=bool(application.get("pipeline_apply", True)),
+        ),
+        browser=BrowserConfig(
+            headless=bool(browser.get("headless", False)),
+            slow_mo_ms=int(browser.get("slow_mo_ms", 100)),
+            use_chrome_profile=bool(browser.get("use_chrome_profile", True)),
+            chrome_user_data_dir=str(browser.get("chrome_user_data_dir", "")),
+            chrome_profile_name=str(browser.get("chrome_profile_name", "Default")),
+            chrome_channel=str(browser.get("chrome_channel", "chrome")),
+        ),
+        auth=AuthConfig(
+            method=str(auth.get("method", "browser")),
+            sessions_dir=str(auth.get("sessions_dir", "data/sessions")),
+            login_timeout_seconds=int(auth.get("login_timeout_seconds", 300)),
+        ),
+        state=StateConfig(
+            applied_jobs_file=str(state.get("applied_jobs_file", "data/applied_jobs.json")),
+            log_file=str(state.get("log_file", "data/run.log")),
+        ),
+        base_dir=base_dir,
+    )

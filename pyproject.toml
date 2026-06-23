@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobs-auto-apply"
+version = "0.2.0"
+description = "Auto-apply to jobs on Wellfound, Uplers, Naukri, Hirist, and Instahyre with review-first workflow"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright>=1.40.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "click>=8.1",
+]
+
+[project.scripts]
+jobs-apply = "jobs_auto_apply.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jobs_auto_apply*"]
