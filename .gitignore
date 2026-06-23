@@ -5,6 +5,7 @@ __pycache__/
 venv/
 .env
 config.yaml
+profile/
 cookies.wellfound.json
 cookies.uplers.json
 cookies.naukri.json
