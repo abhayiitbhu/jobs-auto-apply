@@ -61,11 +61,11 @@ cover_letter:
   max_words: 200
 
 compensation:
-  current_ctc_lpa: 38
-  current_fixed_lpa: 30
+  current_ctc_lpa: 48
+  current_fixed_lpa: 40
   current_variable_lpa: 2
   current_esops_lpa: 6
-  expected_ctc_lpa: 45
+  expected_ctc_lpa: 55
 ```
 
 For highest quality, set `mode: llm` and export `OPENAI_API_KEY`.
