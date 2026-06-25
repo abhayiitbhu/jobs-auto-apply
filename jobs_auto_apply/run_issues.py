@@ -16,10 +16,22 @@ class RunIssue:
 
 
 _issues: list[RunIssue] = []
+_run_attempted_keys: set[str] = set()
 
 
 def clear_run_issues() -> None:
     _issues.clear()
+    _run_attempted_keys.clear()
+
+
+def record_run_attempt(job_key: str) -> None:
+    """Mark a job as attempted this run (applied, skipped, or failed)."""
+    if job_key:
+        _run_attempted_keys.add(job_key)
+
+
+def run_attempted_job_keys() -> set[str]:
+    return set(_run_attempted_keys)
 
 
 def record_skip(

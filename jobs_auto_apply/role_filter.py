@@ -8,8 +8,9 @@ from .utils import JobListing
 logger = logging.getLogger("job_apply")
 
 # Titles that are clearly backend/platform even if they mention a UI stack.
+# NOTE: deliberately excludes devops/sre/infra so those can be skipped via keywords.
 BACKEND_TITLE_HINT = re.compile(
-    r"\b(backend|back[\s-]?end|platform|devops|sre|infra|data engineer|ml engineer|"
+    r"\b(backend|back[\s-]?end|platform|"
     r"python developer|java developer|node\.?js backend)\b",
     re.I,
 )
@@ -58,8 +59,17 @@ def _title_patterns(
         text = kw.strip()
         if not text:
             continue
-        patterns.append(re.compile(re.escape(text), re.I))
+        patterns.append(re.compile(_keyword_regex(text), re.I))
     return patterns
+
+
+def _keyword_regex(text: str) -> str:
+    """Word-boundary-wrapped literal so short keywords (e.g. 'sre') don't match
+    substrings inside unrelated words."""
+    body = re.escape(text)
+    prefix = r"\b" if text[:1].isalnum() else ""
+    suffix = r"\b" if text[-1:].isalnum() else ""
+    return f"{prefix}{body}{suffix}"
 
 
 def should_skip_role(
@@ -103,6 +113,59 @@ def should_skip_role(
             return True, "role filter: JD is QA/test-focused"
 
     return False, ""
+
+
+def should_skip_no_experience_role(
+    title: str,
+    *,
+    no_exp_skills: list[str],
+    known_skills: list[str],
+) -> tuple[bool, str]:
+    """Skip a title that is about a no-experience skill and names no known skill.
+
+    Returns (skip, reason). The title must mention one of ``no_exp_skills`` and NOT
+    mention any of ``known_skills`` — so "Salesforce Developer" is skipped while
+    "Java Developer (Salesforce integration)" is kept (Java is a known skill).
+    """
+    title = (title or "").strip()
+    if not title or not no_exp_skills:
+        return False, ""
+    matched = next(
+        (
+            s for s in no_exp_skills
+            if s.strip() and re.search(_keyword_regex(s.strip()), title, re.I)
+        ),
+        None,
+    )
+    if not matched:
+        return False, ""
+    for known in known_skills or []:
+        k = known.strip()
+        if k and re.search(_keyword_regex(k), title, re.I):
+            return False, ""
+    return True, f"no-experience skill {matched!r}: {title!r}"
+
+
+def filter_no_experience_roles(
+    jobs: list[JobListing],
+    *,
+    no_exp_skills: list[str] | None = None,
+    known_skills: list[str] | None = None,
+) -> list[JobListing]:
+    if not no_exp_skills:
+        return jobs
+    kept: list[JobListing] = []
+    for job in jobs:
+        skip, reason = should_skip_no_experience_role(
+            job.title,
+            no_exp_skills=no_exp_skills,
+            known_skills=known_skills or [],
+        )
+        if skip:
+            logger.info("Skipping role: %s — %s", job.title, reason)
+            continue
+        kept.append(job)
+    return kept
 
 
 def filter_skipped_roles(

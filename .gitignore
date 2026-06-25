@@ -18,9 +18,16 @@ data/run.log
 data/sessions/
 data/user_memory.json
 data/pending_questions.json
+data/technical_failures.json
 data/review/
 data/models/
 data/faiss/
+data/training/
+data/models/job-answers-lora/
+data/models/job-answers-fused/
+data/models/job-answers-gguf/
+litellm/.env
+litellm/litellm.db
 data/resume_text.cache.txt
 *.egg-info/
 dist/

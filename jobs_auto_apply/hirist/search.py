@@ -73,11 +73,11 @@ async def apply_filters(page: Page, filters: HiristFiltersConfig) -> None:
             exp = page.get_by_text(re.compile(filters.experience.replace("-", r"[-–]"), re.I))
             if await exp.count() > 0:
                 await exp.first.click()
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(500)
         except Exception:
             logger.warning("Could not set Hirist experience filter")
 
-    await page.wait_for_timeout(1500)
+    await page.wait_for_timeout(600)
     logger.info("Hirist filters applied: %s", page.url)
 
 
@@ -130,13 +130,13 @@ async def iter_job_listings(page: Page, limit: int) -> AsyncIterator[JobListing]
             break
         before = set(jobs.keys())
         await page.mouse.wheel(0, 2500)
-        await scroll_lazy_page(page, rounds=2, pause_ms=300)
-        await wait_for_page_settled(page, extra_ms=400)
+        await scroll_lazy_page(page, rounds=2, pause_ms=200)
+        await wait_for_page_settled(page, extra_ms=200)
         await _merge_jobs_on_page(page, jobs, limit)
         added = len(jobs) - len(before)
         if added == 0:
             stable += 1
-            if stable >= 4:
+            if stable >= 3:
                 break
         else:
             stable = 0
@@ -151,8 +151,8 @@ async def collect_srp_page(page: Page, limit: int = 500) -> list[JobListing]:
     """Collect jobs on the current SRP page only (no multi-page infinite scroll)."""
     jobs: dict[str, JobListing] = {}
     await _merge_jobs_on_page(page, jobs, limit)
-    await scroll_lazy_page(page, rounds=3, pause_ms=250)
-    await wait_for_page_settled(page, extra_ms=300)
+    await scroll_lazy_page(page, rounds=2, pause_ms=200)
+    await wait_for_page_settled(page, extra_ms=200)
     await _merge_jobs_on_page(page, jobs, limit)
     return list(jobs.values())
 
@@ -172,7 +172,7 @@ async def iter_paginated_feed_pages(
         for page_num in range(1, pages_cap + 1):
             url = _paginated_url(feed_url, page_num)
             logger.info("Hirist feed page %d: %s", page_num, url)
-            await goto_settled(page, url, timeout_ms=90_000)
+            await goto_settled(page, url, timeout_ms=90_000, quick=page_num > 1)
             jobs = await collect_srp_page(page)
             if not jobs:
                 if page_num > 1:
@@ -199,9 +199,9 @@ async def collect_job_listings(page: Page, limit: int) -> list[JobListing]:
 async def collect_from_search_urls(page: Page, urls: list[str], limit: int) -> list[JobListing]:
     merged: dict[str, JobListing] = {}
     per_feed = limit if limit > 0 else 2000
-    for url in urls:
+    for feed_idx, url in enumerate(urls):
         logger.info("Hirist feed: %s", url)
-        await goto_settled(page, url, timeout_ms=90_000)
+        await goto_settled(page, url, timeout_ms=90_000, quick=feed_idx > 0)
         for job in await collect_srp_page(page, per_feed):
             merged[job.job_id] = job
         if limit > 0 and len(merged) >= limit:

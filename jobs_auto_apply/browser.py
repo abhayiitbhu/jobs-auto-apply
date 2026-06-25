@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -16,11 +17,54 @@ from .login import wait_for_manual_login
 
 logger = logging.getLogger("job_apply")
 
+# Cookie-session platforms safe to run in parallel (each gets its own Chromium instance).
+PARALLEL_COOKIE_PLATFORMS = frozenset({"naukri", "hirist", "instahyre"})
+
+
+def _use_chrome_profile(config: AppConfig, platform: str) -> bool:
+    if not config.browser.use_chrome_profile:
+        return False
+    if config.application.parallel_platforms and platform in PARALLEL_COOKIE_PLATFORMS:
+        return False
+    return True
+
 VerifyFn = Callable[[Page, str], Awaitable[bool]]
 
 STEALTH_INIT_SCRIPT = (
     "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
 )
+
+
+def _context_viewport_kwargs(config: AppConfig) -> dict:
+    """Headed runs use the real window size so sticky Next/Submit footers stay visible."""
+    if config.browser.headless:
+        return {"viewport": {"width": 1440, "height": 1080}}
+    return {"no_viewport": True}
+
+
+# When many apply-workers run as background tabs in one window, Chromium throttles
+# timers/animations and stops rendering occluded tabs — Naukri chatbot chips/radios
+# then never finish animating in, so clicks silently no-op (text inputs still work).
+# These flags keep every tab fully active regardless of foreground state.
+_ANTI_THROTTLE_ARGS = [
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-features=CalculateNativeWinOcclusion",
+]
+
+
+def _browser_launch_kwargs(config: AppConfig) -> dict:
+    kwargs: dict = {
+        "headless": config.browser.headless,
+        "slow_mo": config.browser.slow_mo_ms,
+        "args": ["--disable-blink-features=AutomationControlled", *_ANTI_THROTTLE_ARGS],
+    }
+    if config.browser.chrome_channel:
+        kwargs["channel"] = config.browser.chrome_channel
+    if not config.browser.headless:
+        kwargs["args"] = [*kwargs["args"], "--start-maximized"]
+    return kwargs
 
 
 def _session_path(config: AppConfig, platform: str) -> Path:
@@ -32,13 +76,9 @@ async def _create_ephemeral_context(
     config: AppConfig,
     storage_path: Path | None,
 ) -> tuple[Browser, BrowserContext]:
-    browser = await playwright.chromium.launch(
-        headless=config.browser.headless,
-        slow_mo=config.browser.slow_mo_ms,
-        args=["--disable-blink-features=AutomationControlled"],
-    )
+    browser = await playwright.chromium.launch(**_browser_launch_kwargs(config))
     context_kwargs: dict = {
-        "viewport": {"width": 1440, "height": 1080},
+        **_context_viewport_kwargs(config),
         "user_agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -67,19 +107,25 @@ async def _launch_chrome_profile_context(playwright, config: AppConfig) -> Brows
 
     launch_kwargs: dict = {
         "user_data_dir": str(profile_dir),
-        "headless": config.browser.headless,
-        "slow_mo": config.browser.slow_mo_ms,
-        "viewport": {"width": 1440, "height": 1080},
+        **_context_viewport_kwargs(config),
         "locale": "en-US",
         "args": [
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",
+            *_ANTI_THROTTLE_ARGS,
         ],
         "ignore_default_args": ["--enable-automation"],
     }
-    if config.browser.chrome_channel:
-        launch_kwargs["channel"] = config.browser.chrome_channel
+    if not config.browser.headless:
+        launch_kwargs["args"].append("--start-maximized")
+    launch_kwargs.update(
+        {
+            k: v
+            for k, v in _browser_launch_kwargs(config).items()
+            if k in ("headless", "slow_mo", "channel")
+        }
+    )
 
     context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
     await context.add_init_script(STEALTH_INIT_SCRIPT)
@@ -93,18 +139,33 @@ async def _save_session(context: BrowserContext, path: Path) -> None:
 
 
 async def _prepare_page(context: BrowserContext, origin: str) -> Page:
-    """Use a fresh tab on the target site (Chrome profile restore can reopen unrelated tabs)."""
-    for existing in list(context.pages):
+    """Navigate the primary tab to the target site (reuse tab — closing all tabs breaks persistent Chrome)."""
+    pages = list(context.pages)
+    page = pages[0] if pages else await context.new_page()
+    for extra in pages[1:]:
         try:
-            await existing.close()
+            await extra.close()
         except Exception:
             pass
-    page = await context.new_page()
-    await page.goto(origin, wait_until="load", timeout=90000)
-    from .page_load import ensure_page_ready
 
-    await ensure_page_ready(page, for_form=False)
-    return page
+    last_exc: Exception | None = None
+    for attempt in range(4):
+        try:
+            await page.goto(origin, wait_until="domcontentloaded", timeout=90000)
+            await ensure_page_ready(page, for_form=False)
+            return page
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Navigation to %s failed (attempt %d/4): %s",
+                origin,
+                attempt + 1,
+                exc,
+            )
+            if attempt < 3:
+                await asyncio.sleep(1.5 * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc
 
 
 async def _close_browser_context(browser: Browser | None, context: BrowserContext) -> None:
@@ -112,6 +173,8 @@ async def _close_browser_context(browser: Browser | None, context: BrowserContex
         await browser.close()
     else:
         await context.close()
+        # Persistent Chrome needs a moment to release the profile before relaunch.
+        await asyncio.sleep(1.5)
 
 
 @asynccontextmanager
@@ -128,7 +191,7 @@ async def browser_session(
 ) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
     storage_path = _session_path(config, platform)
     use_browser_auth = config.auth.method == "browser"
-    use_chrome_profile = config.browser.use_chrome_profile
+    use_chrome_profile = _use_chrome_profile(config, platform)
 
     async with async_playwright() as playwright:
         browser: Browser | None

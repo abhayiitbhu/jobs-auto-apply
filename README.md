@@ -215,6 +215,36 @@ python main.py verify --platform all
 python main.py run --platform all
 ```
 
+### Run Naukri, Hirist, and Instahyre in parallel
+
+1. Enable all three in `config.yaml`:
+
+```yaml
+naukri:
+  enabled: true
+hirist:
+  enabled: true
+instahyre:
+  enabled: true
+
+application:
+  parallel_platforms: true   # naukri + hirist + instahyre at the same time
+```
+
+2. Export cookies (or use Chrome profile) for each site.
+3. Run:
+
+```bash
+python3 main.py run --platform all
+```
+
+Each platform gets its own browser session. Wellfound/Uplers still run sequentially (they share a Chrome profile). To run only the three Indian boards:
+
+```bash
+# disable wellfound/uplers in config, or pass a subset if you add a future flag
+python3 main.py run --platform all
+```
+
 ## Safety
 
 - Start with `dry_run: true` in config — searches jobs without submitting

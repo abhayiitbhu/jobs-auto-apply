@@ -34,7 +34,7 @@ async () => {
 """
 
 _EXPAND_LAZY_JS = """
-async (rounds, pauseMs) => {
+async ({ rounds, pauseMs }) => {
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   let lastHeight = -1;
   for (let r = 0; r < rounds; r++) {
@@ -106,7 +106,7 @@ async (pauseMs) => {
 """
 
 _REVEAL_FOOTER_JS = """
-async (rounds, pauseMs) => {
+async ({ rounds, pauseMs }) => {
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const scrollContainers = () => {
     const nodes = [document.documentElement, document.body, ...document.querySelectorAll('*')];
@@ -155,7 +155,7 @@ async () => {
     (el.value || el.innerText || el.textContent || "").trim().replace(/\\s+/g, " ");
   const inViewport = (el) => {
     const r = el.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight + 2;
+    return r.top < window.innerHeight - 2 && r.bottom > 2 && r.width > 4 && r.height > 4;
   };
   const candidates = () =>
     [...document.querySelectorAll(
@@ -228,7 +228,7 @@ async def expand_lazy_content(
 ) -> None:
     """Scroll the page to trigger lazy-loaded sections, then return to top."""
     try:
-        await page.evaluate(_EXPAND_LAZY_JS, rounds, pause_ms)
+        await page.evaluate(_EXPAND_LAZY_JS, {"rounds": rounds, "pauseMs": pause_ms})
     except Exception as exc:
         logger.debug("expand_lazy_content failed: %s", exc)
     await page.wait_for_timeout(200)
@@ -258,7 +258,7 @@ async def reveal_footer_actions(page: Page, *, for_form: bool = False) -> None:
     rounds = 5 if for_form else 3
     pause = 140 if for_form else 120
     try:
-        await page.evaluate(_REVEAL_FOOTER_JS, rounds, pause)
+        await page.evaluate(_REVEAL_FOOTER_JS, {"rounds": rounds, "pauseMs": pause})
     except Exception as exc:
         logger.debug("reveal_footer_actions failed: %s", exc)
     await page.wait_for_timeout(250 if for_form else 200)
@@ -312,8 +312,17 @@ async def goto_settled(
     *,
     timeout_ms: int = 90_000,
     scroll: bool = True,
+    quick: bool = False,
 ) -> None:
     """Navigate and wait for lazy SPAs to fully render."""
+    if quick:
+        await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        await wait_for_page_settled(page, network_idle_ms=2_000, extra_ms=400)
+        await wait_for_dom_stable(page, max_wait_ms=4_000)
+        if scroll:
+            await expand_lazy_content(page, rounds=4, pause_ms=150)
+            await scroll_all_containers(page)
+        return
     await page.goto(url, wait_until="load", timeout=timeout_ms)
     await wait_for_page_settled(page, network_idle_ms=5_000)
     await wait_for_dom_stable(page, max_wait_ms=10_000)

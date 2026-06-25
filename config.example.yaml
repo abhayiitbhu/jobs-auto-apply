@@ -4,7 +4,8 @@ user:
   name: "Abhay Jain"
   email: "abhay.jain.cse11@itbhu.ac.in"
   phone: "9358161425"
-  linkedin: "https://www.linkedin.com/in/abhay-jain"
+  linkedin: "https://www.linkedin.com/in/abhay-jain-74587584/"
+  github: "https://github.com/abhayiitbhu"
   expected_display_name: "abhay"
 
 profile:
@@ -53,7 +54,18 @@ profile:
   # Skip frontend/UI titles (Senior Frontend Engineer, React Developer, etc.)
   skip_frontend_roles: true
   skip_qa_test_roles: true   # QA, SDET, test engineer, tester, etc.
-  skip_role_keywords: []
+  # Extra titles to skip (matched on whole words, case-insensitive),
+  # e.g. data science / devops / mlops roles outside your backend focus.
+  skip_role_keywords:
+    - data scientist
+    - data science
+    - devops
+    - dev ops
+    - sre
+    - site reliability
+    - mlops
+    - ml ops
+    - machine learning ops
 
 compensation:
   current_ctc_lpa: 38
@@ -73,10 +85,27 @@ auth:
   sessions_dir: "data/sessions"
   login_timeout_seconds: 300
 
+paths:
+  application_facts: profile/application_facts.yaml
+  user_memory: data/user_memory.json
+  pending_questions: data/pending_questions.json
+  naukri_resume_sync: data/naukri_resume_sync.json
+
+answers:
+  notice_join_threshold_days: 15
+  default_year_chip_options:
+    - "No experience"
+    - "<6 years"
+    - "6-8 years"
+    - "8+ years"
+
 resume:
   path: "resumeAbhay_repaired.pdf"
   # Upload resume to Wellfound profile/edit before each run (first-time setup only)
   sync_to_wellfound: false
+  # Upload resume to Naukri profile before each Naukri run (keeps profile fresh for recruiters)
+  sync_to_naukri: true
+  naukri_sync_interval_minutes: 30
 
 # Fallback static template (used when cover_letter.mode: template)
 cover_note: |
@@ -140,10 +169,12 @@ naukri:
     locations: []            # empty = India-wide (no city in search URL)
     experience_min: 3        # Hirist minexp; Naukri uses experience_max only
     experience_max: 6        # Naukri max experience (?experience=6, slider 0–6 yrs)
+    sort: freshness               # freshness | date | newest — Naukri UI: "Order by Freshness"
+    max_job_age_days: 7           # only jobs posted within N days (1, 3, 7, 15, or 30); omit to disable
     salary_min_lakhs: 35
     remote_only: false
     quick_apply_only: true   # only collect jobs with Quick apply on Naukri
-    max_pages: 10            # apply page 1, then pages 2–10
+    max_pages: 10            # scroll batches on single SRP (not URL pages)
 
 hirist:
   enabled: true
@@ -203,37 +234,69 @@ application:
   review_dir: "data/review"
   delay_seconds_min: 2
   delay_seconds_max: 5
-  apply_workers: 3            # keep low (2–3); high parallelism triggers Wellfound blocks
-  pipeline_apply: true
+  apply_workers: 3
+  naukri_apply_workers: 10
+  hirist_apply_workers: 10
+  instahyre_apply_workers: 10
+  parallel_platforms: false    # one platform at a time on 16GB unified memory
+  pipeline_apply: true         # Naukri + Wellfound: scroll while workers apply
+  platform_delays:
+    instahyre_ms: 200
+    instahyre_advance_ms: 200
+    hirist_step_ms: 300
+    naukri_chatbot_step_ms: 300
+    naukri_chip_poll_ms: 100
   skip_external_ats: true
   follow_external_from_wellfound: false
   skip_location_blocked: true
   skip_ineligible_salary: true
   min_inr_salary_lpa: 25
-  apply_retries: 1            # retry once on apply failure, then skip
+  apply_retries: 0            # no retry on transient apply failure (faster; set 1 if flaky)
+  retry_backoff_ms: 1500      # pause before apply retry when apply_retries > 0
   interactive_questions: false
   confirm_new_answers: true    # Wellfound: confirm suggested answers before applying
                                 # Naukri/Hirist: queue new questions and prompt grouped at end of run
-  rag_answer_questions: true   # rule-based answers from profile/application_facts + compensation
+  rag_answer_questions: true   # RAG suggestions feed LLM; still requires llm.min_confidence or question is queued
   one_job_per_company: true
   enrich_workers: 4
   dry_run: true
 
-# FreeModel / Groq LLM (LangChain) — auto-answers when RAG rules don't cover a question.
+# Ollama local models — run: ./scripts/setup_ollama_models.sh
 llm:
   enabled: true
-  provider: freemodel          # freemodel | groq
-  api_key: ""                  # FreeModel key (or env FREEMODEL_API_KEY / OPENAI_API_KEY)
-  base_url: "https://api.freemodel.dev"
-  model: gpt-5.5
-  temperature: 0.1
+  base_url: "http://127.0.0.1:11434"
+  model: job-answers
+  # Set verifier_model to "job-answers" to reuse the primary model (only one
+  # model resident — best for <=16GB RAM). Use "job-verify" for a dedicated,
+  # smaller verifier if you have RAM headroom (run setup_ollama_models.sh).
+  verifier_model: job-verify
+  verifier_enabled: true   # double-checks only high-risk fields (CTC, employer, years)
+  temperature: 0.05
   max_tokens: 256
-  auto_save: true              # save LLM answers to user_memory during apply
-  auto_answer_pending: true    # auto-fill pending questions at end of run (no prompts)
-  retry_pending_jobs: true     # re-apply to skipped jobs after high-confidence answers
-  min_confidence: 0.90         # answer only when model confidence >= this
-  use_faiss_memory: true       # use local FAISS index built from data/user_memory.json
-  rag_top_k: 5                 # top similar prior Q/A pairs passed to LLM via similarity_search
+  keep_alive: "30m"        # keep model loaded between calls (avoids reload latency)
+  max_concurrency: 2       # overlap LLM calls across apply-workers; set 1 if RAM-tight
+  auto_save: true
+  auto_answer_pending: true
+  prompt_pending_questions: false
+  retry_pending_jobs: true
+  min_confidence: 0.92
+  min_confidence_rag_agree: 0.88
+  vector_agree_score: 0.80   # accept when a similar past answer agrees with the LLM
+  min_confidence_new_experience: 0.96
+  min_confidence_persist: 0.98   # only write LLM/RAG drafts to user_memory above this
+  plain_text_confidence: 0.35
+  uncorroborated_confidence_cap: 0.6  # cap LLM confidence when no RAG/vector/verifier backs it (fills, but won't persist)
+  rag_agree_input_types:
+    - single_choice
+    - yes_no_checkbox
+    - ctc_numeric
+    - years_numeric
+    - number
+    - pincode
+    - date
+  use_faiss_memory: true
+  rag_top_k: 3
+  vector_auto_answer_score: 0.92
   embeddings_model: sentence-transformers/all-MiniLM-L6-v2
   faiss_index_dir: data/faiss
 
@@ -249,7 +312,7 @@ workday:
 
 browser:
   headless: false
-  slow_mo_ms: 100
+  slow_mo_ms: 0                  # 0 = fastest; use 50–100 if clicks miss
   use_chrome_profile: true
   chrome_user_data_dir: ""
   chrome_profile_name: "Default"

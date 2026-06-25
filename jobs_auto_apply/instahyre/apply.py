@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import re
 
-from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import BrowserContext, Error as PlaywrightError
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
+from ..apply_runner import run_apply_batch
 from ..config import AppConfig
 from ..limits import apply_cap
 from ..utils import JobListing, job_key, save_applied_job
@@ -29,13 +30,21 @@ from .search import (
 
 logger = logging.getLogger("job_apply")
 
-INSTAHYRE_DELAY_MS = 2000
+INSTAHYRE_DELAY_MS = 400  # default; overridden by application.platform_delays.instahyre_ms
 APPLY_MODAL = ".application-modal.candidate-apply-modal, .modal.in, .modal.show, [role='dialog'], .apply-modal"
 
 
-async def _delay(page: Page) -> None:
+def _instahyre_delay_ms(config: AppConfig) -> int:
+    return config.application.platform_delays.instahyre_ms
+
+
+def _instahyre_advance_ms(config: AppConfig) -> int:
+    return config.application.platform_delays.instahyre_advance_ms
+
+
+async def _delay(page: Page, config: AppConfig) -> None:
     try:
-        await page.wait_for_timeout(INSTAHYRE_DELAY_MS)
+        await page.wait_for_timeout(_instahyre_delay_ms(config))
     except PlaywrightError as exc:
         if "Target page, context or browser has been closed" in str(exc):
             raise
@@ -83,7 +92,7 @@ _ADVANCE_NEXT_JOB_JS = """
 """
 
 
-async def _advance_to_next_job(page: Page) -> bool:
+async def _advance_to_next_job(page: Page, config: AppConfig) -> bool:
     """Move to next job in Instahyre's apply modal queue."""
     modal = page.locator(".application-modal.candidate-apply-modal")
     if await modal.count() == 0:
@@ -93,7 +102,7 @@ async def _advance_to_next_job(page: Page) -> bool:
     try:
         result = await page.evaluate(_ADVANCE_NEXT_JOB_JS)
         if isinstance(result, dict) and result.get("ok"):
-            await page.wait_for_timeout(INSTAHYRE_DELAY_MS)
+            await page.wait_for_timeout(_instahyre_delay_ms(config))
             after = await _read_job_panel(page)
             return after != before
     except Exception:
@@ -101,7 +110,7 @@ async def _advance_to_next_job(page: Page) -> bool:
 
     try:
         await page.keyboard.press("ArrowRight")
-        await page.wait_for_timeout(800)
+        await page.wait_for_timeout(_instahyre_advance_ms(config))
         after = await _read_job_panel(page)
         if after != before:
             return True
@@ -170,7 +179,6 @@ async def _try_apply_current(page: Page, config: AppConfig, feed_key: str) -> bo
         {"source": "instahyre", "title": title, "company": company, "url": feed_key},
     )
     logger.info("Applied on Instahyre: %s @ %s", title, company or "?")
-    await _delay(page)
     return True
 
 
@@ -194,11 +202,10 @@ async def _apply_chain_from_view(
             if await _has_apply_button(page):
                 title, company = await _read_job_panel(page)
                 logger.info("[DRY RUN] Would apply on Instahyre: %s @ %s", title, company or "?")
-            elif not await _advance_to_next_job(page):
+            elif not await _advance_to_next_job(page, config):
                 stuck += 1
             else:
                 stuck = 0
-            await _delay(page)
             if stuck >= 8:
                 break
             continue
@@ -207,10 +214,13 @@ async def _apply_chain_from_view(
             if await _try_apply_current(page, config, feed_key):
                 applied += 1
                 stuck = 0
+                if await _advance_to_next_job(page, config):
+                    continue
             else:
                 stuck += 1
-        elif await _advance_to_next_job(page):
+        elif await _advance_to_next_job(page, config):
             stuck = 0
+            continue
         else:
             stuck += 1
 
@@ -218,7 +228,7 @@ async def _apply_chain_from_view(
             logger.info("Modal apply chain ended after %d applies on this feed segment", applied)
             break
 
-        await _delay(page)
+        await _delay(page, config)
 
     return applied
 
@@ -235,7 +245,7 @@ async def apply_feed(page: Page, spec: InstahyreFeedSpec, config: AppConfig, app
         # Scroll before checking view buttons — Instahyre hides buttons on applied rows
         # but may load more rows below after scrolling.
         before_rows = await employer_rows(page).count()
-        await _scroll_load_more(page, rounds=6)
+        await _scroll_load_more(page, rounds=3)
         after_rows = await employer_rows(page).count()
         view_count = await view_buttons(page).count()
 
@@ -268,7 +278,7 @@ async def apply_feed(page: Page, spec: InstahyreFeedSpec, config: AppConfig, app
             load_rounds += 1
             continue
 
-        await _delay(page)
+        await page.wait_for_timeout(_instahyre_delay_ms(config))
         segment = await _apply_chain_from_view(
             page, config, feed_key, cap=cap, already_applied=applied
         )
@@ -317,9 +327,6 @@ async def apply_from_feeds(
         feed_dicts=feed_dicts,
         default_job_functions=default_job_functions,
     ):
-        if spec.matching:
-            logger.info("Skipping matching feed — use search feeds with skills/years filters")
-            continue
         total += await apply_feed(page, spec, config, applied_ids)
         cap = apply_cap(config.application.max_jobs_per_run)
         if cap is not None and total >= cap:
@@ -327,7 +334,12 @@ async def apply_from_feeds(
     return total
 
 
-async def apply_to_job(page: Page, job: JobListing, config: AppConfig) -> bool | None:
+async def apply_to_job(
+    page: Page,
+    _context: BrowserContext | None,
+    job: JobListing,
+    config: AppConfig,
+) -> bool | None:
     feed_url = str(job.meta.get("feed_url", job.url or "")).strip()
     card_index = int(job.meta.get("card_index", 0))
 
@@ -337,13 +349,13 @@ async def apply_to_job(page: Page, job: JobListing, config: AppConfig) -> bool |
 
     if feed_url not in page.url:
         await page.goto(f"{INSTAHYRE_OPPORTUNITIES}?matching=true", wait_until="domcontentloaded", timeout=90000)
-        await _delay(page)
+        await _delay(page, config)
         await _wait_for_opportunities(page)
 
     if not await click_view_at(page, card_index):
         logger.warning("Could not click View for: %s", job.title)
         return False
-    await _delay(page)
+    await _delay(page, config)
 
     if config.application.dry_run:
         logger.info("[DRY RUN] Would apply on Instahyre: %s", job.title)
@@ -353,7 +365,6 @@ async def apply_to_job(page: Page, job: JobListing, config: AppConfig) -> bool |
         logger.warning("No apply button for Instahyre job: %s", job.title)
         return False
 
-    await _delay(page)
     save_applied_job(
         config.applied_jobs_path,
         job_key("instahyre", job.job_id),
@@ -363,14 +374,19 @@ async def apply_to_job(page: Page, job: JobListing, config: AppConfig) -> bool |
     return True
 
 
-async def apply_batch(page: Page, _context, jobs: list[JobListing], config: AppConfig) -> int:
-    applied = 0
-    for job in jobs:
-        try:
-            result = await apply_to_job(page, job, config)
-            if result is True:
-                applied += 1
-        except Exception:
-            logger.exception("Instahyre apply failed: %s", job.url or job.title)
-        await _delay(page)
-    return applied
+async def apply_batch(
+    page: Page,
+    context: BrowserContext | None,
+    jobs: list[JobListing],
+    config: AppConfig,
+) -> int:
+    # Instahyre applies sequentially (one job at a time); parallel tabs caused
+    # feed/modal races, so it intentionally ignores instahyre_apply_workers.
+    return await run_apply_batch(
+        jobs,
+        config,
+        page,
+        context,
+        apply_to_job,
+        workers=1,
+    )

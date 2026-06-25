@@ -8,6 +8,11 @@ warnings.filterwarnings(
     message=r"urllib3 v2 only supports OpenSSL",
     category=Warning,
 )
+warnings.filterwarnings(
+    "ignore",
+    message=r"Importing verbose from langchain root module is no longer supported",
+    category=UserWarning,
+)
 
 
 def _load_dotenv() -> None:

@@ -2,20 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
+import threading
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
 
 from .config import AppConfig
 from .memory import load_memory
 from .profile_data import build_resume_context, load_resume_facts
-from .resume_text import relevant_resume_excerpt
 from .question_groups import classify_question
 from .rag_answers import load_application_facts
 
@@ -24,6 +23,65 @@ logger = logging.getLogger("job_apply")
 _QUOTE_WRAP = re.compile(r'^["\'](.+)["\']$', re.S)
 _FAISS_STORE_NAME = "user_memory_qa"
 _FAISS_CACHE: dict[str, tuple[float, Any]] = {}
+_OLLAMA_LOCK = threading.Lock()  # legacy single-flight (kept for any direct users)
+_OLLAMA_GATES: dict[int, threading.BoundedSemaphore] = {}
+_OLLAMA_GATES_LOCK = threading.Lock()
+_PROFILE_CTX_CACHE: dict[str, tuple[tuple[float, ...], str]] = {}
+
+
+def _ollama_gate(config: AppConfig) -> threading.BoundedSemaphore:
+    """Bounded concurrency for local Ollama calls.
+
+    Weights are loaded once and shared across concurrent requests, so allowing a
+    couple of in-flight calls overlaps inference and noticeably improves
+    throughput when several apply-workers hit the LLM at once. Sized from
+    ``llm.max_concurrency``; drop it to 1 if a long run shows RAM pressure.
+    """
+    n = max(1, int(getattr(config.llm, "max_concurrency", 1) or 1))
+    with _OLLAMA_GATES_LOCK:
+        gate = _OLLAMA_GATES.get(n)
+        if gate is None:
+            gate = threading.BoundedSemaphore(n)
+            _OLLAMA_GATES[n] = gate
+        return gate
+
+
+def unload_ollama_model(config: AppConfig, model_name: str) -> bool:
+    """Remove a model from Ollama memory (no-op if not loaded)."""
+    name = (model_name or "").strip()
+    if not name:
+        return False
+    base_url = (config.llm.base_url or "http://127.0.0.1:11434").rstrip("/")
+    for endpoint, payload in (
+        ("/api/stop", {"model": name}),
+        ("/api/generate", {"model": name, "keep_alive": 0}),
+    ):
+        try:
+            req = urllib.request.Request(
+                f"{base_url}{endpoint}",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            logger.info("Unloaded Ollama model: %s", name)
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                continue
+            logger.debug("Ollama unload %s via %s: %s", name, endpoint, exc)
+        except Exception as exc:
+            logger.debug("Ollama unload %s via %s: %s", name, endpoint, exc)
+    return False
+
+
+def ensure_verifier_unloaded(config: AppConfig) -> None:
+    """When verifier is disabled, free VRAM by unloading the verifier model."""
+    llm = config.llm
+    if llm.verifier_enabled or not llm.verifier_model:
+        return
+    unload_ollama_model(config, llm.verifier_model)
 
 
 @dataclass
@@ -38,6 +96,10 @@ class LLMDecision:
     answer: str
     confidence: float
     canonical: str | None = None
+    # True only when the separate verifier model actually inspected this answer
+    # (high-risk field + verifier enabled) and approved it — an independent
+    # corroboration signal, distinct from the model's self-reported confidence.
+    verified: bool = False
 
 
 def _strip_llm_text(text: str) -> str:
@@ -50,27 +112,97 @@ def _strip_llm_text(text: str) -> str:
 
 
 def _field_instructions(field: dict[str, Any]) -> str:
-    kind = str(field.get("kind", "text"))
-    options = [str(o).strip() for o in field.get("options", []) if str(o).strip()]
-    lines: list[str] = [f"Field type: {kind}"]
+    from .application_questions import enrich_field_for_llm, is_numeric_ctc_question
 
-    if options:
-        lines.append(f"Options (pick exactly from this list): {', '.join(options)}")
-        if kind in ("radio", "checkbox"):
-            lines.append("Reply with exactly one option label from the list.")
+    field = enrich_field_for_llm(field)
+    kind = str(field.get("kind", "text"))
+    input_type = str(field.get("input_type", kind))
+    label = str(field.get("label", ""))
+    placeholder = str(field.get("placeholder", "")).strip()
+    platform = str(field.get("platform", "")).strip()
+    options = [str(o).strip() for o in field.get("options", []) if str(o).strip()]
+
+    lines: list[str] = [
+        "=== FORM FIELD (match answer format to this) ===",
+        f"Control kind: {kind}",
+        f"Expected value type: {input_type}",
+    ]
+    if platform:
+        lines.append(f"Platform: {platform}")
+    if placeholder:
+        lines.append(f"Input placeholder: {placeholder}")
+    if field.get("hasVisibleInput"):
+        lines.append("UI: free-text input box (not chips/radio)")
+    if field.get("hasDobInput"):
+        lines.append("UI: date-of-birth triplet (DD/MM/YYYY)")
+
+    if input_type == "pincode":
+        lines.append("Reply with postal pincode digits only (e.g. 560001). No Yes/No.")
+    elif input_type == "location":
+        lines.append(
+            "Reply with a city or location name only (e.g. Bengaluru). "
+            "Never reply with a number, Yes/No, or years of experience."
+        )
+    elif input_type == "ctc_numeric" or is_numeric_ctc_question(label):
+        if re.search(r"\bexpected\b", label, re.I) and not re.search(r"\bcurrent\b", label, re.I):
+            lines.append(
+                "Reply with EXPECTED CTC only — a single number in lakhs (e.g. 45). "
+                "No currency, breakdown, or current CTC."
+            )
+        elif re.search(r"\bcurrent\b", label, re.I):
+            lines.append(
+                "Reply with CURRENT CTC only — a single number in lakhs (e.g. 38). "
+                "No currency, breakdown, or expected CTC."
+            )
+        else:
+            lines.append(
+                "Reply with CTC as a single number in lakhs only (e.g. 38). "
+                "No LPA text, breakdown, or sentences."
+            )
+    elif input_type == "years_numeric":
+        platform = str(field.get("platform", "")).lower()
+        if platform == "naukri":
+            lines.append(
+                "Reply with years as a single integer only (e.g. 4 or 0). "
+                "No 'years' suffix, units, or sentences. "
+                "Use 0 when the candidate has no experience in that exact skill "
+                "(see application_facts.skill_years if set)."
+            )
+        else:
+            lines.append(
+                "Reply with years of experience as a number (e.g. 5 or 5 years). "
+                "Use 0 only if the candidate truly has no experience in that skill. "
+                "Do not include salary, CTC, or unrelated details."
+            )
+    elif input_type == "date":
+        lines.append("Reply with date as DD/MM/YYYY (e.g. 15/08/1995).")
+    elif input_type == "number":
+        lines.append("Reply with a number only — no units or explanation unless the question asks.")
+    elif input_type == "single_choice":
+        if options:
+            lines.append(f"Options (reply with exactly one label): {', '.join(options)}")
+            lines.append("Reply with exactly one option label from the list — no extra text.")
             if any(re.search(r"<\s*\d+|\d+\s*[-–]\s*\d+|\d+\s*\+", o) for o in options):
                 lines.append(
-                    "For year-range options, set canonical to the candidate's specific years "
-                    "(e.g. '4' or '4 years') from profile/resume — not the range label."
+                    "For year-range chips, canonical should be the candidate's actual years "
+                    "(e.g. '5') from profile/resume — not the range label."
                 )
-        elif kind == "checkbox_group":
+        else:
+            lines.append("Reply with exactly Yes or No.")
+    elif input_type == "multi_choice":
+        if options:
+            lines.append(f"Options: {', '.join(options)}")
             lines.append("Reply with comma-separated option labels from the list.")
-    elif kind in ("radio", "checkbox"):
+    elif input_type == "yes_no_checkbox":
         lines.append("Reply with exactly Yes or No.")
-    elif kind in ("input", "textarea", "text"):
-        lines.append("Reply with a short, direct answer (1-3 sentences max unless numeric).")
+    elif kind in ("radio", "checkbox") and not options:
+        lines.append("Reply with exactly Yes or No.")
+    elif kind in ("input", "textarea", "text", "short_text"):
+        lines.append("Reply with a short, direct answer. Use digits only when the field expects a number.")
 
-    label = str(field.get("label", ""))
+    if options and input_type not in ("single_choice", "multi_choice"):
+        lines.append(f"Available options: {', '.join(options)}")
+
     if re.search(
         r"\b(associated with|previously employed|employed by|worked (?:at|for)|"
         r"received an offer from|military spouse)\b",
@@ -78,19 +210,39 @@ def _field_instructions(field: dict[str, Any]) -> str:
         re.I,
     ):
         lines.append(
-            "This is a past-employer or eligibility check. Use the work experience list "
-            "in the profile. Answer Yes ONLY if the named company appears in that list; "
-            "otherwise answer No. Reply with exactly Yes or No."
+            "Past-employer check: answer Yes ONLY if the company is in the work experience list; "
+            "otherwise No. Reply with exactly Yes or No."
         )
 
+    lines.append("=== END FORM FIELD ===")
     return "\n".join(lines)
 
 
-def _build_application_context(config: AppConfig, question: str = "") -> str:
+def _profile_source_mtimes(config: AppConfig) -> tuple[float, ...]:
+    base = config.base_dir
+    paths = (
+        base / "profile" / "resume_facts.yaml",
+        base / "profile" / "application_facts.yaml",
+    )
+    return tuple(p.stat().st_mtime if p.exists() else 0.0 for p in paths)
+
+
+def clear_profile_context_cache() -> None:
+    """Drop cached profile text (call at start of each apply run)."""
+    _PROFILE_CTX_CACHE.clear()
+
+
+def _build_application_context(config: AppConfig) -> str:
+    """Verified candidate profile from resume_facts.yaml + application_facts + compensation."""
+    cache_key = str(config.base_dir.resolve())
+    mtimes = _profile_source_mtimes(config)
+    cached = _PROFILE_CTX_CACHE.get(cache_key)
+    if cached and cached[0] == mtimes:
+        return cached[1]
+
     facts = load_resume_facts(config.base_dir)
-    app_facts = load_application_facts(config.base_dir)
+    app_facts = load_application_facts(config)
     comp = config.compensation
-    resume_excerpt = relevant_resume_excerpt(config, question, max_chars=3500)
 
     lines = [
         build_resume_context(facts),
@@ -103,6 +255,8 @@ def _build_application_context(config: AppConfig, question: str = "") -> str:
         f"- Expected CTC: {comp.expected_ctc_lpa:g} LPA",
         f"- LinkedIn: {config.user.linkedin}",
     ]
+    if config.user.github:
+        lines.append(f"- GitHub: {config.user.github}")
 
     for key, value in app_facts.items():
         if value in (None, "", []):
@@ -112,28 +266,9 @@ def _build_application_context(config: AppConfig, question: str = "") -> str:
         else:
             lines.append(f"- {key}: {value}")
 
-    if resume_excerpt:
-        lines.extend(
-            [
-                "",
-                "Resume excerpt (from uploaded PDF — use ONLY this for role/skill/project details):",
-                resume_excerpt,
-            ]
-        )
-
-    if facts.experience:
-        lines.extend(["", "Work experience (employers — use for past/current employer Yes/No checks):"])
-        for role in facts.experience:
-            company = str(role.get("company", "")).strip()
-            title = str(role.get("title", "")).strip()
-            period = str(role.get("period", "")).strip()
-            if company:
-                line = f"- {title} at {company}" if title else f"- {company}"
-                if period:
-                    line += f" ({period})"
-                lines.append(line)
-
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    _PROFILE_CTX_CACHE[cache_key] = (mtimes, text)
+    return text
 
 
 def _memory_entries(config: AppConfig) -> list[tuple[str, str]]:
@@ -157,7 +292,7 @@ def _faiss_index_path(config: AppConfig) -> Path:
 
 
 def _memory_mtime(config: AppConfig) -> float:
-    p = config.base_dir / "data" / "user_memory.json"
+    p = config.user_memory_path
     return p.stat().st_mtime if p.exists() else 0.0
 
 
@@ -167,10 +302,11 @@ def _get_faiss_store(config: AppConfig):
 
     try:
         from langchain_community.vectorstores import FAISS
-        from langchain_huggingface import HuggingFaceEmbeddings
     except Exception as exc:
         logger.debug("FAISS dependencies unavailable, falling back: %s", exc)
         return None
+
+    from .embeddings import get_embeddings
 
     idx_path = _faiss_index_path(config)
     cache_key = str(idx_path.resolve())
@@ -179,10 +315,8 @@ def _get_faiss_store(config: AppConfig):
     if cached and cached[0] == mtime:
         return cached[1]
 
-    try:
-        embeddings = HuggingFaceEmbeddings(model_name=config.llm.embeddings_model)
-    except Exception as exc:
-        logger.warning("FAISS embedding model unavailable, falling back: %s", exc)
+    embeddings = get_embeddings(config.llm.embeddings_model)
+    if embeddings is None:
         _FAISS_CACHE[cache_key] = (mtime, None)
         return None
 
@@ -258,15 +392,60 @@ def retrieve_similar_answers(
                     SimilarAnswer(
                         question=q,
                         answer=a,
-                        score=_distance_to_similarity(distance),
+                        score=_composite_similarity_score(question, q, distance),
                     )
                 )
             if picked:
+                picked.sort(key=lambda x: x.score, reverse=True)
                 return picked[:limit]
         except Exception as exc:
             logger.debug("FAISS similarity_search failed, fallback to lexical: %s", exc)
 
-    return _lexical_similar_answers(config, question, limit=limit)
+    lexical = _lexical_similar_answers(config, question, limit=limit)
+    lexical.sort(key=lambda x: x.score, reverse=True)
+    return lexical[:limit]
+
+
+def _token_set(text: str) -> set[str]:
+    q_norm = re.sub(r"\s+", " ", text.strip().lower())
+    return {t for t in re.findall(r"[a-z0-9+#./-]+", q_norm) if len(t) > 2}
+
+
+def _composite_similarity_score(question: str, matched_question: str, distance: float) -> float:
+    """Blend embedding distance, question group, and token overlap (group weighted for accuracy)."""
+    cosine_sim = _distance_to_similarity(distance)
+    current_group = classify_question(question)
+    matched_group = classify_question(matched_question)
+    group_match = 1.0 if current_group == matched_group else 0.0
+    query_tokens = _token_set(question)
+    match_tokens = _token_set(matched_question)
+    token_overlap = (
+        len(query_tokens & match_tokens) / max(len(query_tokens), 1) if query_tokens else 0.0
+    )
+    return 0.50 * cosine_sim + 0.40 * group_match + 0.10 * token_overlap
+
+
+def retrieve_best_similar_answer(
+    config: AppConfig,
+    question: str,
+    *,
+    require_same_group: bool = True,
+) -> SimilarAnswer | None:
+    """Best composite-scored prior Q/A for vector top-1 auto-answer."""
+    candidates = retrieve_similar_answers(
+        config, question, k=max(config.llm.rag_top_k, 5)
+    )
+    if not candidates:
+        return None
+
+    current_group = classify_question(question)
+    best: SimilarAnswer | None = None
+    for item in candidates:
+        if require_same_group and classify_question(item.question) != current_group:
+            continue
+        if best is None or item.score > best.score:
+            best = item
+    return best
 
 
 def _lexical_similar_answers(
@@ -313,6 +492,34 @@ def _lexical_similar_answers(
     ]
 
 
+def _format_free_tier_hints(ctx: Any) -> str:
+    """Format deterministic pre-LLM hints so the model can answer in one shot."""
+    lines: list[str] = []
+    if ctx.config_hint and str(ctx.config_hint).strip():
+        lines.append(f"Config/rules answer: {ctx.config_hint.strip()}")
+    if ctx.rag_raw and str(ctx.rag_raw).strip():
+        raw = str(ctx.rag_raw).strip()
+        fill = str(ctx.rag_fill).strip() if ctx.rag_fill else ""
+        if fill and fill != raw:
+            lines.append(f"Rule RAG answer (field-formatted): {fill}")
+        lines.append(f"Rule RAG answer: {raw}")
+    elif ctx.rag_fill and str(ctx.rag_fill).strip():
+        lines.append(f"Rule RAG answer: {ctx.rag_fill.strip()}")
+    if ctx.vector_best is not None:
+        v = ctx.vector_best
+        lines.append(
+            f"Vector match (score={v.score:.3f}, same question group): "
+            f"Q: {v.question} → A: {v.answer}"
+        )
+    if not lines:
+        return ""
+    return (
+        "\n\n=== PRE-COMPUTED HINTS (from rules/config/memory — use when correct for this field) ===\n"
+        + "\n".join(lines)
+        + "\nPrefer the highest-confidence hint that matches the field format and profile."
+    )
+
+
 def _format_similar_answers(answers: list[SimilarAnswer]) -> str:
     if not answers:
         return ""
@@ -337,13 +544,18 @@ def _memory_examples(
 
 
 def _normalize_llm_answer(answer: str, field: dict[str, Any]) -> str:
-    from .application_questions import _normalize_to_option
+    from .answers.chips import _normalize_to_option
+    from .answers.compensation import resolve_ctc_numeric_answer
+    from .answers.fields import enrich_field_for_llm
 
+    field = enrich_field_for_llm(field)
     text = _strip_llm_text(answer)
     if not text:
         return ""
 
     kind = str(field.get("kind", "text"))
+    input_type = str(field.get("input_type", kind))
+    label = str(field.get("label", ""))
     options = [str(o).strip() for o in field.get("options", []) if str(o).strip()]
 
     if options:
@@ -366,6 +578,33 @@ def _normalize_llm_answer(answer: str, field: dict[str, Any]) -> str:
             return "No"
         if re.search(r"\byes\b", text, re.I):
             return "Yes"
+
+    if input_type == "ctc_numeric":
+        resolved = resolve_ctc_numeric_answer(label, text, None)
+        if resolved and re.fullmatch(r"\d+(?:\.\d+)?", resolved):
+            return resolved
+
+    if input_type in ("years_numeric", "number"):
+        match = re.search(r"(\d+(?:\.\d+)?)", text)
+        if match:
+            num = match.group(1)
+            platform = str(field.get("platform", "")).lower()
+            if input_type == "years_numeric" and platform == "naukri":
+                return str(int(float(num))) if float(num) == int(float(num)) else num
+            if input_type == "years_numeric" and re.search(r"\byears?\b", label, re.I):
+                return f"{num} years" if not re.search(r"\byears?\b", text, re.I) else text
+            return num
+
+    if input_type == "pincode":
+        match = re.search(r"(\d{4,8})", text)
+        if match:
+            return match.group(1)
+
+    if input_type == "location":
+        if re.fullmatch(r"\d+(?:\.\d+)?", text.strip()):
+            return ""
+        if text.strip().lower() in ("yes", "no"):
+            return ""
 
     if len(text) > 500 and kind in ("input", "text", "textarea"):
         text = text[:497].rsplit(" ", 1)[0] + "..."
@@ -399,44 +638,458 @@ def _chat_model(config: AppConfig) -> Any | None:
     llm = config.llm
     if not llm.enabled:
         return None
-    provider = llm.provider.strip().lower()
-    if provider == "groq":
-        api_key = (llm.api_key or os.environ.get("GROQ_API_KEY", "")).strip()
-        if not api_key:
-            logger.warning("LLM enabled but no Groq API key (set llm.api_key or GROQ_API_KEY)")
-            return None
-        return ChatGroq(
-            api_key=api_key,
-            model=llm.model,
-            temperature=llm.temperature,
-            max_tokens=llm.max_tokens,
-        )
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        logger.warning("langchain-ollama is not installed — pip install langchain-ollama")
+        return None
+    base_url = (llm.base_url or "http://127.0.0.1:11434").rstrip("/")
+    return ChatOllama(
+        base_url=base_url,
+        model=llm.model or "job-answers",
+        temperature=llm.temperature,
+        num_predict=llm.max_tokens,
+        keep_alive=llm.keep_alive or "30m",
+    )
 
-    if provider == "freemodel":
-        # FreeModel docs: OpenAI-compatible API with base URL https://api.freemodel.dev
-        api_key = (
-            llm.api_key
-            or os.environ.get("FREEMODEL_API_KEY", "")
-            or os.environ.get("OPENAI_API_KEY", "")
-        ).strip()
-        if not api_key:
-            logger.warning(
-                "LLM enabled but no FreeModel API key (set llm.api_key, FREEMODEL_API_KEY, or OPENAI_API_KEY)"
-            )
-            return None
-        base_url = (llm.base_url or "https://api.freemodel.dev").rstrip("/")
-        if not base_url.endswith("/v1"):
-            base_url = f"{base_url}/v1"
-        return ChatOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            model=llm.model or "gpt-5.5",
-            temperature=llm.temperature,
-            max_tokens=llm.max_tokens,
-        )
 
-    logger.warning("Unsupported llm.provider=%r; expected groq or freemodel", llm.provider)
+def _verifier_model(config: AppConfig) -> Any | None:
+    llm = config.llm
+    if not llm.verifier_enabled or not llm.verifier_model:
+        return None
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        return None
+    base_url = (llm.base_url or "http://127.0.0.1:11434").rstrip("/")
+    return ChatOllama(
+        base_url=base_url,
+        model=llm.verifier_model,
+        temperature=0.0,
+        num_predict=64,
+        keep_alive=llm.keep_alive or "30m",
+    )
+
+
+def verify_llm_answer_detailed(
+    config: AppConfig,
+    *,
+    question: str,
+    field: dict[str, Any],
+    fill_answer: str,
+    profile_excerpt: str = "",
+    similar_answers: list[SimilarAnswer] | None = None,
+    rag_hint: str | None = None,
+) -> tuple[bool, bool]:
+    """Independent verifier model. Returns ``(ok, actually_verified)``.
+
+    Runs for EVERY answer (not just high-risk) so it can serve as the required
+    second source backing an LLM answer. It checks the proposed answer against the
+    candidate profile AND the databank (past answers + rule/RAG hints), so a value
+    is approved when it is supported by either.
+
+    ``actually_verified`` is True only when a verifier model genuinely ran and
+    approved — that is the corroboration signal. It is False when the verifier is
+    disabled/unavailable, which must NOT be treated as backing.
+    """
+    from .application_questions import enrich_field_for_llm
+
+    field = enrich_field_for_llm(field)
+
+    model = _verifier_model(config)
+    if not model:
+        return True, False
+
+    databank_lines: list[str] = []
+    if rag_hint and str(rag_hint).strip():
+        databank_lines.append(f"Rules/RAG suggestion: {str(rag_hint).strip()}")
+    for item in (similar_answers or [])[:3]:
+        ans = str(getattr(item, "answer", "") or "").strip()
+        ques = str(getattr(item, "question", "") or "").strip()
+        if ans:
+            databank_lines.append(f"Past answer — Q: {ques[:80]} -> A: {ans[:80]}")
+    databank_block = (
+        "\n\n=== CANDIDATE DATABANK (past answers + rules) ===\n"
+        + "\n".join(databank_lines)
+        if databank_lines
+        else ""
+    )
+
+    system = SystemMessage(
+        content=(
+            "You verify job application answers against the candidate profile AND "
+            "databank. "
+            'Return strict JSON only: {"ok": true} or {"ok": false}. '
+            "ok=true only when the answer is supported by the profile or the "
+            "databank (past answers / rules) and matches the field format. "
+            "ok=false if it contradicts them or is unsupported invention."
+        )
+    )
+    human = HumanMessage(
+        content=(
+            f"Profile:\n{profile_excerpt[:2000]}\n"
+            f"{databank_block}\n\n"
+            f"Field: {field.get('kind', 'text')} / {field.get('input_type', '')}\n"
+            f"Options: {', '.join(str(o) for o in field.get('options', []) if o)}\n"
+            f"Question: {question}\n"
+            f"Proposed answer: {fill_answer}"
+        )
+    )
+    try:
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
+        raw = str(getattr(response, "content", "") or "")
+        match = re.search(r"\{.*\}", raw, re.S)
+        if match:
+            obj = json.loads(match.group(0))
+            ok = bool(obj.get("ok"))
+            if not ok:
+                logger.info("Verifier rejected answer for: %s", question[:60])
+            return ok, ok
+    except Exception as exc:
+        logger.debug("Verifier call failed, allowing answer: %s", exc)
+    return True, False
+
+
+def verify_llm_answer(
+    config: AppConfig,
+    *,
+    question: str,
+    field: dict[str, Any],
+    fill_answer: str,
+    profile_excerpt: str = "",
+    similar_answers: list[SimilarAnswer] | None = None,
+    rag_hint: str | None = None,
+) -> bool:
+    """Back-compat wrapper: pass/fail only (see ``verify_llm_answer_detailed``)."""
+    ok, _ = verify_llm_answer_detailed(
+        config,
+        question=question,
+        field=field,
+        fill_answer=fill_answer,
+        profile_excerpt=profile_excerpt,
+        similar_answers=similar_answers,
+        rag_hint=rag_hint,
+    )
+    return ok
+
+
+def _normalize_for_match(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
+
+
+def _option_numeric_bounds(opt: str) -> tuple[float, float] | None:
+    """Parse an option into a numeric [lo, hi] range (inf for open ends).
+
+    Handles "1-3 years", "5 to 10", "more than 8" / "8+", "less than 6" / "<6",
+    "up to 3", and bare values like "6 years" / "1 month".
+    """
+    o = opt.lower()
+    nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", o)]
+    if not nums:
+        if re.search(r"immediate|immediately|right away|available now|asap|already joined", o):
+            return (0.0, 0.0)
+        return None
+    if len(nums) >= 2 and re.search(r"-|–|—|\bto\b|\bbetween\b", o):
+        return (min(nums[0], nums[1]), max(nums[0], nums[1]))
+    if re.search(r"more than|greater than|above|over|at least|minimum|\bmin\b", o) or re.search(
+        r"\d+\s*\+", o
+    ):
+        return (nums[0], float("inf"))
+    if re.search(
+        r"less than|under|below|up\s*to|upto|at most|maximum|\bmax\b|within|"
+        r"or\s*less|or\s*fewer|\bless\b|\bfewer\b|<",
+        o,
+    ):
+        return (0.0, nums[0])
+    return (nums[0], nums[0])
+
+
+def _numeric_answer_value(answer: str) -> float | None:
+    """A single numeric magnitude if the answer is essentially just a number."""
+    a = answer.strip().lower()
+    nums = re.findall(r"\d+(?:\.\d+)?", a)
+    if len(nums) != 1:
+        return None
+    # Reject answers that are clearly words with an incidental number.
+    leftover = re.sub(r"\d+(?:\.\d+)?", "", a)
+    leftover = re.sub(
+        r"\b(years?|yrs?|year|months?|mos?|days?|lpa|lacs?|lakhs?|inr|rs|k|cr|crores?|"
+        r"immediate|notice|period|ctc|exp|experience|of|in|the|approx|about|around|"
+        r"plus|\+|\.|,|/|-|to)\b",
+        "",
+        leftover,
+    ).strip()
+    if leftover:
+        return None
+    return float(nums[0])
+
+
+def _deterministic_option_match(answer: str, opts: list[str]) -> str | None:
+    """Reliable, non-LLM matches: exact-normalized text or numeric range/value."""
+    norm_answer = _normalize_for_match(answer)
+    if norm_answer:
+        for opt in opts:
+            if _normalize_for_match(opt) == norm_answer:
+                return opt
+
+    val = _numeric_answer_value(answer)
+    if val is not None:
+        containing: list[tuple[float, float, str]] = []
+        for opt in opts:
+            bounds = _option_numeric_bounds(opt)
+            if bounds and bounds[0] <= val <= bounds[1]:
+                lo, hi = bounds
+                containing.append((lo, hi - lo, opt))
+        if containing:
+            # When the value sits on a shared boundary (in >1 band, e.g. 4 in both
+            # "2-4" and "4-6"), prefer the higher band — the one with the larger
+            # lower bound — so we report the next-max range. Tightest width breaks
+            # any remaining tie.
+            containing.sort(key=lambda t: (-t[0], t[1]))
+            return containing[0][2]
     return None
+
+
+_ZERO_OPTION_TEXT = re.compile(
+    r"\bfresher\b|no experience|not applicable|\bn/?a\b|\bnil\b|\bzero\b|"
+    r"\bnone\b|\bnever\b|no relevant|haven't|have not|do not have|don't have",
+    re.I,
+)
+
+
+def _option_represents_zero(opt: str) -> bool:
+    """True if the option covers 'zero' — 0 inside its numeric range, or zero-ish text.
+
+    Used to decide whether a "no experience" (0) answer has any honest option to map
+    onto (e.g. "0-2 years", "Less than 1 year", "Fresher", "None").
+    """
+    bounds = _option_numeric_bounds(opt)
+    if bounds is not None:
+        return bounds[0] <= 0 <= bounds[1]
+    return bool(_ZERO_OPTION_TEXT.search(opt))
+
+
+def _numeric_nearest_option(answer: str, opts: list[str]) -> str | None:
+    """Closest numeric option when none strictly contains the value."""
+    val = _numeric_answer_value(answer)
+    if val is None:
+        return None
+    best: str | None = None
+    best_dist = float("inf")
+    for opt in opts:
+        bounds = _option_numeric_bounds(opt)
+        if not bounds:
+            continue
+        lo, hi = bounds
+        if lo <= val <= hi:
+            dist = 0.0
+        else:
+            hi_dist = abs(val - hi) if hi != float("inf") else float("inf")
+            dist = min(abs(val - lo), hi_dist)
+        if dist < best_dist:
+            best_dist = dist
+            best = opt
+    return best
+
+
+def map_answer_to_option(
+    config: AppConfig,
+    *,
+    question: str,
+    options: list[str],
+    answer: str,
+) -> str | None:
+    """Map our stored answer onto exactly one of the question's options.
+
+    Used only to satisfy a form whose option wording differs from our answer
+    (e.g. answer "1" vs option "1 Month", answer "7" vs option "6-8 years").
+    Returns one of ``options`` verbatim, or None. Does NOT change the saved
+    answer — this is a fill-time format conversion only.
+
+    Strategy: deterministic exact/numeric match first (LLMs are unreliable at
+    "is 7 within 6-8?"), then a strongly-constrained LLM prompt that must pick
+    the single nearest option, then a numeric-nearest fallback.
+    """
+    opts = [str(o).strip() for o in options if str(o).strip()]
+    if not opts or not answer.strip():
+        return None
+
+    # Never inflate "no experience" into a positive band. If the answer is 0 (a
+    # skill we don't have / 0 years) and no option honestly represents zero, refuse
+    # to map so the question is left unanswered/queued rather than claiming, say,
+    # "2-4 years" of Salesforce. Notice-period style "0 -> Immediate / 15 days or
+    # less" still maps because those options DO represent zero.
+    if _numeric_answer_value(answer) == 0 and not any(
+        _option_represents_zero(o) for o in opts
+    ):
+        logger.info(
+            "Answer %r is zero experience but no zero option in %r — not mapping "
+            "(avoid overstating) for: %s",
+            answer[:40],
+            opts,
+            question[:50],
+        )
+        return None
+
+    deterministic = _deterministic_option_match(answer, opts)
+    if deterministic is not None:
+        logger.info(
+            "Mapped answer %r -> option %r (exact/numeric) for: %s",
+            answer[:40],
+            deterministic[:40],
+            question[:50],
+        )
+        return deterministic
+
+    model = _chat_model(config)
+    if model is None:
+        return _numeric_nearest_option(answer, opts)
+
+    numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(opts))
+    system = SystemMessage(
+        content=(
+            "You convert a candidate's existing answer into exactly ONE of a "
+            "form's preset options. You never change the meaning of the answer — "
+            "you only choose the option that is the closest/nearest match.\n"
+            "Rules:\n"
+            "- Always pick the SINGLE nearest option, even if the wording differs.\n"
+            "- For numbers, pick the option whose numeric range CONTAINS the "
+            "answer; if none contains it, pick the closest range.\n"
+            "  Examples: answer 7 with [\"1-3 years\",\"6-8 years\",\"8+ years\"] -> 2; "
+            "answer 0 with [\"Immediate\",\"15 Days or less\",\"1 Month\"] -> 1 (0 days = immediate); "
+            "answer 12 (days) with [\"15 Days or less\",\"1 Month\",\"2 Months\"] -> 1.\n"
+            "- For yes/no options, map an affirmative/relevant answer to \"Yes\" "
+            "and a negative/irrelevant one to \"No\" "
+            "(e.g. question \"Are you based in Bengaluru?\" answer \"Bengaluru\" -> Yes).\n"
+            "- Only return index 0 if NO option is even loosely related to the "
+            "answer.\n"
+            'Return STRICT JSON only: {"index": N} (1-based option number, or 0).'
+        )
+    )
+    human = HumanMessage(
+        content=(
+            f"Question: {question}\n"
+            f"Candidate's answer: {answer}\n"
+            f"Options:\n{numbered}\n"
+            "Return the JSON for the single nearest option."
+        )
+    )
+    try:
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
+        raw = str(getattr(response, "content", "") or "")
+        match = re.search(r"\{.*\}", raw, re.S)
+        if match:
+            idx = int(json.loads(match.group(0)).get("index", 0))
+            if 1 <= idx <= len(opts):
+                chosen = opts[idx - 1]
+                logger.info(
+                    "LLM mapped answer %r -> option %r for: %s",
+                    answer[:40],
+                    chosen[:40],
+                    question[:50],
+                )
+                return chosen
+    except Exception as exc:
+        logger.debug("LLM option mapping failed: %s", exc)
+
+    fallback = _numeric_nearest_option(answer, opts)
+    if fallback is not None:
+        logger.info(
+            "Mapped answer %r -> option %r (numeric nearest) for: %s",
+            answer[:40],
+            fallback[:40],
+            question[:50],
+        )
+    return fallback
+
+
+def select_options_for_question(
+    config: AppConfig,
+    *,
+    question: str,
+    options: list[str],
+    multi: bool = False,
+    extra_context: str | None = None,
+) -> list[str]:
+    """Pick the best option(s) for a choice question using the candidate profile.
+
+    This is the primary answer-determination path for options-based questions:
+    the options are fed straight into the decision and the model returns the
+    best one(s) from the list — rather than generating free text and converting
+    it afterwards. ``extra_context`` may carry RAG/rule hints and prior answers.
+    Returns option strings verbatim (a subset of ``options``) — at most one for
+    single-select, possibly several for multi-select. Empty if it can't decide.
+    """
+    opts = [str(o).strip() for o in options if str(o).strip()]
+    if not opts:
+        return []
+    model = _chat_model(config)
+    if model is None:
+        return []
+    profile = _build_application_context(config)
+    numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(opts))
+    count_hint = (
+        "Return every option that applies to the candidate"
+        if multi
+        else "Return exactly one option"
+    )
+    system = SystemMessage(
+        content=(
+            "You select the option(s) that best fit the candidate for a "
+            "job-application form, using ONLY the verified candidate profile "
+            "(and any hints) below. Do not invent facts. "
+            f"{count_hint}. Always choose the closest option(s) rather than "
+            "abstaining unless truly none apply. "
+            'Return strict JSON only: {"indices": [N, ...]} with 1-based option '
+            'numbers, or {"indices": []} if none fit. Choose only from the '
+            "listed options."
+        )
+    )
+    hint_block = f"\n=== HINTS (rules / prior answers) ===\n{extra_context}\n" if extra_context else ""
+    human = HumanMessage(
+        content=(
+            f"=== VERIFIED CANDIDATE PROFILE ===\n{profile}\n"
+            f"{hint_block}\n"
+            f"Question: {question}\n"
+            f"Options:\n{numbered}\n"
+            f"{count_hint} that best fits the candidate."
+        )
+    )
+    try:
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
+        raw = str(getattr(response, "content", "") or "")
+        match = re.search(r"\{.*\}", raw, re.S)
+        if not match:
+            return []
+        data = json.loads(match.group(0))
+        idxs = data.get("indices")
+        if idxs is None:
+            idxs = data.get("index")
+        if isinstance(idxs, int):
+            idxs = [idxs]
+        chosen: list[str] = []
+        for raw_idx in idxs or []:
+            try:
+                n = int(raw_idx)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= n <= len(opts) and opts[n - 1] not in chosen:
+                chosen.append(opts[n - 1])
+        if not multi:
+            chosen = chosen[:1]
+        if chosen:
+            logger.info(
+                "LLM selected option(s) %s for: %s",
+                [c[:30] for c in chosen],
+                question[:50],
+            )
+        return chosen
+    except Exception as exc:
+        logger.debug("LLM option selection failed: %s", exc)
+        return []
 
 
 def generate_llm_decision(
@@ -444,10 +1097,10 @@ def generate_llm_decision(
     *,
     question: str,
     field: dict[str, Any] | None = None,
-    jd: str = "",
-    job_title: str = "",
-    company: str = "",
     similar_answers: list[SimilarAnswer] | None = None,
+    rag_hint: str | None = None,
+    free_tier: Any | None = None,
+    profile_context: str | None = None,
 ) -> LLMDecision | None:
     """Answer a screening question with LLM and include confidence [0..1]."""
     model = _chat_model(config)
@@ -455,25 +1108,42 @@ def generate_llm_decision(
         return None
 
     field = field or {"kind": "text", "label": question}
-    profile = _build_application_context(config, question=question)
+    from .application_questions import enrich_field_for_llm
+
+    field = enrich_field_for_llm(field)
+    profile = profile_context or _build_application_context(config)
+    if similar_answers is None and free_tier is not None and free_tier.similar_answers:
+        similar_answers = free_tier.similar_answers
     if similar_answers is None and config.application.rag_answer_questions:
         similar_answers = retrieve_similar_answers(config, question)
-    examples = _memory_examples(config, question, similar_answers=similar_answers)
-    job_bits = []
-    if job_title:
-        job_bits.append(f"Role: {job_title}")
-    if company:
-        job_bits.append(f"Company: {company}")
-    if jd:
-        job_bits.append(f"Job description excerpt:\n{jd[:2500]}")
+    examples = _format_similar_answers(similar_answers) if similar_answers else ""
+
+    hint_parts: list[str] = []
+    if free_tier is not None:
+        tier_block = _format_free_tier_hints(free_tier)
+        if tier_block:
+            hint_parts.append(tier_block)
+    elif rag_hint and str(rag_hint).strip():
+        hint_parts.append(
+            f"\n\n=== RAG SUGGESTION (from application_facts / rules) ===\n"
+            f"{str(rag_hint).strip()}\n"
+            "Use this when it fits the question and field; lower confidence if you disagree."
+        )
+    hints_block = "".join(hint_parts)
+    examples_block = f"\n\n{examples}" if examples else ""
 
     system = SystemMessage(
         content=(
             f"You help {config.user.name} answer job application screening questions.\n"
-            "Use ONLY the verified candidate profile below. Never invent employers, "
-            "credentials, PAN, UAN, or metrics.\n"
+            "Use ONLY the verified candidate profile below (resume_facts.yaml + application_facts). "
+            "Never invent employers, credentials, PAN, UAN, or metrics.\n"
             "When similar prior answers are provided, prefer adapting the highest-similarity "
             "answer that fits the current field/options — do not copy unrelated answers.\n"
+            "When pre-computed hints or RAG suggestions are provided, prefer them when they "
+            "match the profile and field format — rate confidence high only when correct.\n"
+            "The FORM FIELD block describes control kind and expected value type — "
+            "your answer MUST match that format (e.g. ctc_numeric = digits only, "
+            "single_choice = exact option label).\n"
             "Return strict JSON only: "
             '{"answer":"...","canonical":"...","confidence":0.0-1.0}.\n'
             "answer = exact option label when options are given (for form fill). "
@@ -485,33 +1155,57 @@ def generate_llm_decision(
     )
     human = HumanMessage(
         content=(
-            f"{profile}\n\n"
-            f"{examples}\n\n"
-            f"{' | '.join(job_bits) if job_bits else ''}\n\n"
+            f"{profile}"
+            f"{examples_block}"
+            f"{hints_block}\n\n"
             f"Question: {question}"
         ).strip()
     )
 
     try:
-        response = model.invoke([system, human])
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
         raw = getattr(response, "content", "") or ""
         parsed = _parse_llm_json(str(raw))
         if parsed:
             answer, confidence, canonical = parsed
             answer = _normalize_llm_answer(answer, field)
             if answer:
-                from .application_questions import canonicalize_stored_answer
+                from .answers.format_finalize import finalize_answer_for_field
 
-                stored = canonical or canonicalize_stored_answer(
-                    question, answer, field, config
+                finalized = finalize_answer_for_field(
+                    question,
+                    field,
+                    config,
+                    raw_answer=answer,
+                    canonical=canonical,
                 )
+                if not finalized:
+                    return None
+                fill, stored = finalized
+                # Verification is deferred to the acceptance step (llm_decision_acceptable)
+                # so the verifier model is only invoked when RAG/vector did NOT already
+                # corroborate the answer — avoiding a redundant model call.
                 logger.info("LLM answer for: %s (confidence=%.2f)", question[:60], confidence)
-                return LLMDecision(answer=answer, confidence=confidence, canonical=stored)
+                return LLMDecision(answer=fill, confidence=confidence, canonical=stored)
         # Backward fallback if provider returns plain text
         answer = _normalize_llm_answer(str(raw), field)
         if answer:
-            logger.info("LLM plain-text answer for: %s (confidence=0.50)", question[:60])
-            return LLMDecision(answer=answer, confidence=0.5)
+            from .answers.format_finalize import finalize_answer_for_field
+
+            finalized = finalize_answer_for_field(
+                question, field, config, raw_answer=answer
+            )
+            if not finalized:
+                return None
+            fill, stored = finalized
+            confidence = config.llm.plain_text_confidence
+            logger.info(
+                "LLM plain-text answer for: %s (confidence=%.2f)",
+                question[:60],
+                confidence,
+            )
+            return LLMDecision(answer=fill, confidence=confidence, canonical=stored)
     except Exception as exc:
         logger.warning("LLM answer failed for %s: %s", question[:60], exc)
     return None
@@ -522,18 +1216,12 @@ def generate_llm_answer(
     *,
     question: str,
     field: dict[str, Any] | None = None,
-    jd: str = "",
-    job_title: str = "",
-    company: str = "",
     similar_answers: list[SimilarAnswer] | None = None,
 ) -> str | None:
     decision = generate_llm_decision(
         config,
         question=question,
         field=field,
-        jd=jd,
-        job_title=job_title,
-        company=company,
         similar_answers=similar_answers,
     )
     if not decision:

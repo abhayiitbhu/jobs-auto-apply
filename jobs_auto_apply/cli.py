@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import click
@@ -9,6 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .browser import (
+    PARALLEL_COOKIE_PLATFORMS,
     hirist_session,
     instahyre_session,
     naukri_session,
@@ -34,6 +36,7 @@ from .instahyre.apply import apply_batch as instahyre_apply_batch, apply_from_fe
 from .instahyre.search import apply_filters as instahyre_apply_filters
 from .instahyre.search import collect_from_search_urls as instahyre_collect_from_search_urls
 from .instahyre.search import collect_job_listings as instahyre_collect_jobs
+from .apply_filters import filter_pending_jobs
 from .limits import apply_cap, is_unlimited, scrape_limit
 from .memory import get_decision, load_memory, record_decision, save_preferences
 from .pending_questions import (
@@ -44,12 +47,23 @@ from .pending_questions import (
     saved_answers_needing_review_count,
     summary_for_run,
 )
-from .run_issues import clear_run_issues, run_issue_count, run_issues_summary
+from .run_issues import (
+    clear_run_issues,
+    run_attempted_job_keys,
+    run_issue_count,
+    run_issues_summary,
+)
+from .application_questions import clear_draft_answer_cache
 from .pending_retry import retry_pending_jobs
 from .naukri.apply import apply_batch as naukri_apply_batch
+from .naukri.pipeline import run_naukri_pipeline
 from .naukri.search import apply_filters as naukri_apply_filters
 from .naukri.search import collect_job_listings as naukri_collect_jobs
-from .naukri.search import collect_srp_page as naukri_collect_srp_page
+from .naukri.resume_sync import (
+    run_naukri_resume_sync_scheduler,
+    sync_naukri_resume_if_due,
+)
+from .naukri.search import collect_naukri_srp_batch, scroll_naukri_srp_more
 from .naukri.search import go_to_search_page as naukri_go_to_search_page
 from .review import (
     ReviewItem,
@@ -74,6 +88,8 @@ from .utils import (
     filter_skipped_companies,
     job_key,
     load_applied_jobs,
+    reconcile_applied_jobs,
+    clear_deferred_applies,
     setup_logging,
     should_skip_company,
 )
@@ -83,6 +99,7 @@ from .wellfound.pipeline import run_wellfound_pipeline
 from .wellfound.search import apply_filters as wellfound_apply_filters
 from .wellfound.search import collect_job_listings as wellfound_collect_jobs
 
+logger = logging.getLogger("job_apply")
 console = Console()
 
 PLATFORM_CHOICES = (
@@ -127,6 +144,56 @@ def _review_dir(config: AppConfig) -> str:
     return config.application.review_dir
 
 
+async def _run_single_platform(name: str, runner, config: AppConfig) -> int:
+    applied_ids = load_applied_jobs(config.applied_jobs_path)
+    console.print(f"[bold]Starting {name.capitalize()}...[/bold]")
+    try:
+        return int(await runner(config, applied_ids))
+    except Exception as exc:
+        console.print(f"[red]{name.capitalize()} failed: {exc}[/red]")
+        return 0
+
+
+async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
+    runners = [
+        ("wellfound", _run_wellfound),
+        ("uplers", _run_uplers),
+        ("naukri", _run_naukri),
+        ("hirist", _run_hirist),
+        ("instahyre", _run_instahyre),
+    ]
+    selected = [(name, runner) for name, runner in runners if name in targets]
+    if not selected:
+        return 0
+
+    if not config.application.parallel_platforms:
+        total = 0
+        for name, runner in selected:
+            total += await _run_single_platform(name, runner, config)
+        return total
+
+    parallel = [(name, runner) for name, runner in selected if name in PARALLEL_COOKIE_PLATFORMS]
+    sequential = [(name, runner) for name, runner in selected if name not in PARALLEL_COOKIE_PLATFORMS]
+    total = 0
+
+    if len(parallel) > 1:
+        names = ", ".join(name for name, _ in parallel)
+        console.print(
+            f"[cyan]Running {len(parallel)} platforms in parallel: {names}[/cyan]\n"
+            "[dim]Each uses its own browser + cookies (naukri/hirist/instahyre apply workers still apply per site).[/dim]\n"
+        )
+        results = await asyncio.gather(
+            *[_run_single_platform(name, runner, config) for name, runner in parallel]
+        )
+        total += sum(results)
+    elif parallel:
+        total += await _run_single_platform(parallel[0][0], parallel[0][1], config)
+
+    for name, runner in sequential:
+        total += await _run_single_platform(name, runner, config)
+    return total
+
+
 @main.command("run")
 @click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
@@ -136,51 +203,84 @@ def run_cmd(config_path: Path, platform: str, verbose: bool) -> None:
     asyncio.run(_run(config_path, platform, verbose))
 
 
+async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, asyncio.Task]:
+    """Startup sync + 30-minute background scheduler (all platforms)."""
+    stop = asyncio.Event()
+    try:
+        await sync_naukri_resume_if_due(config)
+    except Exception as exc:
+        logger.warning("Naukri resume sync at startup failed: %s", exc)
+    task = asyncio.create_task(run_naukri_resume_sync_scheduler(config, stop))
+    return stop, task
+
+
+async def _stop_naukri_resume_sync(stop: asyncio.Event, task: asyncio.Task) -> None:
+    stop.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
 async def _run(config_path: Path, platform: str, verbose: bool) -> None:
     config = load_config(config_path)
     setup_logging(config.log_path, verbose=verbose)
     _check_prerequisites(config, require_resume=True)
 
-    if config.application.require_review:
-        console.print(
-            "[cyan]require_review is enabled — applying only to jobs you approved.[/cyan]\n"
-            "Collect & review first: [bold]python main.py review --platform all[/bold]"
-        )
-        await _apply_reviewed(config, platform)
-        return
+    resume_stop, resume_task = await _start_naukri_resume_sync(config)
+    try:
+        if config.application.require_review:
+            console.print(
+                "[cyan]require_review is enabled — applying only to jobs you approved.[/cyan]\n"
+                "Collect & review first: [bold]python main.py review --platform all[/bold]"
+            )
+            await _apply_reviewed(config, platform)
+            return
 
-    targets = _enabled_platforms(config, platform)
-    if not targets:
-        console.print(f"[yellow]No enabled platforms match --platform {platform}.[/yellow]")
-        return
-    if platform == "all" and len(targets) > 1:
-        console.print(
-            f"[cyan]Running {len(targets)} platforms in order: {', '.join(targets)}[/cyan]\n"
-            "[dim]Use --platform hirist or --platform instahyre to run a single site.[/dim]\n"
-        )
+        targets = _enabled_platforms(config, platform)
+        if not targets:
+            console.print(f"[yellow]No enabled platforms match --platform {platform}.[/yellow]")
+            return
+        parallel_targets = [t for t in targets if t in PARALLEL_COOKIE_PLATFORMS]
+        if config.application.parallel_platforms and len(parallel_targets) > 1:
+            console.print(
+                f"[cyan]Parallel mode: {', '.join(parallel_targets)} at the same time[/cyan]\n"
+                "[dim]Wellfound/Uplers still run one at a time (Chrome profile). "
+                "Set parallel_platforms: false to run everything sequentially.[/dim]\n"
+            )
+        elif platform == "all" and len(targets) > 1 and not config.application.parallel_platforms:
+            console.print(
+                f"[cyan]Running {len(targets)} platforms in order: {', '.join(targets)}[/cyan]\n"
+                "[dim]Set application.parallel_platforms: true to run naukri/hirist/instahyre together.[/dim]\n"
+            )
 
-    applied_ids = load_applied_jobs(config.applied_jobs_path)
-    total_applied = 0
-    clear_run_issues()
-    runners = [
-        ("wellfound", _run_wellfound),
-        ("uplers", _run_uplers),
-        ("naukri", _run_naukri),
-        ("hirist", _run_hirist),
-        ("instahyre", _run_instahyre),
-    ]
-    for name, runner in runners:
-        if name not in targets:
-            continue
-        console.print(f"[bold]Starting {name.capitalize()}...[/bold]")
-        total_applied += await runner(config, applied_ids)
-        applied_ids = load_applied_jobs(config.applied_jobs_path)
-    console.print(f"[green]Successfully applied to {total_applied} jobs this run.[/green]")
-    await _finish_pending_questions(config, platform, targets)
+        clear_run_issues()
+        clear_deferred_applies(config.applied_jobs_path)
+        clear_draft_answer_cache()
+        if config.llm.enabled and config.llm.use_faiss_memory:
+            from .embeddings import get_embeddings
+
+            await asyncio.to_thread(get_embeddings, config.llm.embeddings_model)
+        if config.llm.enabled:
+            from .llm_answers import ensure_verifier_unloaded
+
+            await asyncio.to_thread(ensure_verifier_unloaded, config)
+        total_applied = await _run_platform_batch(config, targets)
+        console.print(f"[green]Successfully applied to {total_applied} jobs this run.[/green]")
+        from .technical_failures import technical_failures_summary
+
+        tech_msg = technical_failures_summary(config.base_dir)
+        if tech_msg:
+            console.print(f"\n[yellow]{tech_msg}[/yellow]")
+        await _finish_pending_questions(config, platform, targets)
+        clear_deferred_applies(config.applied_jobs_path)
+    finally:
+        await _stop_naukri_resume_sync(resume_stop, resume_task)
 
 
 async def _finish_pending_questions(config: AppConfig, platform: str, targets: list[str]) -> None:
-    """Show summary, auto-answer pending questions, prompt on failures, retry skipped jobs."""
+    """After all search pages are done: auto-answer pending questions, optional prompts, retry skips."""
     if not set(targets) & {"naukri", "hirist"}:
         return
 
@@ -188,17 +288,27 @@ async def _finish_pending_questions(config: AppConfig, platform: str, targets: l
     if issues_msg:
         console.print(f"\n[yellow]{issues_msg}[/yellow]")
 
-    msg = summary_for_run(config.base_dir, platform=platform)
+    msg = summary_for_run(config.base_dir, platform=platform, config=config)
     if msg:
         console.print(msg)
 
-    has_work = pending_count(config.base_dir) > 0 or run_issue_count() > 0
+    has_work = pending_count(config.base_dir, config) > 0 or run_issue_count() > 0
     if not has_work:
         return
 
-    console.print("\n[bold]Resolving unanswered application questions…[/bold]")
+    console.print("\n[bold]All search pages complete — resolving unanswered questions…[/bold]")
+    console.print(
+        "[dim]Pending review runs only after every configured SRP page is processed. "
+        "Use python3 main.py answer-questions for manual follow-up.[/dim]"
+    )
+    prompt_on_failure = config.llm.prompt_pending_questions
+    if config.llm.auto_answer_pending and not config.llm.prompt_pending_questions:
+        prompt_on_failure = False
+
     answered, jobs_to_retry = answer_pending_groups_interactive(
-        config.base_dir, config=config, prompt_on_failure=True
+        config.base_dir,
+        config=config,
+        prompt_on_failure=prompt_on_failure,
     )
     if (
         answered
@@ -206,8 +316,18 @@ async def _finish_pending_questions(config: AppConfig, platform: str, targets: l
         and config.llm.retry_pending_jobs
         and not config.application.dry_run
     ):
+        clear_deferred_applies(config.applied_jobs_path)
         console.print("[bold]Retrying skipped jobs with new answers…[/bold]")
-        retried = await retry_pending_jobs(config, jobs_to_retry)
+        try:
+            retried = await retry_pending_jobs(config, jobs_to_retry)
+        except Exception as exc:
+            logger.exception("Pending job retry failed: %s", exc)
+            console.print(f"[red]Could not retry skipped jobs: {exc}[/red]")
+            console.print(
+                "[dim]Quit Chrome (Cmd+Q), wait a few seconds, then re-run: "
+                "[bold]python main.py run --platform hirist[/bold][/dim]"
+            )
+            retried = 0
         if retried:
             console.print(f"[green]Applied to {retried} job(s) after answering pending questions.[/green]")
         else:
@@ -263,7 +383,11 @@ async def _apply_reviewed_cmd(config_path: Path, platform: str, verbose: bool) -
     config = load_config(config_path)
     setup_logging(config.log_path, verbose=verbose)
     _check_prerequisites(config, require_resume=True)
-    await _apply_reviewed(config, platform)
+    resume_stop, resume_task = await _start_naukri_resume_sync(config)
+    try:
+        await _apply_reviewed(config, platform)
+    finally:
+        await _stop_naukri_resume_sync(resume_stop, resume_task)
 
 
 async def _apply_reviewed(config: AppConfig, platform: str) -> None:
@@ -693,6 +817,8 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
                 page,
                 limit,
                 quick_apply_only=filters.quick_apply_only,
+                sort=filters.sort,
+                max_job_age_days=filters.max_job_age_days,
             )
     if platform == "hirist":
         filters = config.hirist.filters
@@ -842,23 +968,47 @@ async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
     filters = config.naukri.filters
     if not isinstance(filters, NaukriFiltersConfig):
         return 0
-    per_page_limit = scrape_limit(config.application.max_jobs_per_run, multiplier=3)
-    max_pages = max(1, filters.max_pages)
     async with naukri_session(config) as (_, context, page):
+        reconcile_applied_jobs(config.applied_jobs_path)
+        await sync_naukri_resume_if_due(config, page=page)
+        await naukri_go_to_search_page(page, filters)
+        if config.application.pipeline_apply:
+            return await run_naukri_pipeline(page, context, config, applied_ids)
+        per_batch_limit = scrape_limit(config.application.max_jobs_per_run, multiplier=3)
+        max_batches = max(1, filters.max_pages)
         total = 0
-        for page_num in range(1, max_pages + 1):
-            await naukri_go_to_search_page(page, filters, page_num)
-            jobs = await naukri_collect_srp_page(
-                page,
-                per_page_limit,
-                quick_apply_only=filters.quick_apply_only,
+        last_batch_with_jobs = 0
+        session_seen: set[str] = set()
+        for batch_num in range(1, max_batches + 1):
+            console.print(
+                f"\n[bold cyan]Naukri scroll batch {batch_num}/{max_batches} — collect & apply[/bold cyan]"
             )
+            if batch_num > 1:
+                if not await scroll_naukri_srp_more(page):
+                    console.print(
+                        "[dim]Naukri: no new listings after scroll — stopping[/dim]"
+                    )
+                    break
+            jobs = await collect_naukri_srp_batch(
+                page,
+                per_batch_limit,
+                seen_job_ids=session_seen,
+                quick_apply_only=filters.quick_apply_only,
+                sort=filters.sort,
+                max_job_age_days=filters.max_job_age_days,
+                initial_scroll=(batch_num == 1),
+            )
+            for job in jobs:
+                session_seen.add(job.job_id)
             if not jobs:
-                if page_num > 1:
-                    console.print(f"[dim]Naukri: no listings on page {page_num} — stopping pagination[/dim]")
+                if batch_num > 1:
+                    console.print(
+                        f"[dim]Naukri: no new jobs in batch {batch_num} — stopping[/dim]"
+                    )
                 break
+            last_batch_with_jobs = batch_num
             n = await _apply_list(
-                f"Naukri (page {page_num})",
+                f"Naukri (batch {batch_num})",
                 jobs,
                 applied_ids,
                 config,
@@ -868,6 +1018,15 @@ async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
             )
             total += n
             applied_ids = load_applied_jobs(config.applied_jobs_path)
+            console.print(
+                f"[dim]Naukri batch {batch_num}: applied {n} job(s) "
+                f"({total} total this run, {len(session_seen)} collected)[/dim]"
+            )
+        if max_batches > 1:
+            console.print(
+                f"[green]Naukri scroll done: processed batches 1–{last_batch_with_jobs} "
+                f"of {max_batches} configured.[/green]"
+            )
         return total
 
 
@@ -884,10 +1043,20 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
             return await _apply_list("Hirist", jobs, applied_ids, config, hirist_apply_batch, page, context)
 
         total = 0
+        session_seen: set[str] = set()
         async for _feed_url, page_num, jobs in iter_paginated_feed_pages(page, filters, max_pages=max_pages):
+            new_jobs = [j for j in jobs if j.job_id not in session_seen]
+            for job in new_jobs:
+                session_seen.add(job.job_id)
+            if not new_jobs:
+                if page_num > 1:
+                    console.print(
+                        f"[dim]Hirist: no new jobs on page {page_num} — next feed/page[/dim]"
+                    )
+                continue
             n = await _apply_list(
                 f"Hirist (page {page_num})",
-                jobs,
+                new_jobs,
                 applied_ids,
                 config,
                 hirist_apply_batch,
@@ -905,6 +1074,8 @@ async def _run_instahyre(config: AppConfig, applied_ids: set[str]) -> int:
         return 0
     async with instahyre_session(config) as (_, context, page):
         if filters.search_urls or filters.feeds:
+            # Instahyre runs sequentially (single tab walking the feeds), even when
+            # pipeline_apply / instahyre_apply_workers are set for naukri/hirist.
             return await instahyre_apply_from_feeds(
                 page,
                 config,
@@ -933,20 +1104,7 @@ async def _apply_list(title, jobs, applied_ids, config, apply_fn, page, context)
 def _pending_jobs(
     jobs: list[JobListing], applied_ids: set[str], limit: int, config: AppConfig
 ) -> list[JobListing]:
-    pending: list[JobListing] = []
-    filtered = filter_skipped_roles(
-        filter_skipped_companies(jobs, config.profile.skip_companies),
-        skip_frontend=config.profile.skip_frontend_roles,
-        skip_qa_test=config.profile.skip_qa_test_roles,
-        keywords=config.profile.skip_role_keywords,
-    )
-    for job in filtered:
-        if job_key(job.source, job.job_id) not in applied_ids:
-            pending.append(job)
-        cap = apply_cap(limit)
-        if cap is not None and len(pending) >= cap:
-            break
-    return pending
+    return filter_pending_jobs(jobs, applied_ids, limit, config)
 
 
 def _print_jobs_table(title: str, jobs: list[JobListing]) -> None:
@@ -1022,8 +1180,9 @@ def export_cookies_help(platform: str) -> None:
 @click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
 @click.option("--review", is_flag=True, help="Fix bad auto-generated saved answers.")
 @click.option("--all", "review_all", is_flag=True, help="Review/edit all saved answers.")
+@click.option("--suggest", is_flag=True, help="Ask LLM for a suggested answer before each prompt (slower).")
 @click.option("--no-retry", is_flag=True, help="Save answers only; do not re-apply to skipped jobs.")
-def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, no_retry: bool) -> None:
+def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, suggest: bool, no_retry: bool) -> None:
     """Answer pending questions or review saved answers in user_memory.json."""
     config = load_config(config_path)
     if review or review_all:
@@ -1031,7 +1190,11 @@ def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, no_r
             config.base_dir, all_answers=review_all, config=config
         )
     else:
-        answered, jobs_to_retry = answer_pending_groups_interactive(config.base_dir, config=config)
+        answered, jobs_to_retry = answer_pending_groups_interactive(
+            config.base_dir,
+            config=config,
+            suggest_answers=suggest,
+        )
         if (
             answered
             and jobs_to_retry
@@ -1048,7 +1211,7 @@ def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, no_r
 def memory_cmd(config_path: Path) -> None:
     """Show saved review decisions, preferences, and question answers."""
     config = load_config(config_path)
-    data = load_memory(config.base_dir)
+    data = load_memory(config.base_dir, config)
     decisions = data.get("decisions", {})
     console.print(f"[bold]Decisions recorded:[/bold] {len(decisions)}")
     for key, meta in list(decisions.items())[-10:]:
@@ -1063,7 +1226,7 @@ def memory_cmd(config_path: Path) -> None:
             q = str(entry.get("question", ""))
             suffix = "…" if len(q) > 70 else ""
             console.print(f"  Q: {q[:70]}{suffix}")
-    pending = pending_count(config.base_dir)
+    pending = pending_count(config.base_dir, config)
     review_n = saved_answers_needing_review_count(config.base_dir)
     if pending:
         console.print(f"\n[yellow]Pending questions (need answers):[/yellow] {pending}")

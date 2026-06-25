@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,16 +13,23 @@ import click
 from .application_questions import (
     _infer_field_for_question,
     draft_answer_for_field,
+    enrich_field_for_llm,
     get_saved_answer,
+    infer_field_input_type,
     is_chip_range_label,
     is_generic_question_label,
     is_plausible_application_question,
+    is_skill_years_question,
     needs_review_answer,
+    parse_years_numeric_value,
     persist_answer,
     question_key,
     resolve_fill_answer,
     save_answer,
 )
+from .answers.compensation import is_numeric_ctc_question
+from .answers.memory_store import memory_key, sanitize_user_answer
+from .answers.validation import answer_acceptable_for_field
 from .config import AppConfig
 from .memory import load_memory
 from .question_groups import PendingQuestionGroup, classify_question, group_pending_entries
@@ -33,21 +41,212 @@ logger = logging.getLogger("job_apply")
 _lock = threading.Lock()
 
 
-def pending_questions_path(base_dir: Path) -> Path:
+def pending_questions_path(base_dir: Path, config: AppConfig | None = None) -> Path:
+    if config is not None:
+        return config.pending_questions_path
     return base_dir / "data" / "pending_questions.json"
 
 
-def _load(base_dir: Path) -> dict[str, Any]:
-    path = pending_questions_path(base_dir)
+def _load(base_dir: Path, config: AppConfig | None = None) -> dict[str, Any]:
+    path = pending_questions_path(base_dir, config)
     if not path.exists():
         return {"questions": {}}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _save(base_dir: Path, data: dict[str, Any]) -> None:
-    path = pending_questions_path(base_dir)
+def _save(
+    base_dir: Path, data: dict[str, Any], config: AppConfig | None = None
+) -> None:
+    path = pending_questions_path(base_dir, config)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _pending_field_meta(field: dict[str, Any] | None) -> dict[str, Any]:
+    if not field:
+        return {}
+    keep = ("kind", "input_type", "input_mode", "options", "platform", "placeholder")
+    return {k: field[k] for k in keep if k in field and field[k]}
+
+
+def _field_for_pending_entry(
+    label: str, entry: dict[str, Any], config: AppConfig | None
+) -> dict[str, Any]:
+    stored = entry.get("field")
+    if isinstance(stored, dict) and stored:
+        field = dict(stored)
+        field.setdefault("label", label)
+        field.pop("input_type", None)
+        return enrich_field_for_llm(field)
+    return enrich_field_for_llm(_infer_field_for_question(label, config))
+
+
+def _memory_has_user_answer(
+    base_dir: Path,
+    label: str,
+    field: dict[str, Any],
+    config: AppConfig | None,
+) -> bool:
+    saved = get_saved_answer(base_dir, label, field, config=config)
+    if saved and not is_chip_range_label(saved):
+        if answer_acceptable_for_field(label, saved, field):
+            return True
+        fill = resolve_fill_answer(saved, field, config)
+        if fill and answer_acceptable_for_field(label, fill, field):
+            return True
+    entry = load_memory(base_dir, config).get("question_answers", {}).get(
+        memory_key(label)
+    )
+    if not isinstance(entry, dict) or entry.get("needs_review"):
+        return False
+    ans = str(entry.get("answer", "")).strip()
+    if not ans:
+        return False
+    if entry.get("reviewed") and str(entry.get("source", "")) in (
+        "manual",
+        "pending",
+        "confirmed",
+        "interactive",
+    ):
+        return True
+    return False
+
+
+def _coerce_pending_user_answer(
+    label: str,
+    user_answer: str,
+    field: dict[str, Any],
+    config: AppConfig | None,
+) -> str:
+    """Map free-text pending answers to the shape each field expects."""
+    text = sanitize_user_answer(user_answer)
+    if not text:
+        return text
+    field = enrich_field_for_llm({**field, "label": label})
+    input_type = infer_field_input_type(label, field)
+    kind = str(field.get("kind", "text"))
+    options = [str(o).strip() for o in (field.get("options") or []) if str(o).strip()]
+    opts_lower = {o.lower() for o in options}
+
+    years = parse_years_numeric_value(text)
+    if years is not None and re.search(r"\byears?\b", text, re.I):
+        return str(int(years)) if years == int(years) else str(years)
+
+    wants_years = (
+        input_type == "years_numeric"
+        or is_skill_years_question(label)
+        or (
+            re.search(r"\bhow (many|much)\b.*\b(years?|experience)\b", label, re.I)
+            and not opts_lower <= {"yes", "no"}
+        )
+        or (
+            years is not None
+            and re.search(
+                r"\b(do you have|experience).*(genai|llm|ai/ml|copilot|dataiku)\b",
+                label,
+                re.I,
+            )
+        )
+    )
+    if years is not None and wants_years:
+        return str(int(years)) if years == int(years) else str(years)
+
+    if is_numeric_ctc_question(label) or input_type == "ctc_numeric":
+        num = re.search(r"(\d+(?:\.\d+)?)", text)
+        if num:
+            return num.group(1)
+
+    if kind == "radio" or (options and opts_lower <= {"yes", "no"}):
+        low = text.lower()
+        if low in ("yes", "y", "true", "1") or re.match(r"^yes\b", low):
+            return next((o for o in options if o.lower() == "yes"), "Yes")
+        if low in ("no", "n", "false", "0") or re.match(r"^no\b", low):
+            return next((o for o in options if o.lower() == "no"), "No")
+        if years is not None:
+            return "Yes" if years > 0 else "No"
+
+    if config:
+        from .answers.memory_store import canonicalize_stored_answer
+
+        return canonicalize_stored_answer(label, text, field, config)
+    return text
+
+
+def _group_has_saved_answer(
+    base_dir: Path,
+    group_id: str,
+    config: AppConfig | None = None,
+) -> bool:
+    if group_id.startswith("unique:"):
+        return False
+    memory = load_memory(base_dir, config)
+    for entry in memory.get("question_answers", {}).values():
+        if not isinstance(entry, dict):
+            continue
+        stored_q = str(entry.get("question", "")).strip()
+        ans = str(entry.get("answer", "")).strip()
+        if not stored_q or not ans or is_chip_range_label(ans):
+            continue
+        if entry.get("needs_review"):
+            continue
+        if classify_question(stored_q) != group_id:
+            continue
+        field = enrich_field_for_llm(_infer_field_for_question(stored_q, config))
+        if answer_acceptable_for_field(stored_q, ans, field):
+            return True
+        fill = resolve_fill_answer(ans, field, config)
+        if fill and answer_acceptable_for_field(stored_q, fill, field):
+            return True
+    return False
+
+
+def _save_pending_group_answers(
+    base_dir: Path,
+    group: PendingQuestionGroup,
+    user_answer: str,
+    config: AppConfig | None,
+    *,
+    company: str = "",
+    job_title: str = "",
+) -> list[str]:
+    """Save one user answer to every variant in the group; returns stored values."""
+    stored_values: list[str] = []
+    pending_data = _load(base_dir, config)
+    pending_questions = pending_data.get("questions", {})
+
+    for variant in group.variants:
+        entry = pending_questions.get(question_key(variant), {})
+        field = _field_for_pending_entry(
+            variant, entry if isinstance(entry, dict) else {}, config
+        )
+        stored = _coerce_pending_user_answer(variant, user_answer, field, config)
+        if not config:
+            save_answer(
+                base_dir,
+                variant,
+                stored,
+                company=company,
+                job_title=job_title,
+                reviewed=True,
+                source="manual",
+            )
+            stored_values.append(stored)
+            continue
+        canonical, fill, saved = persist_answer(
+            base_dir,
+            variant,
+            stored,
+            field,
+            config,
+            company=company,
+            job_title=job_title,
+            canonical=stored,
+            reviewed=True,
+            source="manual",
+        )
+        if saved:
+            stored_values.append(canonical)
+    return stored_values
 
 
 def queue_unanswered(
@@ -74,7 +273,10 @@ def queue_unanswered(
             if not label:
                 continue
             field = fields_by_label.get(label)
-            if get_saved_answer(base_dir, label, field):
+            if get_saved_answer(base_dir, label, field, config=None):
+                continue
+            group_id = classify_question(label)
+            if _group_has_saved_answer(base_dir, group_id):
                 continue
             if is_generic_question_label(label):
                 logger.debug("Skipping generic placeholder question: %s", label)
@@ -87,6 +289,9 @@ def queue_unanswered(
                 key,
                 {"question": label, "key": key, "jobs": []},
             )
+            meta = _pending_field_meta(field)
+            if meta:
+                entry["field"] = meta
             seen_urls = {j.get("url") for j in entry.get("jobs", [])}
             if job_url not in seen_urls:
                 entry.setdefault("jobs", []).append(
@@ -105,27 +310,33 @@ def queue_unanswered(
     return added
 
 
-def pending_question_list(base_dir: Path) -> list[dict[str, Any]]:
+def pending_question_list(base_dir: Path, config: AppConfig | None = None) -> list[dict[str, Any]]:
     """Unique questions still missing answers in user_memory."""
-    data = _load(base_dir)
+    data = _load(base_dir, config)
     pending: list[dict[str, Any]] = []
     for entry in data.get("questions", {}).values():
         label = str(entry.get("question", "")).strip()
-        saved = get_saved_answer(base_dir, label) if label else None
-        if not label or (saved and not is_chip_range_label(saved)):
+        if not label:
+            continue
+        field = _field_for_pending_entry(
+            label, entry if isinstance(entry, dict) else {}, config
+        )
+        if _memory_has_user_answer(base_dir, label, field, config):
+            continue
+        if _group_has_saved_answer(base_dir, classify_question(label), config):
             continue
         pending.append(entry)
     pending.sort(key=lambda e: len(e.get("jobs", [])), reverse=True)
     return pending
 
 
-def pending_groups(base_dir: Path) -> list[PendingQuestionGroup]:
-    return group_pending_entries(pending_question_list(base_dir))
+def pending_groups(base_dir: Path, config: AppConfig | None = None) -> list[PendingQuestionGroup]:
+    return group_pending_entries(pending_question_list(base_dir, config))
 
 
-def pending_count(base_dir: Path) -> int:
-    prune_answered(base_dir)
-    return len(pending_question_list(base_dir))
+def pending_count(base_dir: Path, config: AppConfig | None = None) -> int:
+    prune_answered(base_dir, config)
+    return len(pending_question_list(base_dir, config))
 
 
 def remove_answered(base_dir: Path, label: str) -> None:
@@ -144,10 +355,10 @@ def _remove_group(base_dir: Path, group_id: str) -> None:
         _save(base_dir, data)
 
 
-def prune_answered(base_dir: Path) -> int:
+def prune_answered(base_dir: Path, config: AppConfig | None = None) -> int:
     """Drop pending entries that now have saved answers. Returns count removed."""
     with _lock:
-        data = _load(base_dir)
+        data = _load(base_dir, config)
         questions = data.get("questions", {})
         before = len(questions)
         for key in list(questions.keys()):
@@ -155,12 +366,15 @@ def prune_answered(base_dir: Path) -> int:
             if is_generic_question_label(label) or not is_plausible_application_question(label):
                 del questions[key]
                 continue
-            if label and get_saved_answer(base_dir, label):
-                saved = get_saved_answer(base_dir, label)
-                if saved and not is_chip_range_label(saved):
-                    del questions[key]
-                    continue
-        _save(base_dir, data)
+            field = _field_for_pending_entry(
+                label, questions[key], config
+            )
+            if _memory_has_user_answer(base_dir, label, field, config):
+                del questions[key]
+                continue
+            if _group_has_saved_answer(base_dir, classify_question(label), config):
+                del questions[key]
+        _save(base_dir, data, config)
         return before - len(questions)
 
 
@@ -258,14 +472,16 @@ def answer_pending_groups_interactive(
     config: AppConfig | None = None,
     *,
     prompt_on_failure: bool = True,
+    suggest_answers: bool = False,
 ) -> tuple[int, list[PendingJobRef]]:
     """
     Prompt once per question group; save to user_memory.json for all variants.
     When LLM auto_answer_pending is enabled, fills answers without prompting.
+    When suggest_answers is True (or auto), drafts via LLM before each prompt.
     Returns (answered_count, jobs_to_retry_live).
     """
-    prune_answered(base_dir)
-    groups = pending_groups(base_dir)
+    prune_answered(base_dir, config)
+    groups = pending_groups(base_dir, config)
     if not groups:
         click.echo("No pending application questions.")
         review_n = _answers_for_review(base_dir, all_answers=False)
@@ -278,7 +494,20 @@ def answer_pending_groups_interactive(
 
     total = len(groups)
     auto_pending = bool(config and config.llm.enabled and config.llm.auto_answer_pending)
+    use_llm_draft = bool(config and config.llm.enabled and (auto_pending or suggest_answers))
     jobs_to_retry: list[PendingJobRef] = []
+
+    # Non-interactive deferral: when prompting is disabled (prompt_on_failure=False)
+    # and we can't auto-answer (LLM off / auto_answer_pending false), leave every
+    # group in pending and move on instead of blocking the run. The user resolves
+    # them later via `answer-questions`. Without this, the loop below would prompt
+    # regardless because of the `not auto_pending` branch.
+    if not auto_pending and not prompt_on_failure:
+        click.echo(
+            f"\n{total} pending question group(s) deferred — "
+            "run: python3 main.py answer-questions to resolve."
+        )
+        return 0, []
 
     if auto_pending:
         click.echo(f"\n{'=' * 60}")
@@ -288,6 +517,10 @@ def answer_pending_groups_interactive(
         click.echo(f"\n{'=' * 60}")
         click.echo(f"  {total} question group(s) to answer")
         click.echo("  Similar questions are grouped — one answer applies to all variants.")
+        if suggest_answers:
+            click.echo("  LLM may suggest an answer — you confirm before it is saved.")
+        else:
+            click.echo("  Type your answer for each group (no LLM wait between questions).")
         click.echo(f"{'=' * 60}")
 
     answered = 0
@@ -296,36 +529,67 @@ def answer_pending_groups_interactive(
         primary = group.variants[0]
         job_title = str(example.get("title", ""))
         company = str(example.get("company", ""))
+        pending_data = _load(base_dir, config)
+        primary_entry = pending_data.get("questions", {}).get(question_key(primary), {})
+        field = _field_for_pending_entry(
+            primary,
+            primary_entry if isinstance(primary_entry, dict) else {},
+            config,
+        )
 
         new_answer = ""
         stored_canonical = ""
-        if auto_pending and config:
-            field = _infer_field_for_question(primary)
-            draft, stored_canonical, draft_source = draft_answer_for_field(
+        draft_source = ""
+        draft = None
+        if use_llm_draft:
+            draft_result = draft_answer_for_field(
                 config,
                 question=primary,
                 field=field,
                 job_title=job_title,
                 company=company,
             )
-            if draft:
-                new_answer = draft
-                stored_canonical = stored_canonical or ""
-            if new_answer:
-                click.echo(f"\n[{index}/{total}] {primary[:70]}")
-                click.echo(f"  → {new_answer[:120]} ({draft_source})")
+            draft = draft_result.fill
+            stored_canonical = draft_result.canonical or ""
+            draft_source = draft_result.source
 
-        if not new_answer and (not auto_pending or prompt_on_failure):
+        if auto_pending and draft:
+            new_answer = draft
+            stored_canonical = stored_canonical or ""
+            click.echo(f"\n[{index}/{total}] {primary[:70]}")
+            click.echo(f"  → {new_answer[:120]} ({draft_source or 'LLM'})")
+        elif prompt_on_failure:
             click.echo(f"\n{'─' * 60}")
             click.echo(f"Group {index} of {total}: {group.title}")
             click.echo(f"{'─' * 60}")
             _print_group_context(group)
-            field = _infer_field_for_question(primary)
+            input_type = str(field.get("input_type") or infer_field_input_type(primary, field))
             options = field.get("options") or []
-            if options:
+            if input_type == "years_numeric":
+                click.echo("\nTip: enter years as a number (e.g. 2, 4, or 0 for none).")
+            elif input_type == "ctc_numeric":
+                click.echo("\nTip: enter CTC in LPA as a number (e.g. 38).")
+            elif options:
                 click.echo(f"\nLikely options: {', '.join(options)}")
-
-            new_answer = click.prompt("\nYour answer (Enter to skip)", default="").strip()
+            if draft:
+                click.echo(
+                    f"\nSuggested ({draft_source or 'LLM'}): {draft[:120]}"
+                    + ("…" if len(draft) > 120 else "")
+                )
+                if click.confirm("Use this answer?", default=False):
+                    new_answer = draft
+                else:
+                    new_answer = click.prompt(
+                        "Your answer (Enter to skip)",
+                        default="",
+                        show_default=False,
+                    ).strip()
+            else:
+                new_answer = click.prompt(
+                    "\nYour answer (Enter to skip)",
+                    default="",
+                    show_default=False,
+                ).strip()
             if not new_answer:
                 click.echo("Skipped.")
                 continue
@@ -336,27 +600,19 @@ def answer_pending_groups_interactive(
             continue
 
         aliases = group.variants[1:] if len(group.variants) > 1 else None
-        field = _infer_field_for_question(primary)
+        saved = False
+        canonical = new_answer.strip()
         if config:
-            canonical, _fill = persist_answer(
+            stored_values = _save_pending_group_answers(
                 base_dir,
-                primary,
+                group,
                 new_answer,
-                field,
                 config,
                 company=company,
                 job_title=job_title,
-                canonical=stored_canonical or None,
             )
-            if aliases:
-                for alias in aliases:
-                    save_answer(
-                        base_dir,
-                        alias,
-                        canonical,
-                        company=company,
-                        job_title=job_title,
-                    )
+            saved = bool(stored_values)
+            canonical = stored_values[0] if stored_values else canonical
         else:
             save_answer(
                 base_dir,
@@ -365,9 +621,24 @@ def answer_pending_groups_interactive(
                 company=company,
                 job_title=job_title,
                 aliases=aliases,
+                reviewed=True,
+                source="manual",
             )
+            saved = True
+
+        if not saved:
+            click.echo(
+                "  [red]Not saved[/red] — answer failed validation. "
+                "Try a fuller answer or run with --suggest."
+            )
+            continue
+
         _remove_group(base_dir, group.group_id)
         answered += 1
+        click.echo(
+            f"  Saved to user_memory.json ({canonical[:60]}"
+            f"{'…' if len(canonical) > 60 else ''})."
+        )
         for job in group.jobs:
             url = str(job.get("url", "")).strip()
             source = str(job.get("source", "")).strip()
@@ -388,6 +659,13 @@ def answer_pending_groups_interactive(
         )
     else:
         click.echo(f"\n[OK] Saved {answered} answer group(s).\n")
+
+    remaining = len(pending_groups(base_dir, config))
+    if remaining:
+        click.echo(
+            f"[yellow]{remaining} question group(s) still pending.[/yellow] "
+            "Run: [bold]python3 main.py answer-questions[/bold]"
+        )
     return answered, jobs_to_retry
 
 
@@ -407,15 +685,17 @@ def answer_pending_interactive(base_dir: Path, config: AppConfig | None = None) 
     return answered
 
 
-def summary_for_run(base_dir: Path, *, platform: str | None = None) -> str:
-    prune_answered(base_dir)
-    pending_n = len(pending_question_list(base_dir))
+def summary_for_run(
+    base_dir: Path, *, platform: str | None = None, config: AppConfig | None = None
+) -> str:
+    prune_answered(base_dir, config)
+    pending_n = len(pending_question_list(base_dir, config))
     review_n = saved_answers_needing_review_count(base_dir)
     if not pending_n and not review_n:
         return ""
     lines: list[str] = []
     if pending_n:
-        group_n = len(pending_groups(base_dir))
+        group_n = len(pending_groups(base_dir, config))
         lines.append(
             f"[yellow]{pending_n} question(s) in {group_n} group(s) need answers.[/yellow]"
         )
@@ -522,6 +802,9 @@ def review_saved_answers_interactive(
             new_answer,
             company=entry.get("company", ""),
             job_title=entry.get("job_title", ""),
+            reviewed=True,
+            source="manual",
+            config=config,
         )
         updated += 1
 

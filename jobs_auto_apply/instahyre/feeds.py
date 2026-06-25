@@ -23,8 +23,8 @@ SKILLS_DROPDOWN_ITEMS = (
     f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
 )
 ROW_WAIT_MS = 35000
-ROW_POLL_MS = 500
-PAGE_SETTLE_MS = 2000
+ROW_POLL_MS = 250
+PAGE_SETTLE_MS = 800
 
 DEFAULT_SKILLS = "java,node,python"
 DEFAULT_JOB_FUNCTIONS = [

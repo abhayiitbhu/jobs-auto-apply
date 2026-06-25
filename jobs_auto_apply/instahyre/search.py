@@ -26,14 +26,14 @@ async def apply_filters(page: Page, filters: InstahyreFiltersConfig) -> None:
         return
 
     await page.goto(INSTAHYRE_OPPORTUNITIES, wait_until="domcontentloaded")
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(1500)
 
     for job_fn in filters.job_functions:
         try:
             chip = page.get_by_text(job_fn, exact=True)
             if await chip.count() > 0:
                 await chip.first.click()
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(350)
         except PlaywrightTimeout:
             logger.warning("Could not select job function: %s", job_fn)
 
@@ -66,7 +66,7 @@ async def apply_filters(page: Page, filters: InstahyreFiltersConfig) -> None:
         except PlaywrightTimeout:
             pass
 
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(1000)
     logger.info("Instahyre filters applied: %s", page.url)
 
 
@@ -143,12 +143,12 @@ async def _scroll_load_more(page: Page, rounds: int = 15) -> None:
     last_count = 0
     for _ in range(rounds):
         await page.mouse.wheel(0, 2400)
-        await page.wait_for_timeout(1000)
+        await page.wait_for_timeout(700)
         load_more = page.get_by_role("button", name=re.compile(r"load more|show more", re.I))
         if await load_more.count() > 0:
             try:
                 await load_more.first.click()
-                await page.wait_for_timeout(1500)
+                await page.wait_for_timeout(1000)
             except PlaywrightTimeout:
                 pass
         rows = await page.evaluate(_EXTRACT_JS)

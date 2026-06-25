@@ -7,6 +7,50 @@ from typing import Any
 
 import yaml
 
+# Skills/domains the candidate has no experience in — titles centered on these
+# (and not also naming a known skill) are skipped before apply. Override via
+# profile.skip_no_experience_skills in config.yaml.
+DEFAULT_NO_EXPERIENCE_SKILLS: tuple[str, ...] = (
+    "salesforce",
+    "wordpress",
+    "shopify",
+    "drupal",
+    "magento",
+    "sharepoint",
+    "data engineer",
+    "data engineering",
+    "data scientist",
+    "data science",
+    "data analyst",
+    "scala",
+    "snowflake",
+    "databricks",
+    "tableau",
+    "power bi",
+    "sap",
+    "abap",
+    "servicenow",
+    "sailpoint",
+    "mulesoft",
+    "pega",
+    "blue prism",
+    "uipath",
+    "automation anywhere",
+    "rpa",
+    "blockchain",
+    "web3",
+    "solidity",
+    ".net",
+    "dotnet",
+    "php",
+    "ruby on rails",
+    "mainframe",
+    "cobol",
+    "embedded",
+    "firmware",
+    "vlsi",
+)
+
 
 @dataclass
 class UserConfig:
@@ -15,6 +59,7 @@ class UserConfig:
     phone: str
     linkedin: str
     expected_display_name: str
+    github: str = ""
 
 
 @dataclass
@@ -37,6 +82,13 @@ class ProfileConfig:
     skip_frontend_roles: bool = True
     skip_qa_test_roles: bool = True
     skip_role_keywords: list[str] = field(default_factory=list)
+    # Skills/domains you have NO experience in. A job is skipped when its TITLE is
+    # about one of these AND does not also name a skill you do have (core_skills /
+    # skill_years > 0) — i.e. "Salesforce Developer" is skipped, "Java Developer
+    # (Salesforce integration)" is kept.
+    skip_no_experience_skills: list[str] = field(
+        default_factory=lambda: list(DEFAULT_NO_EXPERIENCE_SKILLS)
+    )
 
 
 @dataclass
@@ -51,6 +103,8 @@ class CoverLetterConfig:
 class ResumeConfig:
     path: str
     sync_to_wellfound: bool = False
+    sync_to_naukri: bool = True
+    naukri_sync_interval_minutes: int = 30
 
 
 @dataclass
@@ -89,7 +143,9 @@ class NaukriFiltersConfig:
     salary_min_lakhs: float | None = None
     remote_only: bool = False
     quick_apply_only: bool = True
-    max_pages: int = 1  # SRP pages to scrape+apply per run (apply page 1, then page 2, …)
+    sort: str = "freshness"  # freshness | date | newest | relevance
+    max_job_age_days: int | None = None  # e.g. 7 → "Last 7 days" in Freshness filter
+    max_pages: int = 1  # scroll batches on single Aurus SRP (scroll → collect → apply)
 
 
 @dataclass
@@ -135,20 +191,57 @@ class PlatformConfig:
 @dataclass
 class LLMConfig:
     enabled: bool = False
-    provider: str = "groq"
-    api_key: str = ""
-    base_url: str = ""
-    model: str = "llama-3.3-70b-versatile"
-    temperature: float = 0.1
+    base_url: str = "http://127.0.0.1:11434"
+    model: str = "job-answers"
+    verifier_model: str = "job-verify"
+    verifier_enabled: bool = True
+    temperature: float = 0.05
     max_tokens: int = 256
+    keep_alive: str = "30m"  # keep the model resident between calls (avoids reloads)
+    max_concurrency: int = 2  # in-flight local Ollama calls (1 if RAM-constrained)
     auto_save: bool = True
     auto_answer_pending: bool = True
     retry_pending_jobs: bool = True
-    min_confidence: float = 0.9
+    prompt_pending_questions: bool = False
+    min_confidence: float = 0.92
+    min_confidence_rag_agree: float = 0.88
+    vector_agree_score: float = 0.80  # similarity floor for vector+LLM agreement
+    min_confidence_new_experience: float = 0.96
+    min_confidence_persist: float = 0.98
+    plain_text_confidence: float = 0.35
+    # Cap applied to an LLM answer's effective confidence when NO independent source
+    # (RAG rule, similar past answer, or verifier) corroborates it. The raw number a
+    # small model self-reports is unreliable, so an uncorroborated answer is still
+    # used for the current fill but capped below the persist threshold so it is not
+    # written to memory on the model's word alone.
+    uncorroborated_confidence_cap: float = 0.6
+    rag_agree_input_types: list[str] = field(
+        default_factory=lambda: [
+            "single_choice",
+            "yes_no_checkbox",
+            "ctc_numeric",
+            "years_numeric",
+            "number",
+            "pincode",
+            "date",
+        ]
+    )
     use_faiss_memory: bool = True
-    rag_top_k: int = 5  # similar prior Q/A pairs passed to LLM via similarity_search
+    rag_top_k: int = 3
+    vector_auto_answer_score: float = 0.92
     embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     faiss_index_dir: str = "data/faiss"
+
+
+@dataclass
+class PlatformDelaysConfig:
+    """Fixed UI waits per platform (ms). Lower = faster; raise if clicks miss."""
+
+    instahyre_ms: int = 200
+    instahyre_advance_ms: int = 200
+    hirist_step_ms: int = 300
+    naukri_chatbot_step_ms: int = 400
+    naukri_chip_poll_ms: int = 120
 
 
 @dataclass
@@ -160,6 +253,10 @@ class ApplicationConfig:
     delay_seconds_min: int = 0
     delay_seconds_max: int = 0
     apply_workers: int = 10
+    naukri_apply_workers: int = 10
+    hirist_apply_workers: int = 10
+    instahyre_apply_workers: int = 5  # parallel Instahyre tabs (collect+apply path)
+    parallel_platforms: bool = False  # run naukri + hirist + instahyre concurrently (separate browsers)
     skip_external_ats: bool = True
     dry_run: bool = False
     follow_external_from_wellfound: bool = False
@@ -167,12 +264,14 @@ class ApplicationConfig:
     skip_ineligible_salary: bool = True
     min_inr_salary_lpa: float = 25.0
     apply_retries: int = 1
+    retry_backoff_ms: int = 1500
     interactive_questions: bool = True
     confirm_new_answers: bool = True
     rag_answer_questions: bool = True
     one_job_per_company: bool = True
     enrich_workers: int = 4
     pipeline_apply: bool = True
+    platform_delays: PlatformDelaysConfig = field(default_factory=PlatformDelaysConfig)
 
 
 @dataclass
@@ -193,6 +292,27 @@ class AuthConfig:
     method: str = "browser"
     sessions_dir: str = "data/sessions"
     login_timeout_seconds: int = 300
+
+
+@dataclass
+class PathsConfig:
+    application_facts: str = "profile/application_facts.yaml"
+    user_memory: str = "data/user_memory.json"
+    pending_questions: str = "data/pending_questions.json"
+    naukri_resume_sync: str = "data/naukri_resume_sync.json"
+
+
+@dataclass
+class AnswersPolicyConfig:
+    notice_join_threshold_days: int = 15
+    default_year_chip_options: list[str] = field(
+        default_factory=lambda: [
+            "No experience",
+            "<6 years",
+            "6-8 years",
+            "8+ years",
+        ]
+    )
 
 
 @dataclass
@@ -238,6 +358,8 @@ class AppConfig:
     browser: BrowserConfig
     auth: AuthConfig
     state: StateConfig
+    paths: PathsConfig
+    answers: AnswersPolicyConfig
     base_dir: Path
 
     @property
@@ -255,6 +377,18 @@ class AppConfig:
     @property
     def log_path(self) -> Path:
         return self.base_dir / self.state.log_file
+
+    @property
+    def user_memory_path(self) -> Path:
+        return self.base_dir / self.paths.user_memory
+
+    @property
+    def pending_questions_path(self) -> Path:
+        return self.base_dir / self.paths.pending_questions
+
+    @property
+    def naukri_resume_sync_path(self) -> Path:
+        return self.base_dir / self.paths.naukri_resume_sync
 
     @property
     def auth_sessions_dir(self) -> Path:
@@ -324,6 +458,8 @@ def _naukri_filters(data: dict[str, Any]) -> NaukriFiltersConfig:
         salary_min_lakhs=data.get("salary_min_lakhs"),
         remote_only=bool(data.get("remote_only", False)),
         quick_apply_only=bool(data.get("quick_apply_only", True)),
+        sort=str(data.get("sort", "freshness")),
+        max_job_age_days=data.get("max_job_age_days"),
         max_pages=int(data.get("max_pages", 1)),
     )
 
@@ -340,6 +476,17 @@ def _hirist_filters(data: dict[str, Any]) -> HiristFiltersConfig:
         experience_min=data.get("experience_min"),
         experience_max=data.get("experience_max"),
         max_pages=int(data.get("max_pages", 1)),
+    )
+
+
+def _platform_delays(data: dict[str, Any]) -> PlatformDelaysConfig:
+    raw = data if isinstance(data, dict) else {}
+    return PlatformDelaysConfig(
+        instahyre_ms=int(raw.get("instahyre_ms", 200)),
+        instahyre_advance_ms=int(raw.get("instahyre_advance_ms", 200)),
+        hirist_step_ms=int(raw.get("hirist_step_ms", 300)),
+        naukri_chatbot_step_ms=int(raw.get("naukri_chatbot_step_ms", 400)),
+        naukri_chip_poll_ms=int(raw.get("naukri_chip_poll_ms", 120)),
     )
 
 
@@ -440,6 +587,9 @@ def _profile_config(data: dict[str, Any]) -> ProfileConfig:
         skip_frontend_roles=bool(data.get("skip_frontend_roles", True)),
         skip_qa_test_roles=bool(data.get("skip_qa_test_roles", True)),
         skip_role_keywords=list(data.get("skip_role_keywords", [])),
+        skip_no_experience_skills=list(
+            data.get("skip_no_experience_skills", DEFAULT_NO_EXPERIENCE_SKILLS)
+        ),
     )
 
 
@@ -480,21 +630,48 @@ def _workday_config(data: dict[str, Any]) -> WorkdayConfig:
 
 
 def _llm_config(data: dict[str, Any]) -> LLMConfig:
-    api_key = str(data.get("api_key", "")).strip() or os.environ.get("GROQ_API_KEY", "").strip()
     return LLMConfig(
         enabled=bool(data.get("enabled", False)),
-        provider=str(data.get("provider", "groq")),
-        api_key=api_key,
-        base_url=str(data.get("base_url", "")).strip(),
-        model=str(data.get("model", "llama-3.3-70b-versatile")),
-        temperature=float(data.get("temperature", 0.1)),
+        base_url=str(data.get("base_url", "http://127.0.0.1:11434")).strip(),
+        model=str(data.get("model", "job-answers")),
+        verifier_model=str(data.get("verifier_model", "job-verify")),
+        verifier_enabled=bool(data.get("verifier_enabled", True)),
+        temperature=float(data.get("temperature", 0.05)),
         max_tokens=int(data.get("max_tokens", 256)),
+        keep_alive=str(data.get("keep_alive", "30m")),
+        max_concurrency=int(data.get("max_concurrency", 2)),
         auto_save=bool(data.get("auto_save", True)),
         auto_answer_pending=bool(data.get("auto_answer_pending", True)),
         retry_pending_jobs=bool(data.get("retry_pending_jobs", True)),
-        min_confidence=float(data.get("min_confidence", 0.9)),
+        prompt_pending_questions=bool(data.get("prompt_pending_questions", False)),
+        min_confidence=float(data.get("min_confidence", 0.92)),
+        min_confidence_rag_agree=float(data.get("min_confidence_rag_agree", 0.88)),
+        vector_agree_score=float(data.get("vector_agree_score", 0.80)),
+        min_confidence_new_experience=float(
+            data.get("min_confidence_new_experience", 0.96)
+        ),
+        min_confidence_persist=float(data.get("min_confidence_persist", 0.98)),
+        plain_text_confidence=float(data.get("plain_text_confidence", 0.35)),
+        uncorroborated_confidence_cap=float(
+            data.get("uncorroborated_confidence_cap", 0.6)
+        ),
+        rag_agree_input_types=list(
+            data.get(
+                "rag_agree_input_types",
+                [
+                    "single_choice",
+                    "yes_no_checkbox",
+                    "ctc_numeric",
+                    "years_numeric",
+                    "number",
+                    "pincode",
+                    "date",
+                ],
+            )
+        ),
         use_faiss_memory=bool(data.get("use_faiss_memory", True)),
-        rag_top_k=int(data.get("rag_top_k", 5)),
+        rag_top_k=int(data.get("rag_top_k", 3)),
+        vector_auto_answer_score=float(data.get("vector_auto_answer_score", 0.92)),
         embeddings_model=str(
             data.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")
         ),
@@ -519,6 +696,31 @@ def load_config(path: Path) -> AppConfig:
     compensation = _compensation_config(_section(raw, "compensation"))
     cover_letter = _cover_letter_config(_section(raw, "cover_letter"))
     llm = _llm_config(_section(raw, "llm"))
+    paths_raw = _section(raw, "paths")
+    answers_raw = _section(raw, "answers")
+    paths = PathsConfig(
+        application_facts=str(
+            paths_raw.get("application_facts", "profile/application_facts.yaml")
+        ),
+        user_memory=str(paths_raw.get("user_memory", "data/user_memory.json")),
+        pending_questions=str(
+            paths_raw.get("pending_questions", "data/pending_questions.json")
+        ),
+        naukri_resume_sync=str(
+            paths_raw.get("naukri_resume_sync", "data/naukri_resume_sync.json")
+        ),
+    )
+    answers_policy = AnswersPolicyConfig(
+        notice_join_threshold_days=int(
+            answers_raw.get("notice_join_threshold_days", 15)
+        ),
+        default_year_chip_options=list(
+            answers_raw.get(
+                "default_year_chip_options",
+                ["No experience", "<6 years", "6-8 years", "8+ years"],
+            )
+        ),
+    )
 
     # Legacy flat config (wellfound-only)
     if "wellfound" not in raw and "cookies" in raw:
@@ -546,10 +748,15 @@ def load_config(path: Path) -> AppConfig:
             phone=str(user.get("phone", "")),
             linkedin=str(user.get("linkedin", "")),
             expected_display_name=str(user.get("expected_display_name", "abhay")),
+            github=str(user.get("github", "")),
         ),
         resume=ResumeConfig(
             path=str(resume.get("path", "resume.pdf")),
             sync_to_wellfound=bool(resume.get("sync_to_wellfound", False)),
+            sync_to_naukri=bool(resume.get("sync_to_naukri", True)),
+            naukri_sync_interval_minutes=int(
+                resume.get("naukri_sync_interval_minutes", 30)
+            ),
         ),
         profile=profile,
         compensation=compensation,
@@ -570,6 +777,10 @@ def load_config(path: Path) -> AppConfig:
             delay_seconds_min=int(application.get("delay_seconds_min", 0)),
             delay_seconds_max=int(application.get("delay_seconds_max", 0)),
             apply_workers=int(application.get("apply_workers", 10)),
+            naukri_apply_workers=int(application.get("naukri_apply_workers", 10)),
+            hirist_apply_workers=int(application.get("hirist_apply_workers", 10)),
+            instahyre_apply_workers=int(application.get("instahyre_apply_workers", 5)),
+            parallel_platforms=bool(application.get("parallel_platforms", False)),
             skip_external_ats=bool(application.get("skip_external_ats", True)),
             dry_run=bool(application.get("dry_run", False)),
             follow_external_from_wellfound=bool(application.get("follow_external_from_wellfound", False)),
@@ -577,12 +788,14 @@ def load_config(path: Path) -> AppConfig:
             skip_ineligible_salary=bool(application.get("skip_ineligible_salary", True)),
             min_inr_salary_lpa=float(application.get("min_inr_salary_lpa", 25)),
             apply_retries=int(application.get("apply_retries", 1)),
+            retry_backoff_ms=int(application.get("retry_backoff_ms", 1500)),
             interactive_questions=bool(application.get("interactive_questions", True)),
             confirm_new_answers=bool(application.get("confirm_new_answers", True)),
             rag_answer_questions=bool(application.get("rag_answer_questions", True)),
             one_job_per_company=bool(application.get("one_job_per_company", True)),
             enrich_workers=int(application.get("enrich_workers", 4)),
             pipeline_apply=bool(application.get("pipeline_apply", True)),
+            platform_delays=_platform_delays(application.get("platform_delays", {})),
         ),
         browser=BrowserConfig(
             headless=bool(browser.get("headless", False)),
@@ -601,5 +814,7 @@ def load_config(path: Path) -> AppConfig:
             applied_jobs_file=str(state.get("applied_jobs_file", "data/applied_jobs.json")),
             log_file=str(state.get("log_file", "data/run.log")),
         ),
+        paths=paths,
+        answers=answers_policy,
         base_dir=base_dir,
     )

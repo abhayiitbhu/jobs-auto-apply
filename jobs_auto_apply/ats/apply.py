@@ -93,6 +93,8 @@ async def _fill_standard_fields(page: Page, user: UserConfig) -> None:
     await _fill_by_patterns(page, ["phone", "mobile", "tel"], user.phone)
     if user.linkedin:
         await _fill_by_patterns(page, ["linkedin", "linked_in", "linked in"], user.linkedin)
+    if user.github:
+        await _fill_by_patterns(page, ["github", "git_hub", "git hub"], user.github)
 
 
 async def _open_apply_form(page: Page, ats: str) -> None:
