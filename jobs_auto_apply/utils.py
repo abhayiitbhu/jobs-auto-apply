@@ -90,6 +90,24 @@ def _confirmed_job_keys_from_history(history: list[Any]) -> set[str]:
     return confirmed
 
 
+def _abandoned_job_keys_from_history(history: list[Any]) -> set[str]:
+    """Jobs the user explicitly dismissed — never retry."""
+    last_entry: dict[str, dict[str, Any]] = {}
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("job_key", "")).strip()
+        if not key:
+            continue
+        last_entry[key] = entry
+
+    abandoned: set[str] = set()
+    for key, entry in last_entry.items():
+        if str(entry.get("status", "")).strip() == "abandoned":
+            abandoned.add(key)
+    return abandoned
+
+
 def _blocking_job_keys_from_history(history: list[Any]) -> set[str]:
     """Applied + in-run deferred jobs — used while a run is in progress."""
     last_entry: dict[str, dict[str, Any]] = {}
@@ -107,7 +125,7 @@ def _blocking_job_keys_from_history(history: list[Any]) -> set[str]:
         if raw_status is None:
             continue
         status = str(raw_status).strip()
-        if status in ("applied", "deferred"):
+        if status in ("applied", "deferred", "abandoned"):
             blocking.add(key)
     return blocking
 
@@ -122,7 +140,7 @@ def reconcile_applied_jobs(path: Path) -> int:
             entry
             for entry in payload["history"]
             if isinstance(entry, dict)
-            and str(entry.get("status", "")).strip() == "applied"
+            and str(entry.get("status", "")).strip() in ("applied", "abandoned")
         ]
         payload["applied"] = sorted(_confirmed_job_keys_from_history(payload["history"]))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +169,9 @@ def load_applied_jobs(path: Path, *, include_deferred: bool = True) -> set[str]:
     if history:
         if include_deferred:
             return _blocking_job_keys_from_history(history)
-        return _confirmed_job_keys_from_history(history)
+        return _confirmed_job_keys_from_history(history) | _abandoned_job_keys_from_history(
+            history
+        )
     # Legacy files without history — fall back to applied list.
     legacy = payload.get("applied") or []
     if isinstance(legacy, list):
@@ -259,6 +279,29 @@ def defer_job_for_run(
         },
         reason=reason,
     )
+
+
+def record_abandoned_apply(
+    path: Path,
+    key: str,
+    meta: dict[str, Any],
+    *,
+    reason: str = "user dismissed",
+) -> None:
+    """Permanently skip a job the user chose not to pursue."""
+    with _applied_jobs_lock:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = _load_applied_payload(path)
+        payload["history"].append(
+            {
+                "job_key": key,
+                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "status": "abandoned",
+                "reason": reason,
+                **meta,
+            }
+        )
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def render_cover_note(template: str, *, title: str, company: str) -> str:

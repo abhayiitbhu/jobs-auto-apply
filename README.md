@@ -61,10 +61,17 @@ The entry point is `main.py`, which loads `.env` (if present) and invokes the Cl
 | Command | Description |
 |---------|-------------|
 | `run` | Search, filter, and apply automatically (or apply the approved queue if `require_review` is set). |
+| `serve` | Always-on scheduler: re-applies every N minutes; with `telegram.mode: listener`, Telegram Q&A runs in the same process. |
 | `review` | Collect listings per platform, then interactively approve/reject before applying. |
 | `apply-reviewed` | Submit applications only for jobs approved in the review queue. |
 | `review-status` | Show pending / approved / rejected counts per platform. |
 | `answer-questions` | Answer deferred pending questions, or `--review` bad auto-generated saved answers. |
+| `telegram-login` | Verify the bot token and capture your chat_id (send /start to your bot). |
+| `telegram-answer` | Send pending questions to Telegram now, save replies, then retry those jobs (`--test` to verify). |
+| `telegram-listen` | Always-on daemon: asks pending questions on Telegram and applies as replies arrive. |
+| `whatsapp-login` | Link WhatsApp Web once (scan the QR). Unofficial — ToS/ban risk; prefer Telegram. |
+| `whatsapp-answer` | Send pending questions to WhatsApp now (`--test` to verify the link). |
+| `whatsapp-listen` | Always-on WhatsApp daemon (unofficial; prefer Telegram). |
 | `memory` | Show saved review decisions, preferences, and question answers. |
 | `login` | Sign in once (Google/passkey) and save the session. |
 | `verify` | Open each platform to verify the saved session is valid. |
@@ -81,6 +88,63 @@ python main.py run --platform all --verbose
 python main.py answer-questions          # fill in deferred questions
 python main.py answer-questions --review # fix bad saved answers
 ```
+
+## Answer pending questions over chat (Telegram / WhatsApp)
+
+Instead of answering deferred questions in the terminal, the tool can send them to
+your phone and wait for your replies. Each unanswered question is sent as a message;
+you reply with the answer, it is saved like a manual answer, and the skipped jobs
+are re-applied automatically. Anything you don't answer within `reply_timeout_seconds`
+stays pending for next time.
+
+When answering (terminal, Telegram, or WhatsApp), you have three ways to decline:
+
+| Action | Terminal | Chat reply | Effect |
+|--------|----------|------------|--------|
+| **Skip for now** | `s` | `skip` | Question stays pending; job may come back on the next run |
+| **Drop job** | `d` | `drop` | Abandons the job(s) linked to this question — they won't be retried |
+| **Ignore question** | `i` | `ignore` | Saves a default N/A answer (e.g. "No", "0 years") and never asks again |
+
+Both channels share the same flow and the same two modes:
+
+- **`inline`** — questions are asked at the end of each `run`; that run waits for
+  your replies (up to `reply_timeout_seconds`).
+- **`listener`** — a separate long-running daemon owns the chat session. `run` just
+  defers questions; the daemon asks them and re-applies as your replies arrive —
+  **even hours later**.
+
+If both channels are enabled, **Telegram wins**.
+
+### Telegram (recommended)
+
+Official, free Bot API via long polling — **no server, no tunnel, and no ToS/ban
+risk**.
+
+```bash
+# 1) create a bot with @BotFather, copy the token into telegram.bot_token in config.yaml
+# 2) capture your chat id (send /start to your bot when prompted)
+python main.py telegram-login
+# 3a) inline mode (telegram.mode: inline): happens at end of `run`, or:
+python main.py telegram-answer            # add --test to verify the round-trip
+# 3b) listener mode (telegram.mode: listener): bundled into `serve` — no extra process:
+python main.py serve
+#    (or standalone: python main.py telegram-listen)
+```
+
+### WhatsApp (unofficial — use with caution)
+
+Drives WhatsApp Web with Playwright; link once by scanning a QR. **Automating
+WhatsApp Web is against WhatsApp's Terms of Service and can get the number
+temporarily restricted or permanently banned.** Prefer Telegram.
+
+```bash
+python main.py whatsapp-login              # scan QR (WhatsApp → Linked Devices)
+python main.py whatsapp-answer             # --test to verify; or whatsapp-listen
+```
+
+If you point `whatsapp.phone` at your **own** number it uses the "Message yourself"
+chat; for a cleaner split, link WhatsApp Web with a **secondary number** and set
+`whatsapp.phone` to your personal number.
 
 ## Configuration
 
@@ -99,6 +163,8 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 | `wellfound`, `uplers`, `naukri`, `hirist`, `instahyre` | Per-platform `enabled` flag + filters. |
 | `application` | Run-wide behaviour: dry run, caps, delays, `parallel_platforms`, review gating. |
 | `llm` | Local LLM / RAG settings (models, confidence thresholds, FAISS). |
+| `telegram` | Send pending questions to a Telegram bot and read replies (official Bot API; recommended). |
+| `whatsapp` | Send pending questions to WhatsApp and read replies (unofficial WhatsApp Web; ToS/ban risk). |
 | `workday` | Credentials/answers for Workday multi-step portals. |
 | `state` | Misc persisted run state. |
 

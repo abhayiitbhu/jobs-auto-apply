@@ -188,7 +188,7 @@ async def run_naukri_pipeline(
             logger.warning("Naukri pipeline worker error: %s: %s", type(r).__name__, r)
 
     logger.info(
-        "Naukri pipeline finished: %d applied, %d skipped, %d failed (%d queued)",
+        "Naukri pipeline finished: %d applied, %d skipped, %d failed (%d jobs processed)",
         stats["applied"],
         stats["skipped"],
         stats["failed"],

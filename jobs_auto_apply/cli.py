@@ -41,6 +41,7 @@ from .limits import apply_cap, is_unlimited, scrape_limit
 from .memory import get_decision, load_memory, record_decision, save_preferences
 from .pending_questions import (
     answer_pending_groups_interactive,
+    answer_pending_groups_via_messenger,
     answer_pending_interactive,
     pending_count,
     review_saved_answers_interactive,
@@ -203,6 +204,64 @@ def run_cmd(config_path: Path, platform: str, verbose: bool) -> None:
     asyncio.run(_run(config_path, platform, verbose))
 
 
+@main.command("serve")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all", help="Platforms to apply to each cycle ('all' = every enabled platform).")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, show_default=True, type=int)
+@click.option("--interval-minutes", default=30, show_default=True, type=int, help="Minutes between apply cycles.")
+@click.option("--run-on-start/--no-run-on-start", default=True, show_default=True, help="Run one cycle immediately on startup.")
+@click.option("--verbose", is_flag=True)
+def serve_cmd(
+    config_path: Path,
+    platform: str,
+    host: str,
+    port: int,
+    interval_minutes: int,
+    run_on_start: bool,
+    verbose: bool,
+) -> None:
+    """Run as an always-on server that re-applies every N minutes (default 30) via uvicorn."""
+    import uvicorn
+
+    from .server import create_app
+
+    # Surface config/prereq problems immediately instead of only inside the loop.
+    config = load_config(config_path)
+    setup_logging(config.log_path, verbose=verbose)
+    _check_prerequisites(config, require_resume=True)
+    enabled = _enabled_platforms(config, platform)
+    channel = _active_messenger(config)
+    if channel and _messenger_mode(config, channel) == "listener":
+        msg = (
+            f"{_messenger_label(channel)} listener ON (in-process) — "
+            "pending questions sent & replies applied automatically."
+        )
+    elif channel:
+        msg = (
+            f"{_messenger_label(channel)} mode={_messenger_mode(config, channel)} — "
+            "questions handled inline at the end of each apply cycle."
+        )
+    else:
+        msg = "No messenger enabled — use answer-questions for deferred questions."
+    console.print(
+        f"[bold green]Serving on http://{host}:{port}[/bold green] — applying to "
+        f"[cyan]{', '.join(enabled) or 'none enabled'}[/cyan] every "
+        f"[cyan]{interval_minutes} min[/cyan].\n"
+        f"[dim]{msg}[/dim]\n"
+        "[dim]GET /status, POST /run-now. Stop with Ctrl+C.[/dim]"
+    )
+
+    app = create_app(
+        config_path=config_path,
+        platform=platform,
+        interval_minutes=interval_minutes,
+        verbose=verbose,
+        run_on_start=run_on_start,
+    )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, asyncio.Task]:
     """Startup sync + 30-minute background scheduler (all platforms)."""
     stop = asyncio.Event()
@@ -273,13 +332,76 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
         tech_msg = technical_failures_summary(config.base_dir)
         if tech_msg:
             console.print(f"\n[yellow]{tech_msg}[/yellow]")
-        await _finish_pending_questions(config, platform, targets)
+        await _finish_pending_questions(config, platform, targets, applied_count=total_applied)
         clear_deferred_applies(config.applied_jobs_path)
     finally:
         await _stop_naukri_resume_sync(resume_stop, resume_task)
 
 
-async def _finish_pending_questions(config: AppConfig, platform: str, targets: list[str]) -> None:
+_server_listener_channel: str | None = None
+
+
+def set_server_listener_channel(channel: str | None) -> None:
+    """Set when ``serve`` runs a messenger listener in-process (cleared on shutdown)."""
+    global _server_listener_channel
+    _server_listener_channel = channel
+
+
+def server_listener_channel() -> str | None:
+    return _server_listener_channel
+
+
+def _active_messenger(config: AppConfig) -> str | None:
+    """Which messaging channel is enabled (Telegram preferred), or None."""
+    if config.telegram.enabled:
+        return "telegram"
+    if config.whatsapp.enabled:
+        return "whatsapp"
+    return None
+
+
+def _messenger_label(channel: str) -> str:
+    return "Telegram" if channel == "telegram" else "WhatsApp"
+
+
+def _messenger_mode(config: AppConfig, channel: str) -> str:
+    return config.telegram.mode if channel == "telegram" else config.whatsapp.mode
+
+
+def _messenger_client_cm(config: AppConfig, channel: str):
+    if channel == "telegram":
+        from .telegram import telegram_client
+
+        return telegram_client(config)
+    from .whatsapp import whatsapp_client
+
+    return whatsapp_client(config)
+
+
+async def _answer_pending_via_messenger(
+    config: AppConfig, *, channel: str, applied_count: int | None = None
+) -> tuple[int, list]:
+    """Open the messaging channel, ask each pending question, save replies."""
+    label = "Telegram" if channel == "telegram" else "WhatsApp"
+    console.print(f"\n[bold]Sending unanswered questions to {label}…[/bold]")
+    try:
+        async with _messenger_client_cm(config, channel) as client:
+            return await answer_pending_groups_via_messenger(
+                config.base_dir, config, client, applied_count=applied_count
+            )
+    except Exception as exc:
+        logger.exception("%s pending flow failed: %s", label, exc)
+        console.print(f"[red]{label} unavailable: {exc}[/red]")
+        console.print(
+            "[dim]Questions left pending — resolve with: "
+            "[bold]python main.py answer-questions[/bold][/dim]"
+        )
+        return 0, []
+
+
+async def _finish_pending_questions(
+    config: AppConfig, platform: str, targets: list[str], *, applied_count: int | None = None
+) -> None:
     """After all search pages are done: auto-answer pending questions, optional prompts, retry skips."""
     if not set(targets) & {"naukri", "hirist"}:
         return
@@ -305,11 +427,30 @@ async def _finish_pending_questions(config: AppConfig, platform: str, targets: l
     if config.llm.auto_answer_pending and not config.llm.prompt_pending_questions:
         prompt_on_failure = False
 
-    answered, jobs_to_retry = answer_pending_groups_interactive(
-        config.base_dir,
-        config=config,
-        prompt_on_failure=prompt_on_failure,
-    )
+    channel = _active_messenger(config)
+    if channel and _messenger_mode(config, channel) == "listener":
+        if server_listener_channel() == channel:
+            console.print(
+                f"[dim]Questions deferred to the {_messenger_label(channel)} listener "
+                f"(running with serve).[/dim]"
+            )
+        else:
+            listen_cmd = "telegram-listen" if channel == "telegram" else "whatsapp-listen"
+            console.print(
+                f"[dim]Questions left pending for the {channel} listener "
+                f"(run: python main.py {listen_cmd}, or use serve).[/dim]"
+            )
+        answered, jobs_to_retry = 0, []
+    elif channel:
+        answered, jobs_to_retry = await _answer_pending_via_messenger(
+            config, channel=channel, applied_count=applied_count
+        )
+    else:
+        answered, jobs_to_retry = answer_pending_groups_interactive(
+            config.base_dir,
+            config=config,
+            prompt_on_failure=prompt_on_failure,
+        )
     if (
         answered
         and jobs_to_retry
@@ -1042,8 +1183,12 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
             jobs = await hirist_collect_jobs(page, limit)
             return await _apply_list("Hirist", jobs, applied_ids, config, hirist_apply_batch, page, context)
 
-        total = 0
+        # Collect every listing across all feed pages/URLs into one deduped list
+        # first, then apply in a single batch. One large batch keeps the parallel
+        # apply workers saturated (no per-page drain stalls) and lets dedup +
+        # already-applied/skip filtering + the run cap apply globally.
         session_seen: set[str] = set()
+        all_jobs: list[JobListing] = []
         async for _feed_url, page_num, jobs in iter_paginated_feed_pages(page, filters, max_pages=max_pages):
             new_jobs = [j for j in jobs if j.job_id not in session_seen]
             for job in new_jobs:
@@ -1054,18 +1199,29 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
                         f"[dim]Hirist: no new jobs on page {page_num} — next feed/page[/dim]"
                     )
                 continue
-            n = await _apply_list(
-                f"Hirist (page {page_num})",
-                new_jobs,
-                applied_ids,
-                config,
-                hirist_apply_batch,
-                page,
-                context,
+            all_jobs.extend(new_jobs)
+            console.print(
+                f"[dim]Hirist: collected {len(new_jobs)} new on page {page_num} "
+                f"({len(all_jobs)} total)[/dim]"
             )
-            total += n
-            applied_ids = load_applied_jobs(config.applied_jobs_path)
-        return total
+
+        if not all_jobs:
+            console.print("[yellow]No Hirist listings collected.[/yellow]")
+            return 0
+
+        console.print(
+            f"[cyan]Hirist: collected {len(all_jobs)} unique listing(s) — "
+            "applying in one batch[/cyan]"
+        )
+        return await _apply_list(
+            "Hirist",
+            all_jobs,
+            applied_ids,
+            config,
+            hirist_apply_batch,
+            page,
+            context,
+        )
 
 
 async def _run_instahyre(config: AppConfig, applied_ids: set[str]) -> int:
@@ -1204,6 +1360,310 @@ def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, sugg
         ):
             retried = asyncio.run(retry_pending_jobs(config, jobs_to_retry))
             console.print(f"[green]Applied to {retried} job(s) after answering pending questions.[/green]")
+
+
+@main.command("whatsapp-login")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+def whatsapp_login_cmd(config_path: Path) -> None:
+    """Link WhatsApp Web once by scanning the QR code (session is then reused)."""
+    config = load_config(config_path)
+    from .whatsapp import WhatsAppClient
+
+    async def _link() -> None:
+        client = WhatsAppClient(
+            profile_dir=config.whatsapp_profile_path,
+            phone=config.whatsapp.phone or "0",
+            headless=False,
+            login_timeout_seconds=max(config.whatsapp.login_timeout_seconds, 180),
+        )
+        await client.start()
+        try:
+            ok = await client.ensure_logged_in()
+            if ok:
+                console.print("[green]WhatsApp Web linked. You're all set.[/green]")
+            else:
+                console.print("[red]Did not detect a linked session before timeout.[/red]")
+        finally:
+            await client.close()
+
+    asyncio.run(_link())
+
+
+@main.command("whatsapp-answer")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option("--no-retry", is_flag=True, help="Save answers only; do not re-apply to skipped jobs.")
+@click.option("--test", "test_send", is_flag=True, help="Send a single test message to verify the WhatsApp link works.")
+def whatsapp_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> None:
+    """Send pending questions to WhatsApp now, save replies, then retry those jobs."""
+    config = load_config(config_path)
+    if not config.whatsapp.enabled:
+        console.print("[yellow]whatsapp.enabled is false in config.yaml.[/yellow]")
+        return
+
+    if test_send:
+        from .whatsapp import whatsapp_client
+
+        async def _test() -> None:
+            console.print(
+                f"[bold]Sending a test question to {config.whatsapp.phone} and waiting "
+                f"for your reply…[/bold]"
+            )
+            console.print("[dim]Reply to the WhatsApp message; this keeps the window open until you do.[/dim]")
+            try:
+                async with whatsapp_client(config) as client:
+                    reply = await client.ask(
+                        "🧪 Test from jobs-auto-apply — reply to this message to confirm "
+                        "the app can read your replies."
+                    )
+                if reply is None:
+                    console.print("[yellow]No reply detected before the timeout.[/yellow]")
+                else:
+                    console.print(f"[green]Got your reply:[/green] {reply!r}")
+            except Exception as exc:
+                logger.exception("WhatsApp test failed: %s", exc)
+                console.print(f"[red]Test failed: {exc}[/red]")
+
+        asyncio.run(_test())
+        return
+
+    async def _run() -> None:
+        answered, jobs_to_retry = await _answer_pending_via_messenger(config, channel="whatsapp")
+        if (
+            answered
+            and jobs_to_retry
+            and config.llm.retry_pending_jobs
+            and not no_retry
+            and not config.application.dry_run
+        ):
+            console.print("[bold]Retrying skipped jobs with new answers…[/bold]")
+            retried = await retry_pending_jobs(config, jobs_to_retry)
+            console.print(f"[green]Applied to {retried} job(s) after WhatsApp answers.[/green]")
+
+    asyncio.run(_run())
+
+
+async def _messenger_listen(
+    config: AppConfig,
+    *,
+    channel: str | None = None,
+    apply_lock: "asyncio.Lock | None" = None,
+    stop_event: "asyncio.Event | None" = None,
+) -> None:
+    """Keep one messaging session open, asking pending questions and applying replies.
+
+    Works for either transport (``channel`` = "telegram" or "whatsapp"; auto-detected
+    when omitted). Loops forever: ask whatever questions are pending, apply the
+    answered jobs, then loop again — so any NEW questions surfaced while retrying get
+    asked and applied too. When ``apply_lock`` is provided (e.g. the server runs this
+    alongside the scheduled apply cycle), the re-apply step takes the lock so two
+    browser apply-sessions never run at once. ``stop_event`` lets a host request a
+    clean shutdown between iterations.
+    """
+    channel = channel or _active_messenger(config)
+    if not channel:
+        logger.warning("No messaging channel enabled; listener not started.")
+        return
+    label = "Telegram" if channel == "telegram" else "WhatsApp"
+    relink_cmd = "telegram-login" if channel == "telegram" else "whatsapp-login"
+    msg_cfg = config.telegram if channel == "telegram" else config.whatsapp
+
+    # Wait effectively indefinitely per question so the listener never gives up
+    # on a reply while it's running.
+    per_question_timeout = max(msg_cfg.reply_timeout_seconds, 86400)
+    idle = max(5, msg_cfg.listen_idle_seconds)
+
+    async with _messenger_client_cm(config, channel) as client:
+        try:
+            await client.send(
+                "👋 jobs-auto-apply listener is on. I'll send questions here as they "
+                "come up; reply to answer and I'll apply automatically."
+            )
+        except Exception:
+            pass
+        console.print(f"[green]{label} listener running. Press Ctrl+C to stop.[/green]")
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                break
+            try:
+                if not await client.is_logged_in():
+                    console.print(
+                        f"[red]{label} session ended — re-link with: "
+                        f"python main.py {relink_cmd}[/red]"
+                    )
+                    break
+                answered, jobs = await answer_pending_groups_via_messenger(
+                    config.base_dir,
+                    config,
+                    client,
+                    send_heads_up=False,
+                    per_question_timeout=per_question_timeout,
+                )
+                if (
+                    answered
+                    and jobs
+                    and config.llm.retry_pending_jobs
+                    and not config.application.dry_run
+                ):
+                    clear_deferred_applies(config.applied_jobs_path)
+                    try:
+                        await client.send(f"Applying {len(jobs)} job(s) with your answer(s)…")
+                    except Exception:
+                        pass
+                    try:
+                        if apply_lock is not None:
+                            async with apply_lock:
+                                retried = await retry_pending_jobs(config, jobs)
+                        else:
+                            retried = await retry_pending_jobs(config, jobs)
+                        await client.send(f"✅ Applied to {retried} job(s).")
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        logger.exception("Listener retry failed: %s", exc)
+                        try:
+                            await client.send(f"⚠️ Could not re-apply: {exc}")
+                        except Exception:
+                            pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("%s listener iteration failed: %s", label, exc)
+            await asyncio.sleep(idle)
+
+
+@main.command("whatsapp-listen")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+def whatsapp_listen_cmd(config_path: Path) -> None:
+    """Stay running: send pending questions to WhatsApp and apply as replies arrive.
+
+    Keeps one WhatsApp session open so it never re-asks for the QR, and picks up
+    your replies asynchronously — even ones you send long after a run finishes.
+    Set whatsapp.mode: listener so `run` defers questions to this process.
+    """
+    config = load_config(config_path)
+    if not config.whatsapp.enabled:
+        console.print("[yellow]whatsapp.enabled is false in config.yaml.[/yellow]")
+        return
+    try:
+        asyncio.run(_messenger_listen(config, channel="whatsapp"))
+    except KeyboardInterrupt:
+        console.print("\n[dim]Listener stopped.[/dim]")
+
+
+@main.command("telegram-login")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+def telegram_login_cmd(config_path: Path) -> None:
+    """Verify the bot token and capture your chat_id (send /start to the bot)."""
+    config = load_config(config_path)
+    from .telegram import TelegramClient, TelegramError
+
+    async def _link() -> None:
+        client = TelegramClient(
+            token=config.telegram.bot_token,
+            chat_id=config.telegram.chat_id,
+            chat_id_path=config.telegram_chat_path,
+        )
+        try:
+            await client.start()
+        except TelegramError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return
+        username = await client.bot_username()
+        if client.chat_id:
+            console.print(
+                f"[green]Telegram ready.[/green] Bot @{username}, chat_id={client.chat_id}."
+            )
+            try:
+                await client.send("✅ jobs-auto-apply is linked to this chat.")
+            except Exception:
+                pass
+            return
+        console.print(
+            f"[bold]Open Telegram, find your bot @{username}, and send it /start "
+            f"(or any message).[/bold] Waiting up to 120s…"
+        )
+        chat_id = await client.capture_chat_id(timeout=120)
+        if chat_id:
+            console.print(
+                f"[green]Captured chat_id={chat_id}.[/green] Saved to "
+                f"{config.telegram_chat_path.name}; you're all set."
+            )
+            try:
+                await client.send("✅ jobs-auto-apply is linked to this chat.")
+            except Exception:
+                pass
+        else:
+            console.print("[red]No message received. Re-run and send /start to the bot.[/red]")
+
+    asyncio.run(_link())
+
+
+@main.command("telegram-answer")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option("--no-retry", is_flag=True, help="Save answers only; do not re-apply to skipped jobs.")
+@click.option("--test", "test_send", is_flag=True, help="Send a test message and wait for your reply.")
+def telegram_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> None:
+    """Send pending questions to Telegram now, save replies, then retry those jobs."""
+    config = load_config(config_path)
+    if not config.telegram.enabled:
+        console.print("[yellow]telegram.enabled is false in config.yaml.[/yellow]")
+        return
+
+    if test_send:
+        from .telegram import telegram_client
+
+        async def _test() -> None:
+            console.print("[bold]Sending a Telegram test and waiting for your reply…[/bold]")
+            try:
+                async with telegram_client(config) as client:
+                    reply = await client.ask(
+                        "🧪 Test from jobs-auto-apply — reply to confirm the app reads your replies."
+                    )
+                if reply is None:
+                    console.print("[yellow]No reply detected before the timeout.[/yellow]")
+                else:
+                    console.print(f"[green]Got your reply:[/green] {reply!r}")
+            except Exception as exc:
+                logger.exception("Telegram test failed: %s", exc)
+                console.print(f"[red]Test failed: {exc}[/red]")
+
+        asyncio.run(_test())
+        return
+
+    async def _run() -> None:
+        answered, jobs_to_retry = await _answer_pending_via_messenger(config, channel="telegram")
+        if (
+            answered
+            and jobs_to_retry
+            and config.llm.retry_pending_jobs
+            and not no_retry
+            and not config.application.dry_run
+        ):
+            console.print("[bold]Retrying skipped jobs with new answers…[/bold]")
+            retried = await retry_pending_jobs(config, jobs_to_retry)
+            console.print(f"[green]Applied to {retried} job(s) after Telegram answers.[/green]")
+
+    asyncio.run(_run())
+
+
+@main.command("telegram-listen")
+@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+def telegram_listen_cmd(config_path: Path) -> None:
+    """Stay running: send pending questions to Telegram and apply as replies arrive.
+
+    Picks up your replies asynchronously — even ones sent long after a run
+    finishes. Prefer ``python main.py serve`` (same listener, plus scheduled
+    applies). Use this only if you want Telegram Q&A without the scheduler.
+    Set telegram.mode: listener so `run` defers questions to the listener.
+    """
+    config = load_config(config_path)
+    if not config.telegram.enabled:
+        console.print("[yellow]telegram.enabled is false in config.yaml.[/yellow]")
+        return
+    try:
+        asyncio.run(_messenger_listen(config, channel="telegram"))
+    except KeyboardInterrupt:
+        console.print("\n[dim]Listener stopped.[/dim]")
 
 
 @main.command("memory")

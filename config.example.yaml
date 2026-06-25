@@ -318,6 +318,40 @@ browser:
   chrome_profile_name: "Default"
   chrome_channel: "chrome"
 
+# Send pending questions to WhatsApp and read your replies, instead of prompting
+# in the terminal. Uses an unofficial Playwright-driven WhatsApp Web session
+# (no server/tunnel). Link once: `python main.py whatsapp-login` (scan the QR).
+# WARNING: automating WhatsApp Web is against WhatsApp's ToS and can get the
+# number banned — opt-in, use a number you accept that risk on.
+whatsapp:
+  enabled: false
+  mode: "inline"                  # inline = ask at end of each run; listener = a long-running `whatsapp-listen` daemon owns the session and runs defer to it
+  phone: ""                       # destination incl. country code, e.g. 919876543210 (your own = message yourself)
+  profile_dir: "data/whatsapp_profile"
+  headless: false                 # keep false so the QR window is visible on first link
+  reply_timeout_seconds: 900      # wait up to 15 min for each reply, then leave the rest pending
+  poll_interval_seconds: 5
+  login_timeout_seconds: 180      # time allowed to scan the QR
+  listen_idle_seconds: 20         # how often the listener re-checks for new pending questions
+  skip_keyword: "skip"            # reply this to defer a question
+  drop_keyword: "drop"              # reply this to abandon the job(s)
+  ignore_keyword: "ignore"          # reply this to mark the question N/A forever
+
+# Telegram is the recommended channel: official Bot API via long polling — no
+# server/tunnel AND no ToS/ban risk (unlike WhatsApp Web automation). Create a
+# bot with @BotFather, paste the token, run `python main.py telegram-login` and
+# send /start to your bot. If both telegram and whatsapp are enabled, Telegram wins.
+telegram:
+  enabled: false
+  mode: "inline"                  # inline = ask at end of each run; listener = serve runs Telegram in-process (or telegram-listen standalone)
+  bot_token: ""                   # token from @BotFather
+  chat_id: ""                     # leave blank; telegram-login captures it when you /start the bot
+  reply_timeout_seconds: 900
+  listen_idle_seconds: 20
+  skip_keyword: "skip"
+  drop_keyword: "drop"
+  ignore_keyword: "ignore"
+
 state:
   applied_jobs_file: "data/applied_jobs.json"
   log_file: "data/run.log"

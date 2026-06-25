@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -295,6 +296,55 @@ class AuthConfig:
 
 
 @dataclass
+class WhatsAppConfig:
+    """Send pending questions to WhatsApp Web and read your replies.
+
+    Uses an unofficial Playwright-driven WhatsApp Web session (no server/tunnel).
+    Link once via QR (python main.py whatsapp-login); the session persists in
+    profile_dir. Note: automating WhatsApp Web is against WhatsApp's ToS — use
+    at your own risk with a number you're willing to expose to that risk.
+    """
+
+    enabled: bool = False
+    # inline   = ask questions over WhatsApp at the end of each run (run holds the session)
+    # listener = a separate `whatsapp-listen` daemon owns the session; runs just defer
+    #            questions and the always-on listener asks + retries as replies arrive.
+    mode: str = "inline"
+    phone: str = ""  # destination number incl. country code, e.g. 919876543210 (your own = message yourself)
+    profile_dir: str = "data/whatsapp_profile"
+    headless: bool = False
+    reply_timeout_seconds: int = 900  # how long to wait for a reply per question
+    poll_interval_seconds: int = 5
+    login_timeout_seconds: int = 180  # time to scan the QR on first link
+    listen_idle_seconds: int = 20  # how often the listener re-checks for new pending questions
+    skip_keyword: str = "skip"  # reply this to skip a question
+    drop_keyword: str = "drop"  # reply this to abandon the job(s)
+    ignore_keyword: str = "ignore"  # reply this to mark question N/A forever
+
+
+@dataclass
+class TelegramConfig:
+    """Send pending questions to a Telegram bot and read your replies.
+
+    Official, free Bot API via long polling — no server, webhook, or tunnel, and
+    no ToS/ban risk. Create a bot with @BotFather, paste the token here, then run
+    `python main.py telegram-login` and send /start to your bot once.
+    """
+
+    enabled: bool = False
+    # inline   = ask questions at the end of each run (run does the polling)
+    # listener = `serve` runs Telegram in-process; or run `telegram-listen` standalone
+    mode: str = "inline"
+    bot_token: str = ""
+    chat_id: str = ""  # auto-captured by telegram-login if left blank
+    reply_timeout_seconds: int = 900
+    listen_idle_seconds: int = 20
+    skip_keyword: str = "skip"
+    drop_keyword: str = "drop"
+    ignore_keyword: str = "ignore"
+
+
+@dataclass
 class PathsConfig:
     application_facts: str = "profile/application_facts.yaml"
     user_memory: str = "data/user_memory.json"
@@ -354,6 +404,8 @@ class AppConfig:
     instahyre: PlatformConfig
     workday: WorkdayConfig
     llm: LLMConfig
+    whatsapp: WhatsAppConfig
+    telegram: TelegramConfig
     application: ApplicationConfig
     browser: BrowserConfig
     auth: AuthConfig
@@ -389,6 +441,16 @@ class AppConfig:
     @property
     def naukri_resume_sync_path(self) -> Path:
         return self.base_dir / self.paths.naukri_resume_sync
+
+    @property
+    def whatsapp_profile_path(self) -> Path:
+        p = self.base_dir / self.whatsapp.profile_dir
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def telegram_chat_path(self) -> Path:
+        return self.base_dir / "data" / "telegram_chat.json"
 
     @property
     def auth_sessions_dir(self) -> Path:
@@ -679,6 +741,37 @@ def _llm_config(data: dict[str, Any]) -> LLMConfig:
     )
 
 
+def _whatsapp_config(data: dict[str, Any]) -> WhatsAppConfig:
+    return WhatsAppConfig(
+        enabled=bool(data.get("enabled", False)),
+        mode=str(data.get("mode", "inline")).strip().lower(),
+        phone=re.sub(r"\D", "", str(data.get("phone", ""))),
+        profile_dir=str(data.get("profile_dir", "data/whatsapp_profile")),
+        headless=bool(data.get("headless", False)),
+        reply_timeout_seconds=int(data.get("reply_timeout_seconds", 900)),
+        poll_interval_seconds=int(data.get("poll_interval_seconds", 5)),
+        login_timeout_seconds=int(data.get("login_timeout_seconds", 180)),
+        listen_idle_seconds=int(data.get("listen_idle_seconds", 20)),
+        skip_keyword=str(data.get("skip_keyword", "skip")),
+        drop_keyword=str(data.get("drop_keyword", "drop")),
+        ignore_keyword=str(data.get("ignore_keyword", "ignore")),
+    )
+
+
+def _telegram_config(data: dict[str, Any]) -> TelegramConfig:
+    return TelegramConfig(
+        enabled=bool(data.get("enabled", False)),
+        mode=str(data.get("mode", "inline")).strip().lower(),
+        bot_token=str(data.get("bot_token", "")).strip(),
+        chat_id=str(data.get("chat_id", "")).strip(),
+        reply_timeout_seconds=int(data.get("reply_timeout_seconds", 900)),
+        listen_idle_seconds=int(data.get("listen_idle_seconds", 20)),
+        skip_keyword=str(data.get("skip_keyword", "skip")),
+        drop_keyword=str(data.get("drop_keyword", "drop")),
+        ignore_keyword=str(data.get("ignore_keyword", "ignore")),
+    )
+
+
 def load_config(path: Path) -> AppConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -696,6 +789,8 @@ def load_config(path: Path) -> AppConfig:
     compensation = _compensation_config(_section(raw, "compensation"))
     cover_letter = _cover_letter_config(_section(raw, "cover_letter"))
     llm = _llm_config(_section(raw, "llm"))
+    whatsapp = _whatsapp_config(_section(raw, "whatsapp"))
+    telegram = _telegram_config(_section(raw, "telegram"))
     paths_raw = _section(raw, "paths")
     answers_raw = _section(raw, "answers")
     paths = PathsConfig(
@@ -769,6 +864,8 @@ def load_config(path: Path) -> AppConfig:
         instahyre=instahyre,
         workday=workday,
         llm=llm,
+        whatsapp=whatsapp,
+        telegram=telegram,
         application=ApplicationConfig(
             jobs_per_platform=int(application.get("jobs_per_platform", 0)),
             max_jobs_per_run=int(application.get("max_jobs_per_run", application.get("jobs_per_platform", 0))),

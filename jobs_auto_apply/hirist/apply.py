@@ -261,6 +261,7 @@ def _queue_missing(
             job_url=job.url,
             labels=missing,
             fields_by_label=fields_by_label,
+            config=config,
         )
         defer_job_for_run(config.applied_jobs_path, job, reason=reason)
     return missing

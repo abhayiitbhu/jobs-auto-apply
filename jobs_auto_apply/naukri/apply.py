@@ -426,25 +426,35 @@ def _queue_missing(
     answers: dict[str, str],
     *,
     reason: str = "need answers",
-) -> list[str]:
-    missing = _unanswered_labels(questions, answers)
-    if missing:
-        fields_by_label = {
-            str(f.get("label", "")).strip(): f
+    force: bool = False,
+) -> tuple[list[str], int]:
+    if force:
+        missing = [
+            str(f.get("label", "")).strip()
             for f in questions
             if str(f.get("label", "")).strip()
-        }
-        queue_unanswered(
-            config.base_dir,
-            source="naukri",
-            job_title=job.title,
-            company=job.company,
-            job_url=job.url,
-            labels=missing,
-            fields_by_label=fields_by_label,
-        )
-        defer_job_for_run(config.applied_jobs_path, job, reason=reason)
-    return missing
+        ]
+    else:
+        missing = _unanswered_labels(questions, answers)
+    if not missing:
+        return [], 0
+    fields_by_label = {
+        str(f.get("label", "")).strip(): f
+        for f in questions
+        if str(f.get("label", "")).strip()
+    }
+    queued = queue_unanswered(
+        config.base_dir,
+        source="naukri",
+        job_title=job.title,
+        company=job.company,
+        job_url=job.url,
+        labels=missing,
+        fields_by_label=fields_by_label,
+        config=config,
+    )
+    defer_job_for_run(config.applied_jobs_path, job, reason=reason)
+    return missing, queued
 
 
 async def _dismiss_overlays(page: Page) -> None:
@@ -537,7 +547,7 @@ async def _handle_chatbot_questions(
             interactive=False,
             defer_new=True,
         )
-        missing = _queue_missing(config, job, questions, answers)
+        missing, pending_n = _queue_missing(config, job, questions, answers)
         if missing:
             from ..run_issues import record_skip
 
@@ -550,9 +560,10 @@ async def _handle_chatbot_questions(
                 questions=missing,
             )
             logger.warning(
-                "Skipped Naukri apply (need answers): %s — %d question(s) queued",
+                "Skipped Naukri apply (need answers): %s — %d question(s), %d in pending",
                 job.title,
                 len(missing),
+                pending_n,
             )
             return None
 
@@ -585,17 +596,30 @@ async def _handle_chatbot_questions(
             except CannotAnswerTruthfully as exc:
                 # Honest skip: the only options would overstate experience the user
                 # lacks. Queue for manual decision; do NOT record a technical failure.
-                _queue_missing(
-                    config, job, [field], answers, reason="cannot answer truthfully"
+                missing, pending_n = _queue_missing(
+                    config,
+                    job,
+                    [field],
+                    answers,
+                    reason="cannot answer truthfully",
+                    force=True,
                 )
                 logger.info(
-                    "Skipped Naukri apply (cannot answer truthfully): %s — %s",
+                    "Skipped Naukri apply (cannot answer truthfully): %s — %s (%d pending)",
                     job.title,
                     exc.label[:60],
+                    pending_n,
                 )
                 return None
             if not filled:
-                _queue_missing(config, job, [field], answers, reason="could not fill")
+                missing, pending_n = _queue_missing(
+                    config,
+                    job,
+                    [field],
+                    answers,
+                    reason="could not fill",
+                    force=True,
+                )
                 from ..technical_failures import record_technical_failure
 
                 record_technical_failure(
