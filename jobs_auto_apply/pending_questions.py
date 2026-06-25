@@ -273,6 +273,12 @@ def queue_unanswered(
             if not label:
                 continue
             field = fields_by_label.get(label)
+            # A field means this came straight from a live form's DOM (discovered
+            # during apply), so it is a real question even if its wording fails the
+            # scraped-chrome plausibility heuristic (e.g. "Total Exp", "Kindly
+            # mention…", "Rate yourself…"). Trust it; only the plausibility gate is
+            # relaxed for these — saved/group checks still apply.
+            has_dom_field = bool(field)
             if get_saved_answer(base_dir, label, field, config=None):
                 continue
             group_id = classify_question(label)
@@ -281,7 +287,7 @@ def queue_unanswered(
             if is_generic_question_label(label):
                 logger.debug("Skipping generic placeholder question: %s", label)
                 continue
-            if not is_plausible_application_question(label):
+            if not has_dom_field and not is_plausible_application_question(label):
                 logger.debug("Skipping non-question label: %s", label[:80])
                 continue
             key = question_key(label)
@@ -363,7 +369,15 @@ def prune_answered(base_dir: Path, config: AppConfig | None = None) -> int:
         before = len(questions)
         for key in list(questions.keys()):
             label = str(questions[key].get("question", ""))
-            if is_generic_question_label(label) or not is_plausible_application_question(label):
+            # Keep DOM-discovered questions (those with stored field metadata) even
+            # if their wording fails the plausibility heuristic — they were real
+            # live form fields, not scraped chrome.
+            has_dom_field = bool(
+                isinstance(questions[key], dict) and questions[key].get("field")
+            )
+            if is_generic_question_label(label) or (
+                not has_dom_field and not is_plausible_application_question(label)
+            ):
                 del questions[key]
                 continue
             field = _field_for_pending_entry(

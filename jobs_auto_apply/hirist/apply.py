@@ -364,13 +364,18 @@ async def apply_to_job(
                 ]
                 no_answer = [u for u in unfilled if not str(answers.get(u, "")).strip()]
                 if no_answer:
-                    _queue_missing(
-                        config,
-                        job,
-                        [q for q in questions if q["label"] in no_answer],
-                        answers,
-                        force=True,
-                    )
+                    # Include labels that aren't in the discovered question list
+                    # (undiscovered empty mandatory fields). Without this they'd be
+                    # filtered out and silently lost — neither queued nor recorded.
+                    q_by_label = {
+                        str(q.get("label", "")).strip(): q for q in questions
+                    }
+                    queue_fields = [
+                        q_by_label.get(lbl)
+                        or {"label": lbl, "kind": "text", "platform": "hirist"}
+                        for lbl in no_answer
+                    ]
+                    _queue_missing(config, job, queue_fields, answers, force=True)
                     logger.warning(
                         "Hirist: %d field(s) queued for manual answer for %s "
                         "(answer once, then re-run)",

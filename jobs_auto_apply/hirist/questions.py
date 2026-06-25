@@ -19,7 +19,6 @@ from ..application_questions import (
     enrich_field_for_llm,
     infer_field_input_type,
     is_generic_question_label,
-    is_plausible_application_question,
     resolve_fill_answer,
 )
 from ..page_load import prepare_interactive_page
@@ -469,6 +468,16 @@ _DISCOVER_JS = (
   const soloChecks = [];
   for (const el of root.querySelectorAll('input[type="checkbox"]')) {
     if (!checkboxUsable(el)) continue;
+    // Grouped checkboxes (a question container holding more than one option) are
+    // emitted as a single checkbox_group by the container pass below. Skip them
+    // here so each option is not mis-emitted as a standalone checkbox — Hirist
+    // gives every option in a multi-select a distinct `name` ("0","1","2"…),
+    // which would otherwise look like separate single checkboxes.
+    const qc = el.closest(
+      ".multi-answer-question-container, .screening-question-container, "
+      + ".single-answer-question-container"
+    );
+    if (qc && qc.querySelectorAll('input[type="checkbox"]').length > 1) continue;
     if (el.name) {
       (checksByName[el.name] ||= []).push(el);
     } else {
@@ -1545,11 +1554,12 @@ async def discover_hirist_questions(
     fields: list[dict[str, Any]] = []
     for index, item in enumerate(raw or []):
         label = str(item.get("label", "")).strip()
-        if (
-            is_generic_question_label(label)
-            or _NOISE_LABEL.search(label)
-            or not is_plausible_application_question(label)
-        ):
+        # Items come straight from the live form's .mandatory-question elements, so
+        # they are real questions even when the wording fails the scraped-chrome
+        # plausibility heuristic (e.g. long imperative prompts like "…Paste the
+        # link and in 2-3 lines tell what it does…"). Only drop empty/placeholder
+        # labels and obvious chrome (NOISE), not legitimate long prompts.
+        if is_generic_question_label(label) or _NOISE_LABEL.search(label):
             continue
         kind = str(item.get("kind", "text"))
         field: dict[str, Any] = {

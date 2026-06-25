@@ -2245,6 +2245,68 @@ async def _discover_checkbox_options_playwright(page: Page) -> list[str]:
     return options
 
 
+async def _discover_choice_options_playwright(page: Page) -> list[str]:
+    """Last-resort scrape of live chip/radio/checkbox option labels.
+
+    JS discovery occasionally flags a choice control (``hasSingleSelect``) without
+    capturing the option *labels* (async render / throttled tab). Reading the live
+    elements directly lets us confirm there really are selectable options before
+    committing to a fabricated Yes/No target that can never be clicked.
+    """
+    scope = page.locator(_CHATBOT_SCOPE).last
+    if await scope.count() == 0:
+        return []
+    options: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str) -> None:
+        text = re.sub(r"\s+", " ", (name or "").strip())
+        if (
+            not text
+            or text in seen
+            or _SKIP_CHIP.search(text)
+            or _INVALID_OPTION.search(text)
+        ):
+            return
+        seen.add(text)
+        options.append(text)
+
+    try:
+        chip_loc = scope.locator(".chatbot_Chip, .chipItem")
+        for i in range(await chip_loc.count()):
+            _add(await chip_loc.nth(i).inner_text())
+        for role in ("radio", "checkbox"):
+            boxes = scope.get_by_role(role)
+            for i in range(await boxes.count()):
+                box = boxes.nth(i)
+                name = (await box.get_attribute("aria-label") or "").strip()
+                if not name:
+                    try:
+                        name = (
+                            await box.evaluate(
+                                """el => {
+                                  const id = el.id;
+                                  if (id) {
+                                    const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+                                    if (lbl) return (lbl.innerText || '').trim();
+                                  }
+                                  const wrap = el.closest('label');
+                                  return wrap ? (wrap.innerText || '').trim() : '';
+                                }"""
+                            )
+                        ).strip()
+                    except Exception:
+                        name = ""
+                _add(name)
+        for sel in ("label.ssrc__label", ".singleselect-radiobutton label"):
+            loc = scope.locator(sel)
+            for i in range(await loc.count()):
+                _add(await loc.nth(i).inner_text())
+    except Exception as exc:
+        logger.debug("Playwright choice discovery failed: %s", exc)
+    return options
+
+
 async def _click_checkbox_playwright(page: Page, targets: list[str]) -> bool:
     scope = page.locator(_CHATBOT_SCOPE).last
     clicked = False
@@ -2749,8 +2811,24 @@ async def discover_naukri_chatbot_questions(
         logger.info("Naukri chatbot: terminal screen (%s)", question[:50])
         return []
     if not _is_naukri_chatbot_question(question):
-        logger.debug("Skipping non-question chatbot text: %s", question[:80])
-        return []
+        # A long recruiter statement can still be answerable when the panel renders
+        # real, selectable options (e.g. "This role needs 5-9 yrs … [Yes][No]").
+        # Keep it only when the DOM exposes *meaningful* scraped option labels — not
+        # a bare hasSingleSelect (phantom radio with no labels) and not skip-only
+        # chips — so a pure intro statement is still discarded, but a fused
+        # statement+choice prompt reaches the normal resolver (incl. the LLM
+        # option-picker) instead of getting stuck.
+        choice_opts, checkbox_opts, _ = _split_discovered_options(raw)
+        meaningful = _filter_meaningful_options(choice_opts + checkbox_opts)
+        if not meaningful:
+            logger.debug("Skipping non-question chatbot text: %s", question[:80])
+            return []
+        logger.info(
+            "Naukri chatbot: statement with %d selectable option(s) — treating as "
+            "answerable: %s",
+            len(meaningful),
+            question[:60],
+        )
 
     poll_ms = 200
     if config is not None:
@@ -3232,6 +3310,12 @@ async def fill_naukri_chatbot_question(
     if checkbox_mode:
         if not answer_options:
             answer_options = await _discover_checkbox_options_playwright(page)
+        if not answer_options:
+            answer_options = _filter_meaningful_options(
+                await _discover_choice_options_playwright(page)
+            )
+            if answer_options:
+                meaningful_opts = answer_options
         targets = _targets_for_answer(answer, answer_options, label)
         if not targets and _looks_like_city_select_question(label) and answer_options:
             targets = _city_checkbox_targets("Yes", answer_options)
@@ -3255,22 +3339,62 @@ async def fill_naukri_chatbot_question(
             logger.info("Naukri chatbot: clicked checkbox(es) %r", ", ".join(targets)[:60])
             return await _advanced()
         if choice_only:
+            if not answer_options:
+                # Resolved as a multi-select but the live DOM exposes no options to
+                # tick — clicking a fabricated target only yields a false technical
+                # failure, so skip honestly instead.
+                raise CannotAnswerTruthfully(
+                    label,
+                    reason="checkbox group detected but no selectable options on page",
+                )
             logger.warning(
                 "Naukri chatbot: expected checkbox for %s but found no options",
                 label[:60],
             )
             return False
 
-    if radio_mode:
+    if radio_mode and not meaningful_opts:
+        # Resolved as a single-select but the discovery snapshot captured no
+        # option labels. Re-scrape (JS first, then a direct Playwright read of the
+        # live chips/radios) before doing anything else.
+        _, fresh_opts, fresh_raw = await _fetch_answer_options(
+            page, question=label, attempts=6, poll_ms=poll_ms
+        )
+        if fresh_raw:
+            raw = fresh_raw
+        if fresh_opts:
+            answer_options = _filter_meaningful_options(fresh_opts)
+            meaningful_opts = answer_options
         if not meaningful_opts:
-            _, fresh_opts, fresh_raw = await _fetch_answer_options(
-                page, question=label, attempts=6, poll_ms=poll_ms
-            )
-            if fresh_raw:
-                raw = fresh_raw
-            if fresh_opts:
-                answer_options = _filter_meaningful_options(fresh_opts)
+            pw_opts = await _discover_choice_options_playwright(page)
+            if pw_opts:
+                answer_options = _filter_meaningful_options(pw_opts)
                 meaningful_opts = answer_options
+        if not meaningful_opts:
+            # Still nothing selectable on the page. The Yes/No options were
+            # injected by label inference, not scraped from the DOM, so a
+            # fabricated 'No'/'Yes' click would always fail and be logged as a
+            # false technical failure. Prefer a real text composer if the live
+            # panel exposes one; otherwise skip honestly (not a tech failure).
+            if raw and raw.get("hasVisibleInput") and not choice_only:
+                logger.info(
+                    "Naukri chatbot: single-select resolved but no DOM options for "
+                    "%s — falling back to text input",
+                    label[:60],
+                )
+                radio_mode = False
+                answer_options = []
+                meaningful_opts = []
+                dom_is_free_text = True
+                dom_has_choice = False
+                kind = "text"
+            else:
+                raise CannotAnswerTruthfully(
+                    label,
+                    reason="single-select detected but no selectable options on page",
+                )
+
+    if radio_mode:
         targets = _targets_for_answer(answer, answer_options, label)
         answer_is_exact_option = bool(answer_options) and any(
             o.strip().lower() == answer.strip().lower() for o in answer_options
@@ -3323,6 +3447,67 @@ async def fill_naukri_chatbot_question(
                 label[:50],
             )
             return await _advanced()
+        # All click attempts failed. The options we tried may be label-inferred
+        # Yes/No (phantom) rather than the real on-screen choices. Re-scrape the
+        # live DOM for the actual options and, when they differ, hand THEM to the
+        # LLM and retry — "identify real options -> ask LLM -> click".
+        live_opts = _filter_meaningful_options(
+            await _discover_choice_options_playwright(page)
+        )
+        tried = {o.strip().lower() for o in answer_options}
+        if live_opts and {o.strip().lower() for o in live_opts} != tried:
+            retry_answer = answer
+            if (
+                config is not None
+                and getattr(config.llm, "enabled", False)
+                and not any(_chip_matches(o, answer) for o in live_opts)
+            ):
+                from ..llm_answers import map_answer_to_option
+
+                mapped = map_answer_to_option(
+                    config, question=label, options=live_opts, answer=answer
+                )
+                if mapped:
+                    logger.info(
+                        "Naukri chatbot: LLM mapped %r -> live option %r",
+                        answer[:40],
+                        mapped[:40],
+                    )
+                    retry_answer = mapped
+            retry_targets = _targets_for_answer(retry_answer, live_opts, label)
+            retry_target = retry_targets[0] if retry_targets else retry_answer.strip()
+            logger.info(
+                "Naukri chatbot: retrying radio for %s with live options [%s] -> %r",
+                label[:50],
+                ", ".join(live_opts[:5]),
+                retry_target[:40],
+            )
+            res2 = await page.evaluate(
+                _FILL_JS,
+                {
+                    "answer": retry_target,
+                    "answers": retry_targets,
+                    "allowText": False,
+                    "mode": "choice",
+                },
+            )
+            if (
+                isinstance(res2, dict) and res2.get("filled")
+            ) or await _click_option_playwright(page, retry_target):
+                logger.info(
+                    "Naukri chatbot: clicked radio via live re-scrape %r",
+                    retry_target[:40],
+                )
+                return await _advanced()
+        # No usable live options, or the live re-scrape matched what we already
+        # tried and still won't click. If the prompt is open-ended (mis-detected
+        # as a radio) or the panel truly exposes nothing selectable, queue it for
+        # manual input instead of logging a false technical failure.
+        if is_open_ended_describe_question(label) or not live_opts:
+            raise CannotAnswerTruthfully(
+                label,
+                reason="radio options not selectable on page (open-ended/phantom)",
+            )
         if answer_options and any(_chip_matches(o, target) for o in answer_options):
             logger.warning(
                 "Naukri chatbot: expected radio for %s but could not click %r",

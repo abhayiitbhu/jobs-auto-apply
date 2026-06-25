@@ -1,57 +1,153 @@
-# Job Auto Apply
+# Jobs Auto Apply
 
-Automatically search and apply on **Wellfound**, **Uplers**, **Naukri**, **Hirist**, and **Instahyre**.
+Automatically search, filter, and apply to jobs across **Wellfound**, **Uplers**, **Naukri**, **Hirist**, and **Instahyre** — including company ATS forms (Greenhouse, Lever, Workday, etc.) and recruiter screening questions, which are answered from your profile facts with an optional local LLM.
 
 | Platform | Apply type |
 |----------|------------|
 | Wellfound | In-platform Easy Apply |
-| Uplers | Redirects to company ATS (Greenhouse, Workday, etc.) |
-| Naukri | Quick apply on naukri.com |
-| Hirist | One-click apply on hirist.tech |
-| Instahyre | One-click apply on opportunities feed |
+| Uplers | Redirects to company ATS (Greenhouse, Workday, Lever, …) |
+| Naukri | Quick apply + chatbot screening on naukri.com |
+| Hirist | One-click apply + screening form on hirist.tech |
+| Instahyre | One-click apply on the opportunities feed |
+
+## How it works
+
+For every run the tool:
+
+1. **Searches** each enabled platform using your filters.
+2. **Filters** out already-applied jobs, skipped companies, and skipped roles.
+3. **Applies** — fills the platform form / company ATS, including resume upload and a tailored cover note.
+4. **Answers screening questions** using the resolution order below.
+5. **Defers** anything it can't answer confidently to `data/pending_questions.json` for you to answer later (instead of guessing).
+
+### Answer resolution order
+
+When a recruiter question appears, the answer engine (`jobs_auto_apply/answers/`) tries, in order:
+
+1. **Saved memory** — a previously confirmed answer in `data/user_memory.json`.
+2. **Config / profile facts** — deterministic values from `profile/application_facts.yaml` (notice period, PAN/UAN, education, skill years, location, CTC, …).
+3. **RAG** — retrieval over your profile facts / resume to answer factual questions.
+4. **LLM** — a local Ollama model drafts an answer, optionally double-checked by a verifier model for high-risk fields (CTC, employer, years of experience).
+
+Answers below the confidence bar are **not** auto-filled — they're queued in `pending_questions.json`. Genuine fill failures are recorded in `data/technical_failures.json` so they can be retried.
 
 ## Quick start
 
 ```bash
-cp config.example.yaml config.yaml
-# Add resume.pdf, quit Chrome (Cmd+Q)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
 
+cp config.example.yaml config.yaml
+# Edit config.yaml + profile/*.yaml, add your resume.pdf
+
+# (optional) set up the local LLM — see "Local LLM" below
+bash scripts/setup_ollama_models.sh
+
+# Quit Chrome first (Cmd+Q) if using your Chrome profile, then:
 python main.py run --platform all
 python main.py run --platform naukri
 python main.py run --platform hirist
 python main.py run --platform instahyre
 ```
 
-Uses your **Chrome profile** by default — log into all sites in Chrome first (Google sign-in works).
-
-## Platforms config
-
-See `config.example.yaml` for filters per platform. Enable/disable with `enabled: true/false`.
-
-### Naukri filters
-- `keywords`, `locations`, `experience_min`, `salary_min_lakhs`, `remote_only`
-
-### Hirist filters
-- `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`)
-
-### Instahyre filters
-- `job_functions`, `locations`, `experience_years`, `company_size`
+Requires **Python 3.10+**. By default it reuses your **Chrome profile** — log into the job sites in Chrome first (Google sign-in works).
 
 ## Commands
+
+The entry point is `main.py`, which loads `.env` (if present) and invokes the Click CLI.
+
+| Command | Description |
+|---------|-------------|
+| `run` | Search, filter, and apply automatically (or apply the approved queue if `require_review` is set). |
+| `review` | Collect listings per platform, then interactively approve/reject before applying. |
+| `apply-reviewed` | Submit applications only for jobs approved in the review queue. |
+| `review-status` | Show pending / approved / rejected counts per platform. |
+| `answer-questions` | Answer deferred pending questions, or `--review` bad auto-generated saved answers. |
+| `memory` | Show saved review decisions, preferences, and question answers. |
+| `login` | Sign in once (Google/passkey) and save the session. |
+| `verify` | Open each platform to verify the saved session is valid. |
+| `chrome-profiles` | List the Chrome profiles available on your machine. |
+| `export-cookies-help` | Print cookie-export instructions (legacy `auth.method: cookies`). |
+
+Common options: `--config <path>` (default `config.yaml`), `--platform {wellfound,uplers,naukri,hirist,instahyre,all}` (default `all`), `--verbose`.
 
 ```bash
 python main.py chrome-profiles
 python main.py login --platform all
 python main.py verify --platform naukri
 python main.py run --platform all --verbose
+python main.py answer-questions          # fill in deferred questions
+python main.py answer-questions --review # fix bad saved answers
 ```
+
+## Configuration
+
+Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
+
+| Section | Purpose |
+|---------|---------|
+| `user` | Name, email, phone, LinkedIn — used to fill ATS forms. |
+| `profile` | Core skills, roles, headline used for matching and cover notes. |
+| `compensation` | Current/expected CTC (used for CTC questions and cover letter). |
+| `cover_letter` | Cover note mode (`dynamic` / `template` / `llm`) and options. |
+| `auth`, `browser` | Login method and Chrome-profile / Playwright browser settings. |
+| `paths` | Locations of `application_facts`, `user_memory.json`, `pending_questions.json`, etc. |
+| `answers` | Notice/join threshold and default experience chip options. |
+| `resume` | Resume PDF path. |
+| `wellfound`, `uplers`, `naukri`, `hirist`, `instahyre` | Per-platform `enabled` flag + filters. |
+| `application` | Run-wide behaviour: dry run, caps, delays, `parallel_platforms`, review gating. |
+| `llm` | Local LLM / RAG settings (models, confidence thresholds, FAISS). |
+| `workday` | Credentials/answers for Workday multi-step portals. |
+| `state` | Misc persisted run state. |
+
+### Platform filters
+
+- **Naukri** — `keywords`, `locations`, `experience_min`, `salary_min_lakhs`, `remote_only`
+- **Hirist** — `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`)
+- **Instahyre** — `job_functions`, `locations`, `experience_years`, `company_size`
+- **Wellfound / Uplers** — keywords, skills, locations, roles
+
+### Profile facts (answer the screening questions)
+
+Two YAML files under `profile/` feed the answer engine. Add real values — never invent PAN/UAN; leave blank to defer to manual.
+
+- **`profile/application_facts.yaml`** — structured facts: `pan`, `uan`, `gender`, `notice_period_days`, `serving_notice`, `education` (bachelors/masters/etc.), `date_of_birth`, `pincode`, `current_location`, `willing_to_relocate`, `preferred_locations`, `past_employers`, and a `skill_years` map (explicit years per skill; `0` = none) plus free-text facts like `reason_for_change`.
+- **`profile/resume_facts.yaml`** — your resume as structured data: headline, skills, work `experience`, education, `skip_companies`, and a profile summary. Used for RAG and cover-letter matching.
+
+## Local LLM (Ollama)
+
+The LLM drafts and verifies answers entirely on-device via [Ollama](https://ollama.com).
+
+```bash
+brew install ollama && brew services start ollama
+bash scripts/setup_ollama_models.sh
+```
+
+This pulls `qwen2.5:7b` and creates a **`job-answers`** model (generator). If `llm.verifier_enabled: true`, it also pulls `qwen2.5:3b` and creates **`job-verify`** (a lighter verifier for high-risk fields). Then in `config.yaml`:
+
+```yaml
+llm:
+  enabled: true
+  base_url: "http://127.0.0.1:11434"
+  model: job-answers
+  verifier_model: job-verify   # or "job-answers" to reuse one resident model (<=16GB RAM)
+  verifier_enabled: true
+  min_confidence: 0.92         # fill threshold
+  min_confidence_persist: 0.98 # only write LLM/RAG drafts to memory above this
+  use_faiss_memory: true       # FAISS RAG over prior Q/A + profile facts
+  embeddings_model: sentence-transformers/all-MiniLM-L6-v2
+```
+
+On a 16GB Mac, limit Ollama concurrency: `export OLLAMA_NUM_PARALLEL=1` and `export OLLAMA_MAX_LOADED_MODELS=2`. To disable the LLM entirely, set `llm.enabled: false` (factual config/RAG answers still work; unknown questions are deferred).
 
 ## Cover letters
 
-Each application scrapes the **job description** from the page and builds a tailored note:
+Each application scrapes the **job description** and builds a tailored note:
 
 - Matches JD keywords to your `profile.core_skills`
-- Picks a role-specific hook (platform engineer, architect, FDE, etc.)
+- Picks a role-specific hook (platform engineer, architect, FDE, …)
 - Includes CTC when `cover_letter.include_ctc: true`
 
 ```yaml
@@ -59,49 +155,13 @@ cover_letter:
   mode: dynamic    # dynamic (default) | template | llm
   include_ctc: true
   max_words: 200
-
-compensation:
-  current_ctc_lpa: 48
-  current_fixed_lpa: 40
-  current_variable_lpa: 2
-  current_esops_lpa: 6
-  expected_ctc_lpa: 55
 ```
 
-For highest quality, set `mode: llm` and export `OPENAI_API_KEY`.
+For highest quality set `mode: llm` (uses the configured LLM, or `OPENAI_API_KEY` if you wire one in).
 
-## Notes
-
-- Naukri has daily apply limits (~50/day on free tier) — use delays
-- Instahyre is fastest (true one-click, no forms)
-- Hirist supports Google login via Chrome profile
-- Quit Chrome before each run when using `use_chrome_profile: true`
-
-## Quick start
-
-```bash
-cd wellfound-auto-apply
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-
-cp config.example.yaml config.yaml
-# Add resume.pdf
-
-# One-time Google login (only if use_chrome_profile: false)
-# python main.py login --platform all
-
-# Auto-apply (quit Chrome first if using chrome profile)
-python main.py run --platform all
-```
-
-## Logging in with Gmail (Google OAuth)
+## Logging in
 
 ### Option A — Reuse your Chrome profile (recommended)
-
-If you're already signed into Google, Wellfound, and Uplers in Chrome:
 
 ```yaml
 browser:
@@ -112,18 +172,9 @@ browser:
 ```
 
 ```bash
-# 1. Quit Chrome completely (Cmd+Q on macOS)
-# 2. Run — opens your real Chrome profile with existing Google login
+# Quit Chrome completely (Cmd+Q) — Chrome locks its profile — then:
 python main.py run --platform all
 ```
-
-List available profiles:
-
-```bash
-python main.py chrome-profiles
-```
-
-**Important:** Chrome must be fully quit before the script runs (Chrome locks its profile).
 
 ### Option B — One-time login in Playwright Chromium
 
@@ -131,60 +182,23 @@ python main.py chrome-profiles
 python main.py login --platform all
 ```
 
-Session saved to `data/sessions/`. Set `browser.use_chrome_profile: false` for this mode.
+Session is saved to `data/sessions/`. Set `browser.use_chrome_profile: false` for this mode. Do **not** store your Gmail password in config — passkeys work in the login window. Legacy cookie mode: `auth.method: cookies` + `python main.py export-cookies-help`.
 
-**Do not** store your Gmail password in config. Passkeys work in the browser window during `login`.
+## Company ATS (Uplers flow)
 
-Legacy: `auth.method: cookies` + `python main.py export-cookies-help`.
-
-## Configuration
-
-### User profile (required for company ATS forms)
-
-```yaml
-user:
-  name: "Abhay Jain"
-  email: "abhay.jain.cse11@itbhu.ac.in"
-  phone: "9358161425"
-  linkedin: "https://www.linkedin.com/in/abhay-jain"
-  expected_display_name: "abhay"
-```
-
-### Uplers flow
-
-1. Logs into Uplers (saved Google session or cookies)
-2. Applies your filters (keywords, skills, locations, roles)
-3. For each job listing, opens the detail page
-4. Clicks Apply / View Job → captures the **company career site URL**
-5. Navigates to Greenhouse / Lever / Ashby / etc.
-6. Fills name, email, phone, LinkedIn, resume upload, cover letter
-7. Submits the application
-
-### Supported company ATS systems
+Uplers jobs redirect to the company's career site. The tool detects the ATS and fills the form:
 
 - **Workday** (`*.myworkdayjobs.com`) — full multi-step wizard (see below)
-- Greenhouse (`boards.greenhouse.io`)
-- Lever (`jobs.lever.co`)
-- Ashby (`jobs.ashbyhq.com`)
-- SmartRecruiters, iCIMS, BambooHR, Teamtailor, Jobvite, Recruitee
+- Greenhouse, Lever, Ashby, SmartRecruiters, iCIMS, BambooHR, Teamtailor, Jobvite, Recruitee
 - **Generic fallback** for other career pages
 
-### Workday support
+### Workday
 
-When a job redirects to a Workday career portal, the tool runs a dedicated handler that:
-
-1. Accepts cookie notice (`legalNoticeAcceptButton`)
-2. Clicks **Apply** → **Apply Manually**
-3. Signs in or creates an account (if `workday.password` is set)
-4. Walks through the multi-page wizard (My Information → Experience → Questions → Disclosures → Review)
-5. Fills fields via `data-automation-id` selectors (name, email, phone, address, resume, cover letter)
-6. Clicks **Save and Continue** through each step and submits on the review page
-
-Add to `config.yaml`:
+When a job redirects to a Workday portal, a dedicated handler accepts the cookie notice, clicks Apply → Apply Manually, signs in / creates an account (using `workday.password`), walks the wizard (My Information → Experience → Questions → Disclosures → Review) filling fields by `data-automation-id`, and submits.
 
 ```yaml
 workday:
-  password: "your-workday-password"   # same password for create-account on new company portals
+  password: "your-workday-password"   # reused to create accounts on new company portals
   how_did_you_hear: "LinkedIn"
   skip_voluntary_disclosures: true
   address:
@@ -193,91 +207,105 @@ workday:
     country: "India"
 ```
 
-**Notes:**
-- Each company has a separate Workday account tied to your email — `workday.password` is reused when creating new accounts.
-- Some companies require email verification after account creation; complete that manually if prompted.
-- Custom screening questions may need manual answers if the tool cannot match them.
+Each company has a separate Workday account tied to your email; some require manual email verification, and custom screening questions may need manual answers.
 
-### Cookie export
+## Run platforms in parallel
 
-Only needed if `auth.method: cookies`. Otherwise use `python main.py login`.
+```yaml
+naukri: { enabled: true }
+hirist: { enabled: true }
+instahyre: { enabled: true }
 
-```bash
-python main.py export-cookies-help --platform uplers
+application:
+  parallel_platforms: true   # naukri + hirist + instahyre concurrently
 ```
 
-## Commands
-
 ```bash
-python main.py chrome-profiles           # list Chrome profiles on your Mac
-python main.py login --platform all      # one-time sign-in (if not using Chrome profile)
-python main.py verify --platform all
 python main.py run --platform all
 ```
 
-### Run Naukri, Hirist, and Instahyre in parallel
+Each cookie-based platform gets its own browser session. Wellfound/Uplers run sequentially (they share the Chrome profile).
 
-1. Enable all three in `config.yaml`:
+## Data files
 
-```yaml
-naukri:
-  enabled: true
-hirist:
-  enabled: true
-instahyre:
-  enabled: true
+Created under `data/` (paths configurable in `config.paths`):
 
-application:
-  parallel_platforms: true   # naukri + hirist + instahyre at the same time
-```
+| File | Purpose |
+|------|---------|
+| `data/user_memory.json` | Confirmed Q&A answers, review decisions, preferences. |
+| `data/pending_questions.json` | Questions deferred for you to answer manually. |
+| `data/technical_failures.json` | Jobs that failed to fill (for retry/inspection). |
+| `data/sessions/` | Saved browser sessions (Option B login). |
+| `data/faiss/` | FAISS vector index for RAG over prior answers. |
+| `data/applied_*.json`, `data/run.log` | Applied-job ledger and run log. |
 
-2. Export cookies (or use Chrome profile) for each site.
-3. Run:
+## Scripts
 
-```bash
-python3 main.py run --platform all
-```
-
-Each platform gets its own browser session. Wellfound/Uplers still run sequentially (they share a Chrome profile). To run only the three Indian boards:
-
-```bash
-# disable wellfound/uplers in config, or pass a subset if you add a future flag
-python3 main.py run --platform all
-```
+| Script | Purpose |
+|--------|---------|
+| `scripts/setup_ollama_models.sh` | Pull base models and create `job-answers` / `job-verify`. |
+| `scripts/cleanup_user_memory.py` | Prune/repair entries in `user_memory.json`. |
+| `scripts/migrate_memory_to_groups.py` | Migrate legacy memory to group-keyed answers. |
+| `scripts/test_single_naukri.py` | Apply to a single Naukri job for debugging. |
+| `scripts/test_single_hirist.py` | Apply to a single Hirist job for debugging. |
+| `scripts/debug_jd.py` | Inspect scraped job-description / cover-note output. |
 
 ## Safety
 
-- Start with `dry_run: true` in config — searches jobs without submitting
-- Use `max_jobs_per_run: 3` for first live test
-- Delays default to 45–90s between applications
-- Company ATS forms vary — some may need manual completion if the site uses CAPTCHA or custom fields
-- High-volume auto-apply may violate platform ToS
+- Start with `dry_run: true` — searches without submitting.
+- Use a small `max_jobs_per_run` for the first live test.
+- Delays default to ~45–90s between applications.
+- Naukri has daily apply limits (~50/day on free tier).
+- Some ATS forms (CAPTCHA / custom fields) need manual completion.
+- High-volume auto-apply may violate platform ToS — use responsibly.
 
 ## Project layout
 
 ```
-wellfound-auto-apply/
+jobs-auto-apply/
+├── main.py                     # entry point -> jobs_auto_apply.cli:main
 ├── config.example.yaml
-├── cookies.wellfound.example.json
-├── cookies.uplers.example.json
-├── wellfound_auto_apply/
-│   ├── cli.py              # --platform wellfound|uplers|all
-│   ├── search.py           # Wellfound job search
-│   ├── apply.py            # Wellfound apply
-│   ├── uplers/
-│   │   ├── search.py       # Uplers job discovery
-│   │   └── apply.py        # Resolve external URL + apply
-│   └── ats/
-│       ├── detector.py     # Detect Greenhouse/Lever/etc.
-│       └── apply.py        # Fill company ATS forms
+├── requirements.txt
+├── profile/
+│   ├── application_facts.yaml   # structured facts for answering questions
+│   └── resume_facts.yaml        # resume as structured data (RAG source)
+├── ollama/
+│   ├── Modelfile.job-answers    # generator model
+│   └── Modelfile.job-verify     # verifier model
+├── scripts/                     # setup + maintenance + debug helpers
+└── jobs_auto_apply/
+    ├── cli.py                   # Click CLI (run, review, login, …)
+    ├── config.py                # config loading + dataclasses
+    ├── browser.py               # Playwright / Chrome-profile sessions
+    ├── memory.py                # user_memory.json read/write
+    ├── pending_questions.py     # deferred-question queue
+    ├── technical_failures.py    # fill-failure ledger
+    ├── rag_answers.py           # RAG over profile facts
+    ├── llm_answers.py           # Ollama LLM generate/verify + FAISS
+    ├── question_groups.py       # group questions to share one answer
+    ├── application_questions.py # discover/resolve/fill orchestration
+    ├── answers/                 # answer resolution engine
+    │   ├── resolve.py           #   saved -> config -> RAG -> LLM order
+    │   ├── memory_store.py      #   save/lookup saved answers
+    │   ├── persist_policy.py    #   when a draft may be persisted
+    │   └── …                    #   fields, validation, chips, location, etc.
+    ├── ats/                     # company ATS detection + form fill (Workday, …)
+    ├── wellfound/               # search.py / apply.py / pipeline.py
+    ├── uplers/                  # search.py / apply.py
+    ├── naukri/                  # search.py / apply.py / questions.py / resume sync
+    ├── hirist/                  # search.py / apply.py / questions.py
+    └── instahyre/               # search.py / apply.py / feeds.py
 ```
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Uplers login fails | Re-export cookies from platform.uplers.com |
-| No jobs found | Broaden keywords/skills; check you're logged in |
-| External URL not captured | Job may use in-platform apply — check manually |
-| ATS submit failed | Site may use CAPTCHA or non-standard form — apply manually |
-| Missing email error | Set `user.email` in config.yaml |
+| Login fails | Re-run `python main.py login --platform <p>`, or quit Chrome before using the Chrome profile. |
+| No jobs found | Broaden keywords/filters; confirm you're logged in (`verify`). |
+| Questions keep deferring | Add the fact to `profile/application_facts.yaml`, or run `python main.py answer-questions`. |
+| LLM not used | Ensure Ollama is running and `llm.enabled: true`; check `base_url` and model names. |
+| External URL not captured | Job may use in-platform apply — apply manually. |
+| ATS submit failed | Site may use CAPTCHA or a non-standard form — apply manually. |
+| Missing email error | Set `user.email` in `config.yaml`. |
+```
