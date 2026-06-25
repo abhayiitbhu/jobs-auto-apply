@@ -1,0 +1,972 @@
+2026-06-25 13:34:28,297 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 13:34:37,935 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:34:38,648 [INFO] Opening Naukri and verifying session...
+2026-06-25 13:34:41,550 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 13:34:41,564 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 13:34:43,136 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 13:34:43,895 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:34:48,009 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:34:50,234 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:34:52,482 [INFO] Naukri chatbot question [text/years_numeric]: Total years of hands-on experience in Python backend development?
+2026-06-25 13:34:52,482 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 13:34:52,528 [INFO] Using saved answer for: Total years of hands-on experience in Python backend develop
+2026-06-25 13:34:52,556 [INFO] Naukri chatbot: filled via text
+2026-06-25 13:34:52,884 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:34:52,885 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 2)
+2026-06-25 13:34:52,926 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 13:34:56,048 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:35:04,113 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:35:04,114 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:35:04,735 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:35:05,331 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:35:13,412 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:35:13,413 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:35:14,035 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:35:14,634 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:35:22,718 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:35:22,719 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:35:22,720 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Which Python backend frameworks have you worked on extensively? (Django/FastAPI/)
+2026-06-25 13:35:22,720 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 13:48:29,573 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 13:48:32,732 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:48:33,443 [INFO] Opening Naukri and verifying session...
+2026-06-25 13:48:36,279 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 13:48:36,291 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 13:48:37,609 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 13:48:38,372 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:48:41,486 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:48:43,708 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:48:45,959 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:48:45,959 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 13:48:46,003 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 13:48:49,159 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:48:57,223 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:48:57,224 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:48:57,848 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:48:58,451 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:49:06,526 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:49:06,527 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:49:07,151 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:49:07,765 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:49:15,851 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:49:15,852 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:49:15,854 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Which Python backend frameworks have you worked on extensively? (Django/FastAPI/)
+2026-06-25 13:49:15,854 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 13:57:24,107 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 13:57:26,561 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:57:27,261 [INFO] Opening Naukri and verifying session...
+2026-06-25 13:57:30,200 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 13:57:30,213 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 13:57:31,557 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 13:57:32,324 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:57:35,433 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:57:37,654 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:57:39,905 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:57:39,905 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 13:57:39,950 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 13:57:39,973 [INFO] DEBUG fill state 'Which Python backend frameworks have you worked on' | kind=radio input_type=short_text text_only=False choice_only=False | opts=['Yes', 'No'] | rawkeys=['checkboxOptions', 'chipOptions', 'chips', 'hasCheckbox', 'hasChoice', 'hasDobInput', 'hasInput', 'hasSingleSelect', 'hasSkipOnly', 'hasVisibleInput', 'inputMode', 'kinds', 'options', 'placeholder', 'question', 'radioOptions']
+2026-06-25 13:57:42,941 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:57:51,027 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:57:51,028 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:57:51,640 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:57:51,653 [INFO] DEBUG fill state 'Which Python backend frameworks have you worked on' | kind=radio input_type=short_text text_only=False choice_only=False | opts=['Yes', 'No'] | rawkeys=['checkboxOptions', 'chipOptions', 'chips', 'hasCheckbox', 'hasChoice', 'hasDobInput', 'hasInput', 'hasSingleSelect', 'hasSkipOnly', 'hasVisibleInput', 'inputMode', 'kinds', 'options', 'placeholder', 'question', 'radioOptions']
+2026-06-25 13:57:52,233 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:58:00,364 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:58:00,365 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:58:00,991 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:58:01,008 [INFO] DEBUG fill state 'Which Python backend frameworks have you worked on' | kind=radio input_type=short_text text_only=False choice_only=False | opts=['Yes', 'No'] | rawkeys=['checkboxOptions', 'chipOptions', 'chips', 'hasCheckbox', 'hasChoice', 'hasDobInput', 'hasInput', 'hasSingleSelect', 'hasSkipOnly', 'hasVisibleInput', 'inputMode', 'kinds', 'options', 'placeholder', 'question', 'radioOptions']
+2026-06-25 13:58:01,601 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:58:09,670 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:58:09,671 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:58:09,672 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Which Python backend frameworks have you worked on extensively? (Django/FastAPI/)
+2026-06-25 13:58:09,672 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 13:59:00,110 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 13:59:03,165 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:59:03,869 [INFO] Opening Naukri and verifying session...
+2026-06-25 13:59:06,770 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 13:59:06,780 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 13:59:08,353 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 13:59:09,120 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:59:12,228 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:59:14,453 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 13:59:16,707 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:59:16,707 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 13:59:16,751 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 13:59:16,775 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 13:59:19,938 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:59:28,020 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:59:28,021 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:59:28,638 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:59:28,650 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 13:59:29,248 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:59:37,320 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:59:37,321 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:59:37,945 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 13:59:37,962 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 13:59:38,552 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 13:59:46,604 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 13:59:46,605 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 13:59:46,608 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Which Python backend frameworks have you worked on extensively? (Django/FastAPI/)
+2026-06-25 13:59:46,608 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 14:00:01,954 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:00:04,822 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:00:05,519 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:00:08,381 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:00:08,401 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:00:09,823 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:00:10,585 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:00:13,695 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:00:15,917 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:00:18,167 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:00:18,167 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:00:18,212 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 14:00:18,235 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 14:00:21,273 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 14:00:29,362 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 14:00:29,363 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 14:00:29,973 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:00:29,983 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 14:00:30,579 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 14:00:38,660 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 14:00:38,661 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 14:00:39,287 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:00:39,302 [INFO] DEBUG 'Which Python backend frameworks have you worked on' kind=radio opts=['Yes', 'No'] | hasVisibleInput=True hasInput=True inputMode='contenteditable' placeholder='Type message here...' hasChoice=False hasSingleSelect=False hasCheckbox=False radioOptions=[] chipOptions=[] kinds=[]
+2026-06-25 14:00:39,900 [INFO] Naukri chatbot radio targets for Which Python backend frameworks have you worked on: Flask, FastAPI (from answer 'Flask, FastAPI')
+2026-06-25 14:00:47,957 [INFO] Naukri chatbot: radio target 'Flask, FastAPI' not on page for Which Python backend frameworks have you worked on — trying text fill
+2026-06-25 14:00:47,958 [WARNING] Naukri chatbot: refusing text fill for choice question Which Python backend frameworks have you worked on extensive
+2026-06-25 14:00:47,959 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Which Python backend frameworks have you worked on extensively? (Django/FastAPI/)
+2026-06-25 14:00:47,959 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 14:12:07,502 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:12:14,430 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:12:15,144 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:12:18,038 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:12:18,051 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:12:19,593 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:12:20,352 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:12:23,466 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:12:25,692 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:12:27,933 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:12:27,933 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:12:27,978 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 14:12:28,009 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:28,331 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in desiging scalable
+2026-06-25 14:12:28,331 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 2)
+2026-06-25 14:12:28,390 [INFO] Using config answer for: How many years of hands-on experience do you have in desigin
+2026-06-25 14:12:28,405 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:28,728 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in System Design & A
+2026-06-25 14:12:28,728 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 3)
+2026-06-25 14:12:28,771 [INFO] Using saved answer for: How many years of hands-on experience do you have in System 
+2026-06-25 14:12:28,786 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:29,107 [INFO] Naukri chatbot question [text/short_text]: How strong are you in Data Structures & Algorithms (DSA)? (Beginner/In
+2026-06-25 14:12:29,107 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 4)
+2026-06-25 14:12:32,985 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:12:33,241 [INFO] Rule RAG answer: How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:12:33,262 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:12:33,309 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:33,637 [INFO] Naukri chatbot question [text/short_text]: Have you worked with asynchronous programming, Celery, AsyncIO, or bac
+2026-06-25 14:12:33,638 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 5)
+2026-06-25 14:12:33,704 [INFO] Rule RAG answer: Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:12:33,723 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:12:33,738 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:34,066 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:12:34,066 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 6)
+2026-06-25 14:12:34,143 [INFO] Rule RAG answer: Have you independently created HLD/LLD documents or system a
+2026-06-25 14:12:34,163 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:12:34,177 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:12:35,164 [INFO] Naukri chatbot question [radio/radio]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:12:35,165 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 7)
+2026-06-25 14:12:48,968 [INFO] LLM answer for: Have you independently created HLD/LLD documents or system a (confidence=0.80)
+2026-06-25 14:12:49,000 [INFO] LLM below tiered threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:12:49,011 [INFO] LLM confidence below threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:12:49,022 [INFO] Deferred question (will queue): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:12:49,023 [INFO] Queued 1 unanswered question(s) for Python Software Developer
+2026-06-25 14:12:49,024 [WARNING] Skipped Naukri apply (need answers): Python Software Developer — 1 question(s) queued
+2026-06-25 14:13:52,413 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:14:02,137 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:14:02,824 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:14:05,716 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:14:05,740 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:14:07,528 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:14:08,289 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:14:12,405 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:14:14,619 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:14:16,864 [INFO] Naukri chatbot question [text/years_numeric]: Total years of hands-on experience in Python backend development?
+2026-06-25 14:14:16,864 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:14:16,913 [INFO] Using saved answer for: Total years of hands-on experience in Python backend develop
+2026-06-25 14:14:16,942 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:17,267 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:14:17,267 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 2)
+2026-06-25 14:14:17,311 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 14:14:17,327 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:17,650 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in desiging scalable
+2026-06-25 14:14:17,650 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 3)
+2026-06-25 14:14:17,705 [INFO] Using config answer for: How many years of hands-on experience do you have in desigin
+2026-06-25 14:14:17,719 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:18,041 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in System Design & A
+2026-06-25 14:14:18,041 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 4)
+2026-06-25 14:14:18,087 [INFO] Using saved answer for: How many years of hands-on experience do you have in System 
+2026-06-25 14:14:18,103 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:18,425 [INFO] Naukri chatbot question [text/short_text]: How strong are you in Data Structures & Algorithms (DSA)? (Beginner/In
+2026-06-25 14:14:18,425 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 5)
+2026-06-25 14:14:21,544 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:14:21,613 [INFO] Rule RAG answer: How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:14:21,702 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:14:21,734 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:22,065 [INFO] Naukri chatbot question [text/short_text]: Have you worked with asynchronous programming, Celery, AsyncIO, or bac
+2026-06-25 14:14:22,066 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 6)
+2026-06-25 14:14:22,131 [INFO] Rule RAG answer: Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:14:22,151 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:14:22,165 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:22,493 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:14:22,493 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 7)
+2026-06-25 14:14:22,572 [INFO] Rule RAG answer: Have you independently created HLD/LLD documents or system a
+2026-06-25 14:14:22,592 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:14:22,607 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:14:23,575 [INFO] Naukri chatbot question [radio/radio]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:14:23,575 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 8)
+2026-06-25 14:14:25,040 [INFO] LLM answer for: Have you independently created HLD/LLD documents or system a (confidence=0.80)
+2026-06-25 14:14:25,071 [INFO] LLM below tiered threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:14:25,083 [INFO] LLM confidence below threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:14:25,094 [INFO] Deferred question (will queue): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:14:25,096 [WARNING] Skipped Naukri apply (need answers): Python Software Developer — 1 question(s) queued
+2026-06-25 14:25:51,168 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:25:53,622 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:25:54,310 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:25:57,147 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:25:57,164 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:25:58,618 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:25:59,378 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:26:03,489 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:26:05,705 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:26:07,925 [INFO] Naukri chatbot question [text/years_numeric]: Total years of hands-on experience in Python backend development?
+2026-06-25 14:26:07,925 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:26:07,961 [INFO] Using saved answer for: Total years of hands-on experience in Python backend develop
+2026-06-25 14:26:07,987 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:08,311 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:26:08,311 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 2)
+2026-06-25 14:26:08,355 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 14:26:08,372 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:08,707 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in desiging scalable
+2026-06-25 14:26:08,707 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 3)
+2026-06-25 14:26:08,764 [INFO] Using config answer for: How many years of hands-on experience do you have in desigin
+2026-06-25 14:26:08,779 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:09,096 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in System Design & A
+2026-06-25 14:26:09,097 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 4)
+2026-06-25 14:26:09,138 [INFO] Using saved answer for: How many years of hands-on experience do you have in System 
+2026-06-25 14:26:09,154 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:09,472 [INFO] Naukri chatbot question [text/short_text]: How strong are you in Data Structures & Algorithms (DSA)? (Beginner/In
+2026-06-25 14:26:09,472 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 5)
+2026-06-25 14:26:13,162 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:26:13,233 [INFO] Rule RAG answer: How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:26:13,324 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:26:13,356 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:13,685 [INFO] Naukri chatbot question [text/short_text]: Have you worked with asynchronous programming, Celery, AsyncIO, or bac
+2026-06-25 14:26:13,685 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 6)
+2026-06-25 14:26:13,750 [INFO] Rule RAG answer: Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:26:13,770 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:26:13,784 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:14,103 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:26:14,103 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 7)
+2026-06-25 14:26:14,148 [INFO] Using saved answer for: Have you independently created HLD/LLD documents or system a
+2026-06-25 14:26:14,163 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:26:15,150 [INFO] Naukri chatbot question [radio/radio]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:26:15,151 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 8)
+2026-06-25 14:26:15,210 [INFO] Using saved answer for: Have you independently created HLD/LLD documents or system a
+2026-06-25 14:26:15,882 [INFO] Naukri chatbot radio targets for Have you independently created HLD/LLD documents o: Yes (from answer 'Yes')
+2026-06-25 14:26:31,997 [WARNING] Naukri chatbot: expected radio for Have you independently created HLD/LLD documents or system a but could not click 'Yes'
+2026-06-25 14:26:33,265 [INFO] Naukri chatbot question [radio/radio]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:26:33,913 [INFO] Naukri chatbot radio targets for Have you independently created HLD/LLD documents o: Yes (from answer 'Yes')
+2026-06-25 14:26:50,034 [WARNING] Naukri chatbot: expected radio for Have you independently created HLD/LLD documents or system a but could not click 'Yes'
+2026-06-25 14:26:51,305 [INFO] Naukri chatbot question [radio/radio]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:26:51,978 [INFO] Naukri chatbot radio targets for Have you independently created HLD/LLD documents o: Yes (from answer 'Yes')
+2026-06-25 14:27:08,116 [WARNING] Naukri chatbot: expected radio for Have you independently created HLD/LLD documents or system a but could not click 'Yes'
+2026-06-25 14:27:08,117 [INFO] Recorded technical apply failure [naukri]: Python Software Developer @ Solytics Partners (could not fill: Have you independently created HLD/LLD documents or system architecture diagrams)
+2026-06-25 14:27:08,117 [WARNING] Skipped Naukri apply (could not fill): Python Software Developer
+2026-06-25 14:44:05,989 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:44:08,946 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:44:09,638 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:44:12,566 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:44:12,581 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:44:14,198 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:44:14,993 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:44:19,104 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:44:21,317 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:44:23,557 [INFO] Naukri chatbot question [text/years_numeric]: Total years of hands-on experience in Python backend development?
+2026-06-25 14:44:23,557 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:44:23,601 [INFO] Using saved answer for: Total years of hands-on experience in Python backend develop
+2026-06-25 14:44:23,635 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:23,970 [INFO] Naukri chatbot question [text/short_text]: Which Python backend frameworks have you worked on extensively? (Djang
+2026-06-25 14:44:23,970 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 2)
+2026-06-25 14:44:24,008 [INFO] Using saved answer for: Which Python backend frameworks have you worked on extensive
+2026-06-25 14:44:24,025 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:24,342 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in desiging scalable
+2026-06-25 14:44:24,342 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 3)
+2026-06-25 14:44:24,392 [INFO] Using config answer for: How many years of hands-on experience do you have in desigin
+2026-06-25 14:44:24,410 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:24,734 [INFO] Naukri chatbot question [text/years_numeric]: How many years of hands-on experience do you have in System Design & A
+2026-06-25 14:44:24,735 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 4)
+2026-06-25 14:44:24,764 [INFO] Using saved answer for: How many years of hands-on experience do you have in System 
+2026-06-25 14:44:24,779 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:25,095 [INFO] Naukri chatbot question [text/short_text]: How strong are you in Data Structures & Algorithms (DSA)? (Beginner/In
+2026-06-25 14:44:25,095 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 5)
+2026-06-25 14:44:27,903 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:44:30,737 [INFO] LLM answer for: How strong are you in Data Structures & Algorithms (DSA)? (B (confidence=1.00)
+2026-06-25 14:44:30,795 [INFO] Saved LLM answer (confidence=1.00): How strong are you in Data Structures & Algorithms (DSA)? (B
+2026-06-25 14:44:30,810 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:31,132 [INFO] Naukri chatbot question [text/short_text]: Have you worked with asynchronous programming, Celery, AsyncIO, or bac
+2026-06-25 14:44:31,132 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 6)
+2026-06-25 14:44:32,135 [INFO] Rule RAG answer: Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:44:32,155 [INFO] Ephemeral RAG answer (confidence=0.00, not saved): Have you worked with asynchronous programming, Celery, Async
+2026-06-25 14:44:32,170 [INFO] Naukri chatbot: filled via text
+2026-06-25 14:44:32,499 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:44:32,499 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 7)
+2026-06-25 14:44:35,446 [INFO] LLM answer for: Have you independently created HLD/LLD documents or system a (confidence=0.80)
+2026-06-25 14:44:35,467 [INFO] LLM below tiered threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:44:35,477 [INFO] LLM confidence below threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:44:35,486 [INFO] Deferred question (will queue): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:44:35,487 [INFO] Queued 1 unanswered question(s) for Python Software Developer
+2026-06-25 14:44:35,487 [WARNING] Skipped Naukri apply (need answers): Python Software Developer — 1 question(s) queued
+2026-06-25 14:44:56,672 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:44:58,977 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:44:59,665 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:45:02,667 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:45:02,686 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:45:04,337 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:45:05,110 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:45:08,213 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:45:10,434 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:45:12,684 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:45:12,684 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:45:15,416 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:45:16,795 [INFO] LLM answer for: Have you independently created HLD/LLD documents or system a (confidence=0.80)
+2026-06-25 14:45:16,825 [INFO] LLM below tiered threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:45:16,837 [INFO] LLM confidence below threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:45:16,916 [INFO] Deferred question (will queue): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:45:16,917 [WARNING] Skipped Naukri apply (need answers): Python Software Developer — 1 question(s) queued
+2026-06-25 14:46:14,253 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 14:46:16,672 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:46:17,367 [INFO] Opening Naukri and verifying session...
+2026-06-25 14:46:20,253 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 14:46:20,274 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 14:46:22,391 [INFO] Naukri chatbot question panel ready for Python Software Developer
+2026-06-25 14:46:23,154 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:46:26,264 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:46:28,487 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 14:46:30,741 [INFO] Naukri chatbot question [text/short_text]: Have you independently created HLD/LLD documents or system architectur
+2026-06-25 14:46:30,741 [INFO] Naukri: 1 chatbot question(s) for Python Software Developer (step 1)
+2026-06-25 14:46:33,508 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 14:46:34,902 [INFO] LLM answer for: Have you independently created HLD/LLD documents or system a (confidence=0.80)
+2026-06-25 14:46:34,934 [INFO] LLM below tiered threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:46:34,945 [INFO] LLM confidence below threshold (0.80 < 0.92): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:46:35,031 [INFO] Deferred question (will queue): Have you independently created HLD/LLD documents or system a
+2026-06-25 14:46:35,032 [WARNING] Skipped Naukri apply (need answers): Python Software Developer — 1 question(s) queued
+2026-06-25 17:48:10,646 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 17:48:13,181 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:13,868 [INFO] Opening Naukri and verifying session...
+2026-06-25 17:48:16,716 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 17:48:16,736 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 17:48:18,208 [INFO] Naukri chatbot question panel ready for Salesforce Developer
+2026-06-25 17:48:18,977 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:22,678 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:24,888 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:27,124 [INFO] Naukri chatbot question [radio/single_choice]: How many years of Salesforce development experience do you have? — options: 2-4 years, 4 6 years, 7 10 years, More than 10 years
+2026-06-25 17:48:27,124 [INFO] Naukri: 1 chatbot question(s) for Salesforce Developer (step 1)
+2026-06-25 17:48:27,164 [INFO] Using saved answer for: How many years of Salesforce development experience do you h
+2026-06-25 17:48:27,188 [INFO] Answer '0' is zero experience but no zero option in ['2-4 years', '4 6 years', '7 10 years', 'More than 10 years'] — not mapping (avoid overstating) for: How many years of Salesforce development experienc
+2026-06-25 17:48:27,188 [INFO] Naukri chatbot radio targets for How many years of Salesforce development experienc: 0 (from answer '0')
+2026-06-25 17:48:27,197 [INFO] Naukri chatbot: clicked radio '7 10 years'
+2026-06-25 17:48:27,521 [INFO] Naukri chatbot question [radio/single_choice]: Which Salesforce development areas have you worked on? (Select your st — options: Apex + LWC-Lightning Web Components (both hands-on), Apex + Visualforce (both hands-on), LWC (Lightning Web Components) only, Apex only
+2026-06-25 17:48:27,521 [INFO] Naukri: 1 chatbot question(s) for Salesforce Developer (step 2)
+2026-06-25 17:48:27,556 [INFO] Using saved answer for: Which Salesforce development areas have you worked on? (Sele
+2026-06-25 17:48:31,274 [INFO] Naukri chatbot radio targets for Which Salesforce development areas have you worked: No (from answer 'No')
+2026-06-25 17:48:31,304 [INFO] Naukri chatbot: radio target 'No' not on page for Which Salesforce development areas have you worked — trying text fill
+2026-06-25 17:48:31,305 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Which Salesforce development areas have you worked on? (Sele but found no options
+2026-06-25 17:48:31,928 [INFO] Naukri chatbot question [radio/single_choice]: Which Salesforce development areas have you worked on? (Select your st — options: Apex + LWC-Lightning Web Components (both hands-on), Apex + Visualforce (both hands-on), LWC (Lightning Web Components) only, Apex only
+2026-06-25 17:48:32,523 [INFO] Naukri chatbot radio targets for Which Salesforce development areas have you worked: No (from answer 'No')
+2026-06-25 17:48:32,563 [INFO] Naukri chatbot: radio target 'No' not on page for Which Salesforce development areas have you worked — trying text fill
+2026-06-25 17:48:32,563 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Which Salesforce development areas have you worked on? (Sele but found no options
+2026-06-25 17:48:33,187 [INFO] Naukri chatbot question [radio/single_choice]: Which Salesforce development areas have you worked on? (Select your st — options: Apex + LWC-Lightning Web Components (both hands-on), Apex + Visualforce (both hands-on), LWC (Lightning Web Components) only, Apex only
+2026-06-25 17:48:33,788 [INFO] Naukri chatbot radio targets for Which Salesforce development areas have you worked: No (from answer 'No')
+2026-06-25 17:48:33,820 [INFO] Naukri chatbot: radio target 'No' not on page for Which Salesforce development areas have you worked — trying text fill
+2026-06-25 17:48:33,820 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Which Salesforce development areas have you worked on? (Sele but found no options
+2026-06-25 17:48:33,821 [INFO] Recorded technical apply failure [naukri]: Salesforce Developer @ Cloud Angles Digital Transformation (could not fill: Which Salesforce development areas have you worked on? (Select your strongest on)
+2026-06-25 17:48:33,821 [WARNING] Skipped Naukri apply (could not fill): Salesforce Developer
+2026-06-25 17:48:35,096 [INFO] Already applied on Naukri: ML Platform Engineer
+2026-06-25 17:48:36,499 [INFO] Already applied on Naukri: Blue Prism Rpa Developer
+2026-06-25 17:48:38,494 [INFO] Already applied on Naukri: Gen Ai - Sr Engineer
+2026-06-25 17:48:39,992 [INFO] Naukri chatbot question panel ready for Machine Learning Engineer
+2026-06-25 17:48:40,760 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:43,451 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:45,674 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:47,989 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 17:48:47,989 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 1)
+2026-06-25 17:48:48,024 [INFO] Using saved answer for: Your current location
+2026-06-25 17:48:48,063 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 17:48:48,673 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 17:48:48,705 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 17:48:49,323 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 17:48:49,369 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 17:48:49,370 [INFO] Recorded technical apply failure [naukri]: Machine Learning Engineer @ Phenom People (could not fill: Your current location)
+2026-06-25 17:48:49,370 [WARNING] Skipped Naukri apply (could not fill): Machine Learning Engineer
+2026-06-25 17:48:50,890 [INFO] Already applied on Naukri: Senior Analytics Consultant Commerce Media
+2026-06-25 17:48:52,476 [INFO] Naukri chatbot question panel ready for Senior Data Engineer - Data Modelling
+2026-06-25 17:48:53,238 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:55,941 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:48:58,144 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:49:00,374 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 17:49:00,374 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 1)
+2026-06-25 17:49:00,409 [INFO] Using saved answer for: What is your preferred joining location?
+2026-06-25 17:49:01,373 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 17:49:01,404 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 17:49:01,404 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 17:49:02,014 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 17:49:02,579 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 17:49:02,611 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 17:49:02,611 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 17:49:03,233 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 17:49:03,809 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 17:49:03,830 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 17:49:03,830 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 17:49:03,831 [INFO] Recorded technical apply failure [naukri]: Senior Data Engineer - Data Modelling @ Tiger Analytics (could not fill: What is your preferred joining location?)
+2026-06-25 17:49:03,831 [WARNING] Skipped Naukri apply (could not fill): Senior Data Engineer - Data Modelling
+2026-06-25 17:49:06,088 [INFO] Naukri chatbot question panel ready for Senior Python Developer
+2026-06-25 17:49:06,850 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:49:09,549 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:49:11,755 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:49:13,976 [INFO] Naukri chatbot question [radio/single_choice]: Expertise in databases like SQL, PostgreSQL, or MongoDB for handling d — options: Yes, No
+2026-06-25 17:49:13,976 [INFO] Naukri: 1 chatbot question(s) for Senior Python Developer (step 1)
+2026-06-25 17:49:15,608 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 17:49:17,383 [INFO] LLM selected option(s) ['Yes'] for: Expertise in databases like SQL, PostgreSQL, or Mo
+2026-06-25 17:49:17,386 [INFO] LLM selected option(s) for Expertise in databases like SQL, PostgreSQL, or Mo: Yes
+2026-06-25 17:49:17,407 [INFO] Ephemeral LLM-option answer (confidence=0.90, not saved): Expertise in databases like SQL, PostgreSQL, or MongoDB for 
+2026-06-25 17:49:17,418 [INFO] Naukri chatbot radio targets for Expertise in databases like SQL, PostgreSQL, or Mo: Yes (from answer 'Yes')
+2026-06-25 17:49:17,428 [INFO] Naukri chatbot: clicked radio 'Yes'
+2026-06-25 17:49:17,756 [INFO] Naukri chatbot question [radio/single_choice]: Experience with Docker for containerization and Kubernetes for orchest — options: Yes, No
+2026-06-25 17:49:17,756 [INFO] Naukri: 1 chatbot question(s) for Senior Python Developer (step 2)
+2026-06-25 17:49:19,131 [INFO] LLM selected option(s) ['Yes'] for: Experience with Docker for containerization and Ku
+2026-06-25 17:49:19,133 [INFO] LLM selected option(s) for Experience with Docker for containerization and Ku: Yes
+2026-06-25 17:49:19,146 [INFO] Ephemeral LLM-option answer (confidence=0.90, not saved): Experience with Docker for containerization and Kubernetes f
+2026-06-25 17:49:19,153 [INFO] Naukri chatbot radio targets for Experience with Docker for containerization and Ku: Yes (from answer 'Yes')
+2026-06-25 17:49:19,161 [INFO] Naukri chatbot: clicked radio 'Yes'
+2026-06-25 17:49:19,481 [INFO] Naukri chatbot question [radio/single_choice]: Experience with Docker for containerization and Kubernetes for orchest — options: Yes, No
+2026-06-25 17:49:19,481 [INFO] Naukri: 1 chatbot question(s) for Senior Python Developer (step 3)
+2026-06-25 17:49:19,531 [INFO] Ephemeral LLM-option answer (confidence=0.90, not saved): Experience with Docker for containerization and Kubernetes f
+2026-06-25 17:49:19,539 [INFO] Naukri chatbot radio targets for Experience with Docker for containerization and Ku: Yes (from answer 'Yes')
+2026-06-25 17:49:19,546 [INFO] Naukri chatbot: clicked radio 'Yes'
+2026-06-25 17:49:19,861 [INFO] Naukri chatbot question [radio/single_choice]: Are you currently residing in Hyderabad, Telangana or willing to reloc — options: Yes, No
+2026-06-25 17:49:19,861 [INFO] Naukri: 1 chatbot question(s) for Senior Python Developer (step 4)
+2026-06-25 17:49:19,891 [INFO] Using saved answer for: Are you currently residing in Hyderabad, Telangana or willin
+2026-06-25 17:49:19,897 [INFO] Naukri chatbot radio targets for Are you currently residing in Hyderabad, Telangana: Yes (from answer 'Yes')
+2026-06-25 17:49:19,903 [INFO] Naukri chatbot: clicked radio 'Yes'
+2026-06-25 17:49:20,846 [INFO] Naukri chatbot question [radio/radio]: Are you currently residing in Hyderabad, Telangana or willing to reloc
+2026-06-25 17:49:20,846 [INFO] Naukri: 1 chatbot question(s) for Senior Python Developer (step 5)
+2026-06-25 17:49:20,882 [INFO] Using saved answer for: Are you currently residing in Hyderabad, Telangana or willin
+2026-06-25 17:49:21,531 [INFO] Naukri chatbot radio targets for Are you currently residing in Hyderabad, Telangana: Yes (from answer 'Yes')
+2026-06-25 17:49:37,669 [WARNING] Naukri chatbot: expected radio for Are you currently residing in Hyderabad, Telangana or willin but could not click 'Yes'
+2026-06-25 17:49:38,932 [INFO] Naukri chatbot radio targets for Are you currently residing in Hyderabad, Telangana: Yes (from answer 'Yes')
+2026-06-25 17:49:55,079 [WARNING] Naukri chatbot: expected radio for Are you currently residing in Hyderabad, Telangana or willin but could not click 'Yes'
+2026-06-25 17:49:56,350 [INFO] Naukri chatbot radio targets for Are you currently residing in Hyderabad, Telangana: Yes (from answer 'Yes')
+2026-06-25 17:50:12,486 [WARNING] Naukri chatbot: expected radio for Are you currently residing in Hyderabad, Telangana or willin but could not click 'Yes'
+2026-06-25 17:50:12,488 [INFO] Recorded technical apply failure [naukri]: Senior Python Developer @ Exponential AI (could not fill: Are you currently residing in Hyderabad, Telangana or willing to relocate to Hyd)
+2026-06-25 17:50:12,488 [WARNING] Skipped Naukri apply (could not fill): Senior Python Developer
+2026-06-25 17:50:13,924 [INFO] Naukri chatbot question panel ready for Ai Ml Engineer
+2026-06-25 17:50:14,687 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:17,789 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:20,010 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:22,234 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Aiml?
+2026-06-25 17:50:22,234 [INFO] Naukri: 1 chatbot question(s) for Ai Ml Engineer (step 1)
+2026-06-25 17:50:22,271 [INFO] Using config answer for: How many years of experience do you have in Aiml?
+2026-06-25 17:50:22,290 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:22,613 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Aiml?
+2026-06-25 17:50:22,613 [INFO] Naukri: 1 chatbot question(s) for Ai Ml Engineer (step 2)
+2026-06-25 17:50:22,663 [INFO] Using config answer for: How many years of experience do you have in Aiml?
+2026-06-25 17:50:23,654 [INFO] Naukri chatbot city targets for How many years of experience do you have in Aiml?: (none)
+2026-06-25 17:50:23,660 [WARNING] Naukri chatbot: expected checkbox for How many years of experience do you have in Aiml? but found no options
+2026-06-25 17:50:24,277 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Which tool you have experience with (MLops)? — options: airflow, kubeflow, ML flow
+2026-06-25 17:50:24,866 [INFO] Naukri chatbot city targets for How many years of experience do you have in Aiml?: (none)
+2026-06-25 17:50:24,872 [WARNING] Naukri chatbot: expected checkbox for How many years of experience do you have in Aiml? but found no options
+2026-06-25 17:50:25,496 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Which tool you have experience with (MLops)? — options: airflow, kubeflow, ML flow
+2026-06-25 17:50:26,098 [INFO] Naukri chatbot city targets for How many years of experience do you have in Aiml?: (none)
+2026-06-25 17:50:26,106 [WARNING] Naukri chatbot: expected checkbox for How many years of experience do you have in Aiml? but found no options
+2026-06-25 17:50:26,108 [INFO] Recorded technical apply failure [naukri]: Ai Ml Engineer @ Eucloid Data Solutions (could not fill: How many years of experience do you have in Aiml?)
+2026-06-25 17:50:26,108 [WARNING] Skipped Naukri apply (could not fill): Ai Ml Engineer
+2026-06-25 17:50:27,957 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 17:50:28,725 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:32,433 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:34,645 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:36,893 [INFO] Naukri chatbot question [radio/single_choice]: Are you available for F2F interview at Bangalore office ? — options: Yes, No
+2026-06-25 17:50:36,894 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 1)
+2026-06-25 17:50:36,931 [INFO] Using saved answer for: Are you available for F2F interview at Bangalore office ?
+2026-06-25 17:50:36,940 [INFO] Naukri chatbot radio targets for Are you available for F2F interview at Bangalore o: No (from answer 'No')
+2026-06-25 17:50:36,949 [INFO] Naukri chatbot: clicked radio 'No'
+2026-06-25 17:50:37,270 [INFO] Naukri chatbot question [text/years_numeric]: Please state years of an experience in spark streaming, Please explain
+2026-06-25 17:50:37,270 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 2)
+2026-06-25 17:50:37,300 [INFO] Using saved answer for: Please state years of an experience in spark streaming, Plea
+2026-06-25 17:50:37,318 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:37,643 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Please tick ones applicable from your experience — options: Datapipeline, Spark streaming, Scala, Python, ETL (+5 more)
+2026-06-25 17:50:37,643 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 3)
+2026-06-25 17:50:37,677 [INFO] Using saved answer for: Please tick ones applicable from your experience
+2026-06-25 17:50:37,686 [INFO] Naukri chatbot city targets for Please tick ones applicable from your experience: Java
+2026-06-25 17:50:37,695 [INFO] Naukri chatbot: clicked checkbox 'Java'
+2026-06-25 17:50:38,012 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 17:50:38,337 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 17:50:38,657 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 17:50:38,979 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 17:50:38,985 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 17:50:38,985 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 17:50:40,511 [INFO] Naukri chatbot question panel ready for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 17:50:41,274 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:45,398 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:47,615 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:50:49,837 [INFO] Naukri chatbot question [text/location]: Current Location?
+2026-06-25 17:50:49,837 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 1)
+2026-06-25 17:50:49,870 [INFO] Using saved answer for: Current Location?
+2026-06-25 17:50:49,889 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:50,210 [INFO] Naukri chatbot question [text/location]: Preferred Location?
+2026-06-25 17:50:50,210 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 2)
+2026-06-25 17:50:50,253 [INFO] Using config answer for: Preferred Location?
+2026-06-25 17:50:50,269 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:50,588 [INFO] Naukri chatbot question [text/short_text]: Total IT Experience?
+2026-06-25 17:50:50,588 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 3)
+2026-06-25 17:50:50,622 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 17:50:50,639 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:50,956 [INFO] Naukri chatbot question [text/short_text]: Total IT Experience?
+2026-06-25 17:50:50,957 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 4)
+2026-06-25 17:50:50,987 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 17:50:51,003 [INFO] Naukri chatbot: filled via text
+2026-06-25 17:50:51,965 [INFO] Naukri chatbot question [text/short_text]: Total IT Experience?
+2026-06-25 17:50:51,965 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 5)
+2026-06-25 17:50:52,016 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 17:50:53,143 [WARNING] Could not fill Naukri chatbot question: Total IT Experience? (no-input)
+2026-06-25 17:50:53,768 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 17:50:53,780 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 17:50:53,784 [INFO] Naukri chatbot radio targets for Total IT Experience?: 4 (from answer '4')
+2026-06-25 17:50:53,802 [INFO] Naukri chatbot: radio target '4' not on page for Total IT Experience? — trying text fill
+2026-06-25 17:50:53,802 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Total IT Experience? but found no options
+2026-06-25 17:50:54,424 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 17:50:54,436 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 17:50:54,440 [INFO] Naukri chatbot radio targets for Total IT Experience?: 4 (from answer '4')
+2026-06-25 17:50:54,457 [INFO] Naukri chatbot: radio target '4' not on page for Total IT Experience? — trying text fill
+2026-06-25 17:50:54,457 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Total IT Experience? but found no options
+2026-06-25 17:50:54,457 [INFO] Recorded technical apply failure [naukri]: Java Backend (Java, AWS) - Face To face Drive - Mumbai & Ban @ Capgemini (could not fill: Total IT Experience?)
+2026-06-25 17:50:54,457 [WARNING] Skipped Naukri apply (could not fill): Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 17:50:55,862 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 17:50:56,627 [DEBUG] expand_lazy_content failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:51:00,330 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:51:02,550 [DEBUG] reveal_footer_actions failed: evaluate() takes from 2 to 3 positional arguments but 4 were given
+2026-06-25 17:51:05,444 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 17:51:05,445 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 17:51:05,493 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 17:51:06,170 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 17:51:22,307 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 17:51:23,545 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 17:51:24,215 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 17:51:40,347 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 17:51:41,614 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 17:51:42,297 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 17:51:58,431 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 17:51:58,433 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 17:51:58,433 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 17:51:59,739 [INFO] Already applied on Naukri: Software Engineer
+2026-06-25 17:52:00,988 [INFO] Already applied on Naukri: Camera Engineer (R&D Team)
+2026-06-25 17:52:02,270 [INFO] Already applied on Naukri: Software Engineer (Full Stack Developer)
+2026-06-25 18:11:56,902 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 18:12:01,964 [INFO] Opening Naukri and verifying session...
+2026-06-25 18:12:05,142 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 18:12:05,155 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 18:12:07,079 [INFO] Naukri chatbot question panel ready for Salesforce Developer
+2026-06-25 18:12:17,444 [INFO] Naukri chatbot question [radio/single_choice]: How many years of Salesforce development experience do you have? — options: 2-4 years, 4 6 years, 7 10 years, More than 10 years
+2026-06-25 18:12:17,445 [INFO] Naukri: 1 chatbot question(s) for Salesforce Developer (step 1)
+2026-06-25 18:12:17,481 [INFO] Using saved answer for: How many years of Salesforce development experience do you h
+2026-06-25 18:12:17,504 [INFO] Answer '0' is zero experience but no zero option in ['2-4 years', '4 6 years', '7 10 years', 'More than 10 years'] — not mapping (avoid overstating) for: How many years of Salesforce development experienc
+2026-06-25 18:12:17,504 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for How many years of Salesforce development experienc (options: 2-4 years, 4 6 years, 7 10 years, More than 10 years) — skipping to avoid overstating
+2026-06-25 18:12:18,132 [INFO] Naukri chatbot question [radio/single_choice]: How many years of Salesforce development experience do you have? — options: 2-4 years, 4 6 years, 7 10 years, More than 10 years
+2026-06-25 18:12:18,145 [INFO] Answer '0' is zero experience but no zero option in ['2-4 years', '4 6 years', '7 10 years', 'More than 10 years'] — not mapping (avoid overstating) for: How many years of Salesforce development experienc
+2026-06-25 18:12:18,145 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for How many years of Salesforce development experienc (options: 2-4 years, 4 6 years, 7 10 years, More than 10 years) — skipping to avoid overstating
+2026-06-25 18:12:18,771 [INFO] Naukri chatbot question [radio/single_choice]: How many years of Salesforce development experience do you have? — options: 2-4 years, 4 6 years, 7 10 years, More than 10 years
+2026-06-25 18:12:18,783 [INFO] Answer '0' is zero experience but no zero option in ['2-4 years', '4 6 years', '7 10 years', 'More than 10 years'] — not mapping (avoid overstating) for: How many years of Salesforce development experienc
+2026-06-25 18:12:18,783 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for How many years of Salesforce development experienc (options: 2-4 years, 4 6 years, 7 10 years, More than 10 years) — skipping to avoid overstating
+2026-06-25 18:12:18,785 [INFO] Recorded technical apply failure [naukri]: Salesforce Developer @ Cloud Angles Digital Transformation (could not fill: How many years of Salesforce development experience do you have?)
+2026-06-25 18:12:18,785 [WARNING] Skipped Naukri apply (could not fill): Salesforce Developer
+2026-06-25 18:12:20,357 [INFO] Already applied on Naukri: ML Platform Engineer
+2026-06-25 18:12:22,129 [INFO] Already applied on Naukri: Blue Prism Rpa Developer
+2026-06-25 18:12:24,207 [INFO] Already applied on Naukri: Gen Ai - Sr Engineer
+2026-06-25 18:12:26,848 [INFO] Naukri chatbot question panel ready for Machine Learning Engineer
+2026-06-25 18:12:37,575 [INFO] Naukri chatbot question [text/short_text]: What is your notice period? how soon you can join?
+2026-06-25 18:12:37,575 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 1)
+2026-06-25 18:12:37,609 [INFO] Using saved answer for: What is your notice period? how soon you can join?
+2026-06-25 18:12:37,629 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:37,962 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:12:37,962 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 2)
+2026-06-25 18:12:37,997 [INFO] Using saved answer for: What is your notice period? how soon you can join?
+2026-06-25 18:12:38,004 [INFO] Answer '0' is zero experience but no zero option in ['Other City'] — not mapping (avoid overstating) for: What is your notice period? how soon you can join?
+2026-06-25 18:12:38,004 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for What is your notice period? how soon you can join? (options: Other City) — skipping to avoid overstating
+2026-06-25 18:12:38,617 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:12:38,627 [INFO] Answer '0' is zero experience but no zero option in ['Other City'] — not mapping (avoid overstating) for: What is your notice period? how soon you can join?
+2026-06-25 18:12:38,627 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for What is your notice period? how soon you can join? (options: Other City) — skipping to avoid overstating
+2026-06-25 18:12:39,244 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:12:39,250 [INFO] Answer '0' is zero experience but no zero option in ['Other City'] — not mapping (avoid overstating) for: What is your notice period? how soon you can join?
+2026-06-25 18:12:39,251 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for What is your notice period? how soon you can join? (options: Other City) — skipping to avoid overstating
+2026-06-25 18:12:39,251 [INFO] Recorded technical apply failure [naukri]: Machine Learning Engineer @ Phenom People (could not fill: What is your notice period? how soon you can join?)
+2026-06-25 18:12:39,251 [WARNING] Skipped Naukri apply (could not fill): Machine Learning Engineer
+2026-06-25 18:12:41,494 [INFO] Already applied on Naukri: Senior Analytics Consultant Commerce Media
+2026-06-25 18:12:44,060 [INFO] Naukri chatbot question panel ready for Senior Data Engineer - Data Modelling
+2026-06-25 18:12:54,807 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Data Vault?
+2026-06-25 18:12:54,807 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 1)
+2026-06-25 18:12:54,843 [INFO] Using saved answer for: How many years of experience do you have in Data Vault?
+2026-06-25 18:12:54,864 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:55,198 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Data Modeling?
+2026-06-25 18:12:55,198 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 2)
+2026-06-25 18:12:55,234 [INFO] Using saved answer for: How many years of experience do you have in Data Modeling?
+2026-06-25 18:12:55,250 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:55,572 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in OLAP?
+2026-06-25 18:12:55,572 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 3)
+2026-06-25 18:12:55,610 [INFO] Using saved answer for: How many years of experience do you have in OLAP?
+2026-06-25 18:12:55,627 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:55,940 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in OLTP?
+2026-06-25 18:12:55,941 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 4)
+2026-06-25 18:12:55,971 [INFO] Using saved answer for: How many years of experience do you have in OLTP?
+2026-06-25 18:12:55,987 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:56,310 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in OLTP?
+2026-06-25 18:12:56,310 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 5)
+2026-06-25 18:12:56,351 [INFO] Using saved answer for: How many years of experience do you have in OLTP?
+2026-06-25 18:12:56,368 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:56,685 [INFO] Naukri chatbot question [text/years_numeric]: Do you have experience in Cloud Services and how many years?
+2026-06-25 18:12:56,685 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 6)
+2026-06-25 18:12:56,720 [INFO] Using saved answer for: Do you have experience in Cloud Services and how many years?
+2026-06-25 18:12:56,735 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:12:57,059 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 18:12:57,059 [INFO] Naukri: 1 chatbot question(s) for Senior Data Engineer - Data Modelling (step 7)
+2026-06-25 18:12:57,097 [INFO] Using saved answer for: What is your preferred joining location?
+2026-06-25 18:13:00,489 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 18:13:00,534 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 18:13:00,534 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 18:13:01,157 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 18:13:01,749 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 18:13:01,792 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 18:13:01,792 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 18:13:02,416 [INFO] Naukri chatbot question [radio/single_choice]: What is your preferred joining location? — options: NCR
+2026-06-25 18:13:03,019 [INFO] Naukri chatbot radio targets for What is your preferred joining location?: anwhere (from answer 'anwhere')
+2026-06-25 18:13:03,063 [INFO] Naukri chatbot: radio target 'anwhere' not on page for What is your preferred joining location? — trying text fill
+2026-06-25 18:13:03,063 [WARNING] Naukri chatbot: expected chips/radio/checkbox for What is your preferred joining location? but found no options
+2026-06-25 18:13:03,064 [INFO] Recorded technical apply failure [naukri]: Senior Data Engineer - Data Modelling @ Tiger Analytics (could not fill: What is your preferred joining location?)
+2026-06-25 18:13:03,064 [WARNING] Skipped Naukri apply (could not fill): Senior Data Engineer - Data Modelling
+2026-06-25 18:13:04,597 [INFO] Already applied on Naukri: Senior Python Developer
+2026-06-25 18:13:06,593 [INFO] Naukri chatbot question panel ready for Ai Ml Engineer
+2026-06-25 18:13:17,126 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Aiml?
+2026-06-25 18:13:17,126 [INFO] Naukri: 1 chatbot question(s) for Ai Ml Engineer (step 1)
+2026-06-25 18:13:17,179 [INFO] Using config answer for: How many years of experience do you have in Aiml?
+2026-06-25 18:13:17,198 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:13:17,522 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Which tool you have experience with (MLops)? — options: airflow, kubeflow, ML flow
+2026-06-25 18:13:17,523 [INFO] Naukri: 1 chatbot question(s) for Ai Ml Engineer (step 2)
+2026-06-25 18:13:17,559 [INFO] Using saved answer for: Which tool you have experience with (MLops)?
+2026-06-25 18:13:17,566 [INFO] Answer '0' is zero experience but no zero option in ['airflow', 'kubeflow', 'ML flow'] — not mapping (avoid overstating) for: Which tool you have experience with (MLops)?
+2026-06-25 18:13:17,566 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for Which tool you have experience with (MLops)? (options: airflow, kubeflow, ML flow) — skipping to avoid overstating
+2026-06-25 18:13:18,180 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Which tool you have experience with (MLops)? — options: airflow, kubeflow, ML flow
+2026-06-25 18:13:18,188 [INFO] Answer '0' is zero experience but no zero option in ['airflow', 'kubeflow', 'ML flow'] — not mapping (avoid overstating) for: Which tool you have experience with (MLops)?
+2026-06-25 18:13:18,188 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for Which tool you have experience with (MLops)? (options: airflow, kubeflow, ML flow) — skipping to avoid overstating
+2026-06-25 18:13:18,812 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Which tool you have experience with (MLops)? — options: airflow, kubeflow, ML flow
+2026-06-25 18:13:18,827 [INFO] Answer '0' is zero experience but no zero option in ['airflow', 'kubeflow', 'ML flow'] — not mapping (avoid overstating) for: Which tool you have experience with (MLops)?
+2026-06-25 18:13:18,827 [WARNING] Naukri chatbot: answer '0' (no experience) has no zero option for Which tool you have experience with (MLops)? (options: airflow, kubeflow, ML flow) — skipping to avoid overstating
+2026-06-25 18:13:18,830 [INFO] Recorded technical apply failure [naukri]: Ai Ml Engineer @ Eucloid Data Solutions (could not fill: Which tool you have experience with (MLops)?)
+2026-06-25 18:13:18,830 [WARNING] Skipped Naukri apply (could not fill): Ai Ml Engineer
+2026-06-25 18:13:20,689 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:13:31,015 [INFO] Naukri chatbot question [radio/single_choice]: Are you available for F2F interview at Bangalore office ? — options: Yes, No
+2026-06-25 18:13:31,015 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 1)
+2026-06-25 18:13:31,046 [INFO] Using saved answer for: Are you available for F2F interview at Bangalore office ?
+2026-06-25 18:13:31,055 [INFO] Naukri chatbot radio targets for Are you available for F2F interview at Bangalore o: No (from answer 'No')
+2026-06-25 18:13:31,064 [INFO] Naukri chatbot: clicked radio 'No'
+2026-06-25 18:13:31,385 [INFO] Naukri chatbot question [text/years_numeric]: Please state years of an experience in spark streaming, Please explain
+2026-06-25 18:13:31,385 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 2)
+2026-06-25 18:13:31,421 [INFO] Using saved answer for: Please state years of an experience in spark streaming, Plea
+2026-06-25 18:13:31,439 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:13:31,763 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Please tick ones applicable from your experience — options: Datapipeline, Spark streaming, Scala, Python, ETL (+5 more)
+2026-06-25 18:13:31,763 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 3)
+2026-06-25 18:13:31,799 [INFO] Using saved answer for: Please tick ones applicable from your experience
+2026-06-25 18:13:31,807 [INFO] Naukri chatbot city targets for Please tick ones applicable from your experience: Java
+2026-06-25 18:13:31,815 [INFO] Naukri chatbot: clicked checkbox 'Java'
+2026-06-25 18:13:32,127 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:13:32,451 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:13:32,780 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:13:33,102 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:13:33,110 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:13:33,110 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:13:35,050 [INFO] Naukri chatbot question panel ready for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 18:13:45,774 [INFO] Naukri chatbot question [text/location]: Current Location?
+2026-06-25 18:13:45,774 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 1)
+2026-06-25 18:13:45,811 [INFO] Using saved answer for: Current Location?
+2026-06-25 18:13:45,830 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:13:46,149 [INFO] Naukri chatbot question [text/location]: Preferred Location?
+2026-06-25 18:13:46,149 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 2)
+2026-06-25 18:13:46,188 [INFO] Using config answer for: Preferred Location?
+2026-06-25 18:13:46,208 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:13:46,532 [INFO] Naukri chatbot question [text/location]: Preferred Location?
+2026-06-25 18:13:46,532 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 3)
+2026-06-25 18:13:46,576 [INFO] Using config answer for: Preferred Location?
+2026-06-25 18:13:46,591 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:13:46,909 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:13:46,910 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 4)
+2026-06-25 18:13:46,941 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 18:13:46,948 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:13:46,951 [INFO] Naukri chatbot radio targets for Total IT Experience?: 4 (from answer '4')
+2026-06-25 18:13:46,966 [INFO] Naukri chatbot: radio target '4' not on page for Total IT Experience? — trying text fill
+2026-06-25 18:13:46,966 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Total IT Experience? but found no options
+2026-06-25 18:13:47,585 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:13:47,597 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:13:47,601 [INFO] Naukri chatbot radio targets for Total IT Experience?: 4 (from answer '4')
+2026-06-25 18:13:47,619 [INFO] Naukri chatbot: radio target '4' not on page for Total IT Experience? — trying text fill
+2026-06-25 18:13:47,619 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Total IT Experience? but found no options
+2026-06-25 18:13:48,244 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:13:48,256 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:13:48,260 [INFO] Naukri chatbot radio targets for Total IT Experience?: 4 (from answer '4')
+2026-06-25 18:13:48,280 [INFO] Naukri chatbot: radio target '4' not on page for Total IT Experience? — trying text fill
+2026-06-25 18:13:48,280 [WARNING] Naukri chatbot: expected chips/radio/checkbox for Total IT Experience? but found no options
+2026-06-25 18:13:48,280 [INFO] Recorded technical apply failure [naukri]: Java Backend (Java, AWS) - Face To face Drive - Mumbai & Ban @ Capgemini (could not fill: Total IT Experience?)
+2026-06-25 18:13:48,281 [WARNING] Skipped Naukri apply (could not fill): Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 18:13:50,001 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 18:14:01,006 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:14:01,008 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 18:14:01,050 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 18:14:01,709 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:14:17,859 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:14:19,132 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:14:19,812 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:14:35,965 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:14:37,232 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:14:37,905 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:14:54,038 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:14:54,039 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 18:14:54,039 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 18:14:55,381 [INFO] Already applied on Naukri: Software Engineer
+2026-06-25 18:14:56,795 [INFO] Already applied on Naukri: Camera Engineer (R&D Team)
+2026-06-25 18:14:58,146 [INFO] Already applied on Naukri: Software Engineer (Full Stack Developer)
+2026-06-25 18:43:44,579 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 18:43:48,676 [INFO] Opening Naukri and verifying session...
+2026-06-25 18:43:51,590 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 18:43:51,607 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 18:43:53,024 [INFO] Naukri chatbot question panel ready for Machine Learning Engineer
+2026-06-25 18:44:03,740 [INFO] Naukri chatbot question [text/short_text]: What is your notice period? how soon you can join?
+2026-06-25 18:44:03,741 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 1)
+2026-06-25 18:44:03,779 [INFO] Using saved answer for: What is your notice period? how soon you can join?
+2026-06-25 18:44:03,812 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:44:04,135 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:44:04,135 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 2)
+2026-06-25 18:44:04,170 [INFO] Using saved answer for: What is your notice period? how soon you can join?
+2026-06-25 18:44:04,177 [DEBUG] Naukri chatbot: discarding implausible options for What is your notice period? how soon you: Other City
+2026-06-25 18:44:04,181 [WARNING] Could not fill Naukri chatbot question: What is your notice period? how soon you can join? (choice-only)
+2026-06-25 18:44:04,790 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:44:04,796 [DEBUG] Naukri chatbot: discarding implausible options for What is your notice period? how soon you: Other City
+2026-06-25 18:44:04,799 [WARNING] Could not fill Naukri chatbot question: What is your notice period? how soon you can join? (choice-only)
+2026-06-25 18:44:05,413 [INFO] Naukri chatbot question [radio/single_choice]: What is your notice period? how soon you can join? — options: Other City
+2026-06-25 18:44:05,422 [DEBUG] Naukri chatbot: discarding implausible options for What is your notice period? how soon you: Other City
+2026-06-25 18:44:05,425 [WARNING] Could not fill Naukri chatbot question: What is your notice period? how soon you can join? (choice-only)
+2026-06-25 18:44:05,427 [INFO] Recorded technical apply failure [naukri]: Machine Learning Engineer @ Phenom People (could not fill: What is your notice period? how soon you can join?)
+2026-06-25 18:44:05,427 [WARNING] Skipped Naukri apply (could not fill): Machine Learning Engineer
+2026-06-25 18:44:06,719 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:44:17,000 [INFO] Naukri chatbot question [radio/single_choice]: Are you available for F2F interview at Bangalore office ? — options: Yes, No
+2026-06-25 18:44:17,000 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 1)
+2026-06-25 18:44:17,035 [INFO] Using saved answer for: Are you available for F2F interview at Bangalore office ?
+2026-06-25 18:44:17,044 [INFO] Naukri chatbot radio targets for Are you available for F2F interview at Bangalore o: No (from answer 'No')
+2026-06-25 18:44:17,053 [INFO] Naukri chatbot: clicked radio 'No'
+2026-06-25 18:44:17,378 [INFO] Naukri chatbot question [text/years_numeric]: Please state years of an experience in spark streaming, Please explain
+2026-06-25 18:44:17,378 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 2)
+2026-06-25 18:44:17,416 [INFO] Using saved answer for: Please state years of an experience in spark streaming, Plea
+2026-06-25 18:44:17,435 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:44:17,758 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: Please tick ones applicable from your experience — options: Datapipeline, Spark streaming, Scala, Python, ETL (+5 more)
+2026-06-25 18:44:17,759 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 3)
+2026-06-25 18:44:17,797 [INFO] Using saved answer for: Please tick ones applicable from your experience
+2026-06-25 18:44:17,806 [INFO] Naukri chatbot city targets for Please tick ones applicable from your experience: Java
+2026-06-25 18:44:17,816 [INFO] Naukri chatbot: clicked checkbox 'Java'
+2026-06-25 18:44:18,126 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:44:18,444 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:44:18,762 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:44:19,086 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 18:44:19,094 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:44:19,094 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 18:44:20,541 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 18:44:31,475 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:44:31,475 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 18:44:31,512 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 18:44:32,179 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:44:48,288 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:44:49,549 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:44:50,216 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:45:06,314 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:45:07,552 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 18:45:08,188 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 18:45:24,289 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 18:45:24,290 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 18:45:24,290 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 18:45:25,963 [INFO] Naukri chatbot question panel ready for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 18:45:36,680 [INFO] Naukri chatbot question [text/location]: Current Location?
+2026-06-25 18:45:36,680 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 1)
+2026-06-25 18:45:36,707 [INFO] Using saved answer for: Current Location?
+2026-06-25 18:45:36,726 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:45:37,037 [INFO] Naukri chatbot question [text/location]: Preferred Location?
+2026-06-25 18:45:37,037 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 2)
+2026-06-25 18:45:37,077 [INFO] Using config answer for: Preferred Location?
+2026-06-25 18:45:37,101 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:45:37,423 [INFO] Naukri chatbot question [text/short_text]: Total IT Experience?
+2026-06-25 18:45:37,423 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 3)
+2026-06-25 18:45:37,460 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 18:45:37,476 [INFO] Naukri chatbot: filled via text
+2026-06-25 18:45:37,791 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:45:37,792 [INFO] Naukri: 1 chatbot question(s) for Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore (step 4)
+2026-06-25 18:45:37,817 [INFO] Using saved answer for: Total IT Experience?
+2026-06-25 18:45:37,824 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:45:37,827 [WARNING] Could not fill Naukri chatbot question: Total IT Experience? (choice-only)
+2026-06-25 18:45:38,444 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:45:38,454 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:45:38,458 [WARNING] Could not fill Naukri chatbot question: Total IT Experience? (choice-only)
+2026-06-25 18:45:39,067 [INFO] Naukri chatbot question [radio/single_choice]: Total IT Experience? — options: Male, Female
+2026-06-25 18:45:39,073 [DEBUG] Naukri chatbot: discarding implausible options for Total IT Experience?: Male, Female
+2026-06-25 18:45:39,076 [WARNING] Could not fill Naukri chatbot question: Total IT Experience? (choice-only)
+2026-06-25 18:45:39,076 [INFO] Recorded technical apply failure [naukri]: Java Backend (Java, AWS) - Face To face Drive - Mumbai & Ban @ Capgemini (could not fill: Total IT Experience?)
+2026-06-25 18:45:39,076 [WARNING] Skipped Naukri apply (could not fill): Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 18:45:40,272 [INFO] Already applied on Naukri: Software Developer (C++) - StorageGrid
+2026-06-25 19:12:48,863 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 19:12:53,111 [INFO] Opening Naukri and verifying session...
+2026-06-25 19:12:55,978 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 19:12:55,998 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 19:12:57,571 [INFO] Naukri chatbot question panel ready for Machine Learning Engineer
+2026-06-25 19:13:07,673 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 19:13:07,673 [INFO] Naukri: 1 chatbot question(s) for Machine Learning Engineer (step 1)
+2026-06-25 19:13:07,713 [INFO] Using saved answer for: Your current location
+2026-06-25 19:13:07,763 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 19:13:08,375 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 19:13:08,403 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 19:13:09,015 [INFO] Naukri chatbot question [radio/location]: Your current location — options: Other City
+2026-06-25 19:13:09,043 [WARNING] Naukri chatbot: no matching option for 'bengaluru' (options: Other City)
+2026-06-25 19:13:09,044 [INFO] Recorded technical apply failure [naukri]: Machine Learning Engineer @ Phenom People (could not fill: Your current location)
+2026-06-25 19:13:09,044 [WARNING] Skipped Naukri apply (could not fill): Machine Learning Engineer
+2026-06-25 19:13:10,565 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 19:13:20,660 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 19:13:20,980 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 19:13:21,303 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 19:13:21,627 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 19:13:21,636 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 19:13:21,636 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 19:13:23,091 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 19:13:34,045 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 19:13:34,045 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 19:13:34,083 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 19:13:34,724 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 19:13:50,834 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 19:13:52,105 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 19:13:52,786 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 19:14:08,927 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 19:14:10,199 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 19:14:10,874 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 19:14:26,995 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 19:14:26,995 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 19:14:26,996 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 19:14:28,671 [INFO] Already applied on Naukri: Java Backend (Java, AWS) - Face To face Drive - Mumbai & Bangalore
+2026-06-25 19:14:29,970 [INFO] Already applied on Naukri: Software Developer (C++) - StorageGrid
+2026-06-25 19:14:33,575 [INFO] Naukri chatbot question panel ready for AI Backend Senior Engineer.
+2026-06-25 19:14:44,285 [INFO] Naukri chatbot question [radio/single_choice]: Hi Abhay, companies value diversity and want to build inclusive teams. — options: I have a disability, I don’t have a disability
+2026-06-25 19:14:44,285 [INFO] Naukri: 1 chatbot question(s) for AI Backend Senior Engineer. (step 1)
+2026-06-25 19:14:48,112 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 19:14:50,207 [INFO] LLM selected option(s) ['I don’t have a disability'] for: Hi Abhay, companies value diversity and want to bu
+2026-06-25 19:14:51,830 [INFO] LLM selected option(s) for Hi Abhay, companies value diversity and want to bu: I don’t have a disability
+2026-06-25 19:14:51,862 [INFO] Ephemeral LLM-option answer (confidence=0.90, not saved): Hi Abhay, companies value diversity and want to build inclus
+2026-06-25 19:14:51,878 [INFO] Naukri chatbot radio targets for Hi Abhay, companies value diversity and want to bu: I don’t have a disability (from answer 'I don’t have a disability')
+2026-06-25 19:14:51,889 [INFO] Naukri chatbot: clicked chip 'I don’t have a disability'
+2026-06-25 19:14:52,219 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Rest Api Development?
+2026-06-25 19:14:52,219 [INFO] Naukri: 1 chatbot question(s) for AI Backend Senior Engineer. (step 2)
+2026-06-25 19:14:52,268 [INFO] Using config answer for: How many years of experience do you have in Rest Api Develop
+2026-06-25 19:14:52,284 [INFO] Naukri chatbot: filled via text
+2026-06-25 19:14:53,271 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Rest Api Development?
+2026-06-25 19:14:53,272 [INFO] Naukri: 1 chatbot question(s) for AI Backend Senior Engineer. (step 3)
+2026-06-25 19:14:53,330 [INFO] Using config answer for: How many years of experience do you have in Rest Api Develop
+2026-06-25 19:14:54,453 [WARNING] Could not fill Naukri chatbot question: How many years of experience do you have in Rest Api Develop (no-input)
+2026-06-25 19:14:55,728 [INFO] Naukri chatbot question [text/years_numeric]: How many years of experience do you have in Rest Api Development?
+2026-06-25 19:14:56,395 [INFO] Naukri chatbot: flow complete (drawer closed)
+2026-06-25 19:14:57,500 [INFO] Naukri apply confirmed (redirected): AI Backend Senior Engineer. — https://www.naukri.com/job-listings-ai-backend-senior-engineer-luminary-digital-solutions-bengaluru-5-to-10-years-020526001807?src=directSearch
+2026-06-25 19:14:57,575 [INFO] Applied on Naukri: AI Backend Senior Engineer.
+2026-06-25 21:31:25,340 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 21:31:29,600 [INFO] Opening Naukri and verifying session...
+2026-06-25 21:31:32,430 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 21:31:32,449 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 21:31:33,770 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:31:43,859 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:31:44,185 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:31:44,512 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:31:44,832 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:31:44,837 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:31:44,837 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:31:46,704 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 21:31:57,726 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:31:57,726 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 21:31:57,768 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 21:31:58,452 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:32:14,600 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:32:15,885 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:32:16,572 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:32:32,712 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:32:33,980 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:32:34,663 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:32:50,789 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:32:50,790 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 21:32:50,790 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 21:32:52,301 [INFO] Already applied on Naukri: Lead Full Stack Engineer
+2026-06-25 21:32:53,586 [INFO] Already applied on Naukri: FactSet-Product based company hiring Sr. Golang Developer For Hyd.
+2026-06-25 21:32:54,841 [INFO] Already applied on Naukri: Full Stack Developer role
+2026-06-25 21:32:54,842 [INFO] Cleared technical failure for naukri:230626017794 (now applied/resolved)
+2026-06-25 21:49:39,952 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 21:49:44,396 [INFO] Opening Naukri and verifying session...
+2026-06-25 21:49:47,243 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 21:49:47,255 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 21:49:48,622 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:49:58,768 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:49:59,093 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:49:59,407 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:49:59,726 [DEBUG] Skipping non-question chatbot text: This role is only for an expr 5-9 years , Scala/Java skill is a MUST and calls f
+2026-06-25 21:49:59,734 [WARNING] Naukri chatbot stuck with no parseable question: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:49:59,734 [WARNING] Could not complete Naukri chatbot for: Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:50:01,074 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 21:50:12,058 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:50:12,058 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 21:50:12,108 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 21:50:12,776 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:50:28,915 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:50:30,186 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:50:30,857 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:50:47,003 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:50:48,275 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:50:48,949 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:51:05,067 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:51:05,067 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 21:51:05,067 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 21:51:06,411 [INFO] Already applied on Naukri: Lead Full Stack Engineer
+2026-06-25 21:51:07,773 [INFO] Already applied on Naukri: FactSet-Product based company hiring Sr. Golang Developer For Hyd.
+2026-06-25 21:51:08,948 [INFO] Already applied on Naukri: Full Stack Developer role
+2026-06-25 21:54:54,682 [INFO] Using Chrome profile: /Users/abhayjain/Library/Application Support/Google/Chrome/Default
+2026-06-25 21:54:58,772 [INFO] Opening Naukri and verifying session...
+2026-06-25 21:55:01,591 [INFO] Naukri session ready for 'Abhay'
+2026-06-25 21:55:01,605 [INFO] Saved browser session to /Users/abhayjain/Documents/jobs-auto-apply/data/sessions/naukri.json
+2026-06-25 21:55:03,049 [INFO] Naukri chatbot question panel ready for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:55:13,155 [INFO] Naukri chatbot: statement with 3 selectable option(s) — treating as answerable: This role is only for an expr 5-9 years , Scala/Java skill i
+2026-06-25 21:55:13,164 [INFO] Naukri chatbot question [checkbox_group/multi_choice]: This role is only for an expr 5-9 years , Scala/Java skill is a MUST a — options: Yes Agree. I fit in to this experience bracket and Ready for BV, I am outside this experience bracket. Will give a skip., I will not be able to submit documents for background verification
+2026-06-25 21:55:13,164 [INFO] Naukri: 1 chatbot question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC (step 1)
+2026-06-25 21:55:17,052 [DEBUG] Loaded embedding model: /Users/abhayjain/Documents/jobs-auto-apply/data/models/all-MiniLM-L6-v2
+2026-06-25 21:55:17,262 [INFO] Rule RAG answer: This role is only for an expr 5-9 years , Scala/Java skill i
+2026-06-25 21:55:17,289 [WARNING] RAG draft not usable / below persist bar for field: This role is only for an expr 5-9 years , Scala/Java skill i
+2026-06-25 21:55:17,290 [INFO] Queued 1 unanswered question(s) for Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC
+2026-06-25 21:55:17,291 [WARNING] Skipped Naukri apply (need answers): Sr Data Engr Strictly SCALA Or Java, & Must Spark & Azure German MNC — 1 question(s) queued
+2026-06-25 21:55:18,771 [INFO] Naukri chatbot question panel ready for Senior Java Developer
+2026-06-25 21:55:29,783 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:55:29,784 [INFO] Naukri: 1 chatbot question(s) for Senior Java Developer (step 1)
+2026-06-25 21:55:29,829 [INFO] Using saved answer for: What experience do you have in the Automotive domain, and wh
+2026-06-25 21:55:30,497 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:55:46,631 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:55:47,892 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:55:48,558 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:56:04,672 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:56:05,917 [INFO] Naukri chatbot question [radio/radio]: What experience do you have in the Automotive domain, and which automo
+2026-06-25 21:56:06,583 [INFO] Naukri chatbot radio targets for What experience do you have in the Automotive doma: No (from answer 'No')
+2026-06-25 21:56:22,730 [WARNING] Naukri chatbot: expected radio for What experience do you have in the Automotive domain, and wh but could not click 'No'
+2026-06-25 21:56:22,732 [INFO] Recorded technical apply failure [naukri]: Senior Java Developer @ Embitel Technologies (could not fill: What experience do you have in the Automotive domain, and which automotive proje)
+2026-06-25 21:56:22,732 [WARNING] Skipped Naukri apply (could not fill): Senior Java Developer
+2026-06-25 21:56:24,002 [INFO] Already applied on Naukri: Lead Full Stack Engineer
+2026-06-25 21:56:26,113 [INFO] Already applied on Naukri: FactSet-Product based company hiring Sr. Golang Developer For Hyd.
+2026-06-25 21:56:31,711 [INFO] Already applied on Naukri: Full Stack Developer role
