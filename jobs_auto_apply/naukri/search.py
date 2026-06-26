@@ -245,6 +245,11 @@ def _search_url(filters: NaukriFiltersConfig, page: int = 1) -> str:
     sort_param = _naukri_sort_param(filters.sort)
     if sort_param:
         params["sortBy"] = sort_param
+    # Bake the freshness/age filter into the URL so the very first SRP render is
+    # already filtered, instead of loading unfiltered and re-rendering after a
+    # sidebar radio click. Naukri accepts ?jobAge=N (1/3/7/15/30 days).
+    if filters.max_job_age_days is not None and filters.max_job_age_days > 0:
+        params["jobAge"] = str(_naukri_job_age_bucket(filters.max_job_age_days))
     if params:
         url = f"{url}?{urlencode(params)}"
     return url
@@ -416,7 +421,14 @@ async def _apply_job_age_filter(page: Page, max_days: int | None) -> None:
 
 
 async def go_to_search_page(page: Page, filters: NaukriFiltersConfig) -> None:
-    """Navigate to Naukri SRP once and apply sidebar filters (Aurus uses infinite scroll, not URL pages)."""
+    """Navigate to a fully-filtered Naukri SRP (Aurus uses infinite scroll, not URL pages).
+
+    All filters — keywords, location, experience, sort and job age — are baked
+    into the search URL so the very first results render is already filtered. The
+    sidebar steps below are now only verification fallbacks: each early-returns
+    when the URL already applied the filter, so they no-op in the common case
+    instead of clicking a control and forcing an extra unfiltered re-render.
+    """
     if hasattr(page, "_naukri_job_url_index"):
         delattr(page, "_naukri_job_url_index")
     ensure_url_index(page)
@@ -1008,8 +1020,40 @@ async def _drag_slider_handle(
     await page.wait_for_timeout(400)
 
 
+async def _experience_filter_already_applied(page: Page, max_years: int) -> bool:
+    """True when the Aurus slider's max handle already sits at ``max_years``.
+
+    The search URL carries ``?experience=N`` so the SRP usually renders with the
+    slider pre-set. Detecting that lets us skip the redundant drag (and the extra
+    results re-render it would trigger) — the URL is the source of truth.
+    """
+    handles = page.locator(
+        ".Experience_sliderContainer___ZY_i .rc-slider-handle, "
+        ".Experience_sliderContainer___ZY_i .handle, "
+        ".exp-container .rc-slider-handle, "
+        ".exp-container .handle"
+    )
+    count = await handles.count()
+    if count == 0:
+        return False
+    handle = handles.nth(1) if count >= 2 else handles.first
+    for attr in ("aria-valuenow", "aria-valuetext"):
+        try:
+            value = await handle.get_attribute(attr)
+        except Exception:
+            value = None
+        if value:
+            match = re.search(r"\d+", value)
+            if match and int(match.group()) == max_years:
+                return True
+    return False
+
+
 async def _apply_experience_filter(page: Page, max_years: int) -> None:
     """Set Naukri max experience (Aurus slider is 0-N yrs; URL ?experience=N is also max)."""
+    if await _experience_filter_already_applied(page, max_years):
+        logger.info("Naukri experience filter already: 0–%d yrs (from URL)", max_years)
+        return
     track = page.locator(".Experience_sliderContainer___ZY_i .rc-slider, .exp-container .rc-slider").first
     handles = page.locator(
         ".Experience_sliderContainer___ZY_i .rc-slider-handle, "

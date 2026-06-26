@@ -326,6 +326,9 @@ async def _stop_naukri_resume_sync(stop: asyncio.Event, task: asyncio.Task) -> N
 
 
 async def _run(config_path: Path, platform: str, verbose: bool) -> None:
+    from .chrome_profile import reset_chrome_lock_flag
+
+    reset_chrome_lock_flag()
     config = load_config(config_path)
     setup_logging(config.log_path, verbose=verbose)
     _check_prerequisites(config, require_resume=True)
@@ -1478,20 +1481,28 @@ async def _messenger_listen(
     per_question_timeout = max(msg_cfg.reply_timeout_seconds, 86400)
     idle = max(5, msg_cfg.listen_idle_seconds)
 
+    # WhatsApp's QR link can genuinely expire (needs re-linking); a Telegram bot
+    # token never does, so for Telegram a failing login check is just a transient
+    # network blip — keep the session open indefinitely and retry instead of exiting.
     async with _messenger_client_cm(config, channel) as client:
-        with contextlib.suppress(Exception):
-            await client.send(
-                "👋 jobs-auto-apply listener is on. I'll send questions here as they "
-                "come up; reply to answer and I'll apply automatically."
-            )
+        session_can_expire = getattr(client, "session_can_expire", True)
         console.print(f"[green]{label} listener running. Press Ctrl+C to stop.[/green]")
         while True:
             if stop_event is not None and stop_event.is_set():
                 break
             try:
                 if not await client.is_logged_in():
-                    console.print(f"[red]{label} session ended — re-link with: python main.py {relink_cmd}[/red]")
-                    break
+                    if session_can_expire:
+                        console.print(f"[red]{label} session ended — re-link with: python main.py {relink_cmd}[/red]")
+                        break
+                    logger.warning(
+                        "%s login check failed (likely a transient network issue) — "
+                        "retrying in %ds; the session stays open.",
+                        label,
+                        idle,
+                    )
+                    await asyncio.sleep(idle)
+                    continue
                 answered, jobs = await answer_pending_groups_via_messenger(
                     config.base_dir,
                     config,
@@ -1562,6 +1573,7 @@ def telegram_login_cmd(config_path: Path) -> None:
             token=config.telegram.bot_token,
             chat_id=config.telegram.chat_id,
             chat_id_path=config.telegram_chat_path,
+            offset_path=config.telegram_offset_path,
         )
         try:
             await client.start()

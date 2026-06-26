@@ -21,6 +21,33 @@ from .rag_answers import load_application_facts
 logger = logging.getLogger("job_apply")
 
 _QUOTE_WRAP = re.compile(r'^["\'](.+)["\']$', re.S)
+# Strip emoji / pictographic characters that occasionally leak into letters.
+_EMOJI_RE = re.compile(
+    "[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f1e6-\U0001f1ff\U00002190-\U000021ff\U00002b00-\U00002bff\ufe0f]"
+)
+# Leading list markers (bullets, dashes, asterisks, numbered) at line start.
+_LIST_MARKER_RE = re.compile(r"^\s*(?:[•\-\*\u2022\u25cf\u25aa\u2023\u2043\u2219]|\d+[.)])\s+")
+
+
+def _sanitize_cover_letter(text: str) -> str:
+    """Force LLM cover-letter output into clean prose.
+
+    The reference letter and some models produce emoji headers, bullet lists, and
+    resume-style section labels. Strip those so the result reads like a letter.
+    """
+    text = _EMOJI_RE.sub("", text)
+    out_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = _LIST_MARKER_RE.sub("", raw_line).strip()
+        out_lines.append(line)
+    text = "\n".join(out_lines)
+    # Collapse 3+ blank lines down to a single blank line between paragraphs.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Drop stray spaces left by removed emojis.
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
 # Floor on how many top vector matches are surfaced to the LLM for answer
 # generation. Even when rag_top_k is configured lower, the LLM should see at
 # least this many similar prior Q/A pairs so it has enough context to adapt.
@@ -623,7 +650,7 @@ def _parse_llm_json(raw: str) -> tuple[str, float, str | None] | None:
     return answer, confidence, canonical
 
 
-def _chat_model(config: AppConfig) -> Any | None:
+def _chat_model(config: AppConfig, *, num_predict: int | None = None) -> Any | None:
     llm = config.llm
     if not llm.enabled:
         return None
@@ -637,7 +664,7 @@ def _chat_model(config: AppConfig) -> Any | None:
         base_url=base_url,
         model=llm.model or "job-answers",
         temperature=llm.temperature,
-        num_predict=llm.max_tokens,
+        num_predict=num_predict if num_predict is not None else llm.max_tokens,
         keep_alive=llm.keep_alive or "30m",
     )
 
@@ -1067,6 +1094,173 @@ def select_options_for_question(
     except Exception as exc:
         logger.debug("LLM option selection failed: %s", exc)
         return []
+
+
+def generate_join_reason(
+    config: AppConfig,
+    *,
+    job_title: str = "",
+    company: str = "",
+    jd: str = "",
+    company_about: str = "",
+    max_words: int = 120,
+) -> str | None:
+    """Tailor a short "why do you want to join us" answer per job.
+
+    Uses the verified candidate profile plus this job's JD and the company's
+    "about" text so the answer is specific to the role/company. Returns plain
+    first-person prose (no greeting/signature). ``None`` if the LLM is unavailable.
+    """
+    model = _chat_model(config)
+    if model is None:
+        return None
+
+    profile = _build_application_context(config)
+    org = company.strip() or "the company"
+    role = job_title.strip() or "this role"
+
+    context_parts: list[str] = []
+    about = (company_about or "").strip()
+    if about:
+        context_parts.append(f"=== ABOUT {org.upper()} ===\n{about[:1500]}")
+    jd_text = (jd or "").strip()
+    if jd_text:
+        context_parts.append(f"=== JOB DESCRIPTION ({role}) ===\n{jd_text[:2500]}")
+    context_block = "\n\n".join(context_parts)
+
+    system = SystemMessage(
+        content=(
+            f"You write a short, sincere answer for {config.user.name} to the application "
+            f"question 'Why do you want to join {org}?'.\n"
+            "Use ONLY the verified candidate profile, the job description, and the company "
+            "'about' text below. Never invent employers, credentials, or metrics.\n"
+            "Tie the candidate's real experience to specifics of this role and company "
+            "(mission, product, tech, or domain) — do not be generic.\n"
+            f"Write in first person, {max_words} words or fewer, 2-4 sentences. "
+            "Return only the answer text — no greeting, no signature, no quotes, no preamble."
+        )
+    )
+    human = HumanMessage(
+        content=(
+            f"=== VERIFIED CANDIDATE PROFILE ===\n{profile}\n\n"
+            f"{context_block}\n\n"
+            f"Question: Why do you want to join {org} as {role}?"
+        ).strip()
+    )
+
+    try:
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
+        raw = str(getattr(response, "content", "") or "").strip()
+        if not raw:
+            return None
+        text = _QUOTE_WRAP.sub(r"\1", raw).strip()
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words]).rstrip(",;:") + "."
+        logger.info("Tailored join-reason answer (%d words) for %s @ %s", len(text.split()), role[:40], org[:40])
+        return text or None
+    except Exception as exc:
+        logger.warning("Join-reason generation failed for %s @ %s: %s", role[:40], org[:40], exc)
+        return None
+
+
+def generate_cover_letter_llm(
+    config: AppConfig,
+    *,
+    job_title: str = "",
+    company: str = "",
+    jd: str = "",
+    company_about: str = "",
+    reference: str = "",
+    include_ctc: bool = True,
+    max_words: int = 400,
+) -> str | None:
+    """Write a tailored cover letter per job.
+
+    Uses the verified candidate profile (resume facts), the user's existing
+    reference cover letter (for tone/structure), this job's JD, and the company's
+    "about" text so the letter is specific to the role and company. Returns the
+    full letter (greeting + body + signature). ``None`` if the LLM is unavailable.
+    """
+    # A 400-word letter needs ~550+ tokens; the global max_tokens (often 256, tuned
+    # for short screening answers) truncates the letter mid-sentence. Give the
+    # letter its own budget scaled to the word target, with headroom.
+    cover_letter_tokens = max(config.llm.max_tokens, int(max_words * 2) + 64)
+    model = _chat_model(config, num_predict=cover_letter_tokens)
+    if model is None:
+        return None
+
+    profile = _build_application_context(config)
+    org = company.strip() or "your organisation"
+    role = job_title.strip() or "this role"
+
+    context_parts: list[str] = []
+    ref = (reference or "").strip()
+    if ref:
+        context_parts.append(
+            f"=== REFERENCE COVER LETTER (adapt tone & structure, do not copy verbatim) ===\n{ref[:3000]}"
+        )
+    about = (company_about or "").strip()
+    if about:
+        context_parts.append(f"=== ABOUT {org.upper()} ===\n{about[:1500]}")
+    jd_text = (jd or "").strip()
+    if jd_text:
+        context_parts.append(f"=== JOB DESCRIPTION ({role}) ===\n{jd_text[:2500]}")
+    context_block = "\n\n".join(context_parts)
+
+    ctc_rule = (
+        "Include one sentence stating the candidate's current and expected CTC from the profile."
+        if include_ctc
+        else "Do not mention salary or CTC."
+    )
+
+    system = SystemMessage(
+        content=(
+            f"You write a tailored job-application cover letter for {config.user.name} "
+            f"applying to the {role} role at {org}.\n"
+            "Use ONLY the verified candidate profile, the reference cover letter, the job "
+            "description, and the company 'about' text below. Never invent employers, "
+            "credentials, or metrics.\n"
+            "Adapt the reference cover letter's tone, but tailor the content to "
+            "this specific role and company (mission, product, tech, or domain) — do not be "
+            "generic and never leave placeholders like {{company}}.\n"
+            "Write the letter as flowing prose in 3-5 short paragraphs. Do NOT use emojis, "
+            "bullet points, dashes as list markers, numbered lists, headings, or resume-style "
+            "section labels (e.g. company names as headers or 'Tech used:' lines). It must read "
+            "like a letter, not a resume.\n"
+            f"{ctc_rule}\n"
+            f"Write in first person, {max_words} words or fewer. Open with a greeting addressed "
+            "to the company/hiring manager and close with the candidate's name. "
+            "Return only the cover letter text — no commentary, no markdown, no quotes."
+        )
+    )
+    human = HumanMessage(
+        content=(
+            f"=== VERIFIED CANDIDATE PROFILE ===\n{profile}\n\n"
+            f"{context_block}\n\n"
+            f"Write the cover letter for the {role} role at {org}."
+        ).strip()
+    )
+
+    try:
+        with _ollama_gate(config):
+            response = model.invoke([system, human])
+        raw = str(getattr(response, "content", "") or "").strip()
+        if not raw:
+            return None
+        text = _QUOTE_WRAP.sub(r"\1", raw).strip()
+        text = _sanitize_cover_letter(text)
+        if not text:
+            return None
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words]).rstrip(",;:") + "."
+        logger.info("Tailored LLM cover letter (%d words) for %s @ %s", len(text.split()), role[:40], org[:40])
+        return text or None
+    except Exception as exc:
+        logger.warning("LLM cover letter generation failed for %s @ %s: %s", role[:40], org[:40], exc)
+        return None
 
 
 def generate_llm_decision(

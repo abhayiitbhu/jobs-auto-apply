@@ -355,6 +355,52 @@ def pending_groups(base_dir: Path, config: AppConfig | None = None) -> list[Pend
     return group_pending_entries(pending_question_list(base_dir, config))
 
 
+def _group_variant_keys(group: PendingQuestionGroup) -> list[str]:
+    return [question_key(variant) for variant in group.variants]
+
+
+def group_notified_message_id(
+    base_dir: Path,
+    group: PendingQuestionGroup,
+    config: AppConfig | None = None,
+) -> int | None:
+    """Return the Telegram message_id this group was already sent under, if any.
+
+    Lets the messenger flow skip re-asking a question it has already sent — for
+    example after a ``serve --reload`` restart — while still routing the reply,
+    which quotes that original message_id.
+    """
+    data = _load(base_dir, config)
+    questions = data.get("questions", {})
+    for key in _group_variant_keys(group):
+        entry = questions.get(key)
+        if isinstance(entry, dict):
+            mid = entry.get("notified_message_id")
+            if isinstance(mid, int):
+                return mid
+    return None
+
+
+def mark_group_notified(
+    base_dir: Path,
+    group: PendingQuestionGroup,
+    message_id: int | None,
+    config: AppConfig | None = None,
+) -> None:
+    """Record that this group was sent to the messenger so we never re-ask it."""
+    with _lock:
+        data = _load(base_dir, config)
+        questions = data.get("questions", {})
+        stamp = datetime.now(timezone.utc).isoformat()
+        for key in _group_variant_keys(group):
+            entry = questions.get(key)
+            if isinstance(entry, dict):
+                entry["notified_at"] = stamp
+                if message_id is not None:
+                    entry["notified_message_id"] = message_id
+        _save(base_dir, data, config)
+
+
 def pending_count(base_dir: Path, config: AppConfig | None = None) -> int:
     prune_answered(base_dir, config)
     return len(pending_question_list(base_dir, config))
@@ -1055,18 +1101,28 @@ async def answer_pending_groups_via_messenger(
     send_heads_up: bool = True,
     per_question_timeout: int | None = None,
 ) -> tuple[int, list[PendingJobRef]]:
-    """Ask each pending question over a messenger (WhatsApp/Telegram), save replies.
+    """Ask each pending question over a messenger and save the routed replies.
 
-    Transport-neutral: ``client`` needs ``send(text)`` and ``ask(text, timeout=...)``.
-    When the client advertises ``supports_reply_routing`` (Telegram), all questions
-    are sent up front and each reply is routed to the question its ``reply_to``
-    quotes — so you can answer them in any order. Otherwise it falls back to the
-    sequential one-question-at-a-time flow. ``per_question_timeout`` overrides the
-    per-reply wait (the listener uses a very large value to wait indefinitely).
+    Reply routing is required: ``client`` must advertise ``supports_reply_routing``
+    and expose ``wait_for_reply_routed`` (Telegram). All questions are sent up
+    front and each reply is matched to the question its ``reply_to`` quotes, so
+    you can answer them in any order. A message that isn't a reply to a tracked
+    question is ignored — we never guess by send order. Transports without reply
+    routing are skipped. ``per_question_timeout`` overrides the per-reply wait
+    (the listener uses a very large value to wait indefinitely).
     """
     prune_answered(base_dir, config)
     groups = pending_groups(base_dir, config)
     if not groups:
+        return 0, []
+
+    routed = bool(getattr(client, "supports_reply_routing", False)) and hasattr(client, "wait_for_reply_routed")
+    if not routed:
+        logger.warning(
+            "Messenger transport %s has no reply routing — pending questions can only "
+            "be answered by replying to a specific question. Skipping.",
+            type(client).__name__,
+        )
         return 0, []
 
     total = len(groups)
@@ -1074,84 +1130,33 @@ async def answer_pending_groups_via_messenger(
     skip_keyword = getattr(client, "skip_keyword", "skip")
     drop_keyword = getattr(client, "drop_keyword", "drop")
     ignore_keyword = getattr(client, "ignore_keyword", "ignore")
-    routed = bool(getattr(client, "supports_reply_routing", False)) and hasattr(client, "wait_for_reply_routed")
 
-    if send_heads_up:
+    new_groups = sum(1 for g in groups if group_notified_message_id(base_dir, g, config) is None)
+    if send_heads_up and new_groups:
         applied_part = f"{applied_count} applied" if applied_count is not None else "Run complete"
-        question_word = "question" if total == 1 else "questions"
-        how_to = (
-            "Reply to each question (tap it → Reply) and I'll match your answer to it."
-            if routed
-            else "I'll send them one at a time."
-        )
+        question_word = "question" if new_groups == 1 else "questions"
         try:
             await client.send(
-                f"✅ {applied_part} — {total} {question_word} need your input.\n"
-                f"{how_to} Reply with your answer, or "
-                f'"{skip_keyword}" (later), "{drop_keyword}" (skip job), '
-                f'"{ignore_keyword}" (not applicable).'
+                f"✅ {applied_part} — {new_groups} {question_word} need your input.\n"
+                "Reply to each question (tap it → Reply) and I'll match your answer to it. "
+                f'Reply with your answer, or "{skip_keyword}" (later), '
+                f'"{drop_keyword}" (skip job), "{ignore_keyword}" (not applicable).'
             )
         except Exception as exc:
             logger.debug("Messenger heads-up message failed: %s", exc)
 
-    if routed:
-        return await _answer_pending_groups_reply_routed(
-            base_dir,
-            config,
-            client,
-            groups,
-            total=total,
-            use_llm_draft=use_llm_draft,
-            skip_keyword=skip_keyword,
-            drop_keyword=drop_keyword,
-            ignore_keyword=ignore_keyword,
-            per_question_timeout=per_question_timeout,
-        )
-
-    answered = 0
-    jobs_to_retry: list[PendingJobRef] = []
-    for index, group in enumerate(groups, 1):
-        prep = _prepare_group_question(
-            base_dir,
-            config,
-            group,
-            index,
-            total,
-            use_llm_draft=use_llm_draft,
-            skip_keyword=skip_keyword,
-            drop_keyword=drop_keyword,
-            ignore_keyword=ignore_keyword,
-        )
-        try:
-            reply = await client.ask(prep["message"], timeout=per_question_timeout)
-        except Exception as exc:
-            logger.warning("Messenger ask failed for %s: %s", prep["primary"][:60], exc)
-            break
-
-        if reply is None:
-            logger.info("No messenger reply within timeout — leaving remaining questions pending.")
-            with contextlib.suppress(Exception):
-                await client.send(
-                    "No reply received — remaining questions saved for later. "
-                    "Run again or use: python main.py answer-questions"
-                )
-            break
-
-        outcome, retry = await _process_messenger_reply(
-            base_dir,
-            config,
-            client,
-            group,
-            primary=prep["primary"],
-            company=prep["company"],
-            job_title=prep["job_title"],
-            reply=reply,
-        )
-        if outcome == "answered":
-            answered += 1
-            jobs_to_retry.extend(retry)
-
-    return answered, jobs_to_retry
+    return await _answer_pending_groups_reply_routed(
+        base_dir,
+        config,
+        client,
+        groups,
+        total=total,
+        use_llm_draft=use_llm_draft,
+        skip_keyword=skip_keyword,
+        drop_keyword=drop_keyword,
+        ignore_keyword=ignore_keyword,
+        per_question_timeout=per_question_timeout,
+    )
 
 
 async def _answer_pending_groups_reply_routed(
@@ -1171,40 +1176,54 @@ async def _answer_pending_groups_reply_routed(
 
     Telegram tags a reply with the ``message_id`` it was sent in answer to, so we
     can save out-of-order replies against the right question. Replies that don't
-    quote a question (a plain message) fall back to the oldest unanswered one.
+    quote a specific question (a plain message) are ignored — we never guess by
+    sequence, so the user must explicitly reply to the question they're answering.
     """
     states_by_msg_id: dict[int, dict[str, Any]] = {}
     order: list[dict[str, Any]] = []
 
     for index, group in enumerate(groups, 1):
-        prep = _prepare_group_question(
-            base_dir,
-            config,
-            group,
-            index,
-            total,
-            use_llm_draft=use_llm_draft,
-            skip_keyword=skip_keyword,
-            drop_keyword=drop_keyword,
-            ignore_keyword=ignore_keyword,
-        )
-        try:
-            message_id = await client.send(prep["message"])
-        except Exception as exc:
-            logger.warning("Messenger send failed for %s: %s", prep["primary"][:60], exc)
-            break
+        # Already asked before (e.g. an earlier run or a `serve --reload`
+        # restart)? Don't re-send — just reuse the original message_id so the
+        # reply that quotes it still routes to this question.
+        message_id = group_notified_message_id(base_dir, group, config)
+        example = group.jobs[0] if group.jobs else {}
+        primary = group.variants[0]
+        company = str(example.get("company", ""))
+        job_title = str(example.get("title", ""))
+        if message_id is None:
+            prep = _prepare_group_question(
+                base_dir,
+                config,
+                group,
+                index,
+                total,
+                use_llm_draft=use_llm_draft,
+                skip_keyword=skip_keyword,
+                drop_keyword=drop_keyword,
+                ignore_keyword=ignore_keyword,
+            )
+            primary = prep["primary"]
+            company = prep["company"]
+            job_title = prep["job_title"]
+            try:
+                message_id = await client.send(prep["message"])
+            except Exception as exc:
+                logger.warning("Messenger send failed for %s: %s", primary[:60], exc)
+                break
+            mark_group_notified(base_dir, group, message_id, config)
+            await asyncio.sleep(0.3)  # gentle pacing so we don't trip Telegram rate limits
         state = {
             "group": group,
-            "primary": prep["primary"],
-            "company": prep["company"],
-            "job_title": prep["job_title"],
+            "primary": primary,
+            "company": company,
+            "job_title": job_title,
             "message_id": message_id,
             "done": False,
         }
         order.append(state)
         if message_id is not None:
             states_by_msg_id[message_id] = state
-        await asyncio.sleep(0.3)  # gentle pacing so we don't trip Telegram rate limits
 
     answered = 0
     jobs_to_retry: list[PendingJobRef] = []
@@ -1223,18 +1242,19 @@ async def _answer_pending_groups_reply_routed(
 
         reply_to = upd.get("reply_to")
         state = states_by_msg_id.get(reply_to) if reply_to is not None else None
-        if state is not None and state["done"]:
+        if state is None:
+            # Not a reply to a tracked question (a plain message, or a reply to
+            # something we don't track). It isn't linked to any question, so we
+            # never guess by order — ignore it.
+            logger.debug("Ignoring messenger message not routed to a question.")
+            continue
+        if state["done"]:
             with contextlib.suppress(Exception):
                 await client.send(
-                    "That one's already handled — reply to another question instead.",
+                    "That one's already answered — reply to another question instead.",
                     **_reply_send_kwargs(client, reply_to),
                 )
             continue
-        if state is None:
-            # No (or unrecognized) reply target — fall back to the oldest open one.
-            state = next((s for s in order if not s["done"]), None)
-        if state is None:
-            break
 
         parsed = parse_pending_reply(
             upd.get("text") or "",

@@ -67,6 +67,10 @@ class WhatsAppError(RuntimeError):
 class WhatsAppClient:
     """A thin Playwright wrapper around a single WhatsApp Web conversation."""
 
+    # A WhatsApp Web session is QR-linked and can be unlinked/expire, so a failing
+    # ``is_logged_in`` means the user must re-scan the QR — the listener stops.
+    session_can_expire = True
+
     def __init__(
         self,
         *,

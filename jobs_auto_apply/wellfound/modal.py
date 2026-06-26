@@ -12,6 +12,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 from ..jd import clean_jd_text, is_noisy_jd
 from ..page_load import prepare_interactive_page
 from ..salary import combined_salary_text, eligibility_summary
+from .job_data import WellfoundJobData, parse_job_detail
 
 logger = logging.getLogger("job_apply")
 
@@ -27,9 +28,11 @@ JD_START = re.compile(
 )
 
 WELLFOUND_PAGE_JD_SELECTORS = (
+    '[data-test="JobDescription"]',
+    '[data-test="job-description"]',
+    '[data-test="JobDescriptionSection"]',
     '[class*="styles_description"]',
     'div[class*="description__"]',
-    '[data-test="JobDescription"]',
     '[data-testid*="job-description" i]',
     '[class*="JobDescription" i]',
     '[class*="jobDescription" i]',
@@ -45,9 +48,10 @@ PAGE_TAIL = re.compile(
 )
 
 PARA_ROOT_SELECTORS = (
+    '[data-test="JobDescription"]',
+    '[data-test="job-description"]',
     '[class*="styles_description"]',
     'div[class*="description__"]',
-    '[data-test="JobDescription"]',
     '[data-testid*="job-description" i]',
     '[class*="JobDescription" i]',
     '[class*="jobDescription" i]',
@@ -79,6 +83,11 @@ class WellfoundApplyModal:
     jd: str = ""
     eligibility: dict = field(default_factory=dict)
     opened: bool = False
+    # Populated from the page's __NEXT_DATA__ Apollo cache when available.
+    company: str = ""
+    company_about: str = ""
+    salary_display: str = ""
+    skills: list = field(default_factory=list)
 
 
 async def click_apply(page: Page) -> bool:
@@ -269,12 +278,27 @@ async def _extract_page_listing_meta(page: Page) -> str:
     return clean_jd_text(str(raw)) if raw else ""
 
 
+async def _wait_for_app_ready(page: Page) -> None:
+    """Wait for Wellfound's Next.js app to finish hydrating.
+
+    Wellfound flags a fully-rendered page via ``<body data-tfe-status="ready">``;
+    waiting for it avoids reading half-hydrated JD/company text.
+    """
+    with contextlib.suppress(PlaywrightTimeout, PlaywrightError):
+        await page.wait_for_selector('body[data-tfe-status="ready"]', timeout=8000)
+
+
 async def _wait_for_job_content(page: Page) -> None:
+    await _wait_for_app_ready(page)
     for sel in (
+        '[data-test="JobDescription"]',
+        '[data-test="job-description"]',
         '[class*="styles_description"]',
         'div[class*="description__"]',
-        '[data-test="JobDescription"]',
         '[class*="JobDescription"]',
+        '[class*="jobDescription"]',
+        "article p",
+        "section p",
         "div p",
     ):
         try:
@@ -285,20 +309,45 @@ async def _wait_for_job_content(page: Page) -> None:
     await page.wait_for_timeout(2000)
 
 
+async def _read_next_data(page: Page) -> WellfoundJobData | None:
+    """Parse the page's embedded Apollo cache (clean, structured job detail)."""
+    try:
+        html = await page.content()
+    except PlaywrightError:
+        return None
+    try:
+        return parse_job_detail(html)
+    except Exception as exc:  # never let a payload quirk break the apply flow
+        logger.debug("Wellfound __NEXT_DATA__ parse failed: %s", exc)
+        return None
+
+
 async def extract_wellfound_job_page(page: Page, *, min_inr_lpa: float = 25.0) -> WellfoundApplyModal:
-    """Read JD from the listing page (<p> blocks). Does not click Apply."""
+    """Read job detail from __NEXT_DATA__ (preferred) or the listing DOM (fallback)."""
     await _wait_for_job_content(page)
     await _scroll_job_page(page)
-    jd = await _extract_wellfound_page_jd(page)
+
+    nd = await _read_next_data(page)
+    dom_jd = await _extract_wellfound_page_jd(page)
+    # The Apollo `description` is the authoritative, fully-rendered JD; prefer it
+    # whenever present and substantial, falling back to the DOM scrape otherwise.
+    if nd and nd.description and len(nd.description) >= 120:
+        jd = nd.description
+        source = "__NEXT_DATA__"
+    else:
+        jd = dom_jd
+        source = "job page DOM"
+
     meta_text = await _extract_page_listing_meta(page)
+    salary_meta = "\n".join(s for s in ((nd.compensation if nd else ""), meta_text) if s)
     elig = eligibility_summary(
-        combined_salary_text(jd=jd, modal=meta_text),
+        combined_salary_text(jd=jd, modal=salary_meta),
         min_inr_lpa=min_inr_lpa,
     )
     if jd and not is_apply_metadata_only(jd):
-        logger.info("JD from job page (%d chars)", len(jd))
+        logger.info("JD from %s (%d chars)", source, len(jd))
     elif jd:
-        logger.warning("JD from job page may be incomplete (%d chars)", len(jd))
+        logger.warning("JD from %s may be incomplete (%d chars)", source, len(jd))
     else:
         logger.warning("Could not extract JD from job page %s", page.url)
     return WellfoundApplyModal(
@@ -306,6 +355,10 @@ async def extract_wellfound_job_page(page: Page, *, min_inr_lpa: float = 25.0) -
         jd=jd,
         eligibility=elig,
         opened=False,
+        company=nd.company if nd else "",
+        company_about=nd.company_about if nd else "",
+        salary_display=nd.compensation if nd else "",
+        skills=nd.skills if nd else [],
     )
 
 
@@ -329,9 +382,10 @@ async def _extract_paragraph_jd(page: Page) -> str:
                 };
                 const roots = [];
                 for (const sel of [
+                    '[data-test="JobDescription"]',
+                    '[data-test="job-description"]',
                     '[class*="styles_description"]',
                     'div[class*="description__"]',
-                    '[data-test="JobDescription"]',
                     '[class*="JobDescription"]',
                     '[class*="jobDescription"]',
                     '[class*="job-description"]',
@@ -411,9 +465,10 @@ async def _extract_via_dom(page: Page) -> str:
                     return s;
                 };
                 const selectors = [
+                    '[data-test="JobDescription"]',
+                    '[data-test="job-description"]',
                     '[class*="styles_description"]',
                     'div[class*="description__"]',
-                    '[data-test="JobDescription"]',
                     '[class*="JobDescription"]',
                     '[class*="jobDescription"]',
                     '[class*="job-description"]',

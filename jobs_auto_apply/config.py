@@ -454,6 +454,13 @@ class AppConfig(JsonSchemaMixin):
         return self.base_dir / "data" / "telegram_chat.json"
 
     @property
+    def telegram_offset_path(self) -> Path:
+        # Persist the getUpdates offset so a `serve --reload` restart resumes
+        # from the last processed update instead of skipping past replies that
+        # arrived while the worker was reloading.
+        return self.base_dir / "data" / "telegram_offset.json"
+
+    @property
     def auth_sessions_dir(self) -> Path:
         p = self.base_dir / self.auth.sessions_dir
         p.mkdir(parents=True, exist_ok=True)

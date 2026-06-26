@@ -244,8 +244,14 @@ def _education_facts(config: AppConfig) -> dict[str, Any]:
             "has_masters": bool(edu.get("has_masters", False)),
             "has_phd": bool(edu.get("has_phd", False)),
             "has_mba": bool(edu.get("has_mba", False)),
+            "graduation_year": str(edu.get("graduation_year", "")).strip(),
+            "cgpa": str(edu.get("cgpa", "")).strip(),
+            "cgpa_scale": str(edu.get("cgpa_scale", "")).strip(),
+            "percentage": str(edu.get("percentage", "")).strip(),
         }
     low = resume_edu.lower()
+    years = re.findall(r"\b(?:19|20)\d{2}\b", resume_edu)  # graduation = latest year
+    cgpa = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10\b", resume_edu)
     return {
         "highest": resume_edu,
         "has_bachelors": True,
@@ -254,16 +260,58 @@ def _education_facts(config: AppConfig) -> dict[str, Any]:
         ),
         "has_phd": bool(re.search(r"ph\.?\s?d|doctorat", low)),
         "has_mba": bool(re.search(r"\bmba\b", low)),
+        "graduation_year": (max(years) if years else ""),
+        "cgpa": (cgpa.group(1) if cgpa else ""),
+        "cgpa_scale": ("10" if cgpa else ""),
+        "percentage": "",
     }
 
 
 def education_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     """Deterministic answers for degree/qualification questions from education facts."""
     q = question or ""
-    if not _EDU_MENTION.search(q):
-        return None
     ql = q.lower()
     edu = _education_facts(config)
+
+    # Graduation year ("year of passing", "passout year", "when did you graduate").
+    if re.search(
+        r"year\s+of\s+(?:passing|passout|pass\s*out|graduation|completion)|"
+        r"(?:passing|passout|pass\s*out|graduation|graduating)\s+year|"
+        r"when\s+did\s+you\s+(?:graduate|pass\s*out|complete)",
+        ql,
+    ):
+        year = str(edu.get("graduation_year") or "").strip()
+        if year:
+            return year
+
+    # CGPA is unambiguous; percentage/aggregate/marks only count with academic context.
+    asks_cgpa = bool(re.search(r"\bc?gpa\b", ql))
+    asks_pct = bool(re.search(r"percentage|aggregate|\bmarks\b|\bgrade\b", ql)) and bool(
+        re.search(
+            r"graduat|degree|b\.?\s?tech|btech|college|university|academic|education|qualif|10th|12th",
+            ql,
+        )
+    )
+    if asks_cgpa or asks_pct:
+        cgpa = str(edu.get("cgpa") or "").strip()
+        pct = str(edu.get("percentage") or "").strip()
+        wants_pct = bool(re.search(r"percentage", ql))
+        if wants_pct:
+            # Never substitute CGPA for an explicit percentage ask — send to manual.
+            if pct:
+                return pct
+        elif asks_cgpa:
+            if cgpa:
+                return cgpa
+        else:
+            # Generic "aggregate / marks / grade" in academic context.
+            if cgpa:
+                return cgpa
+            if pct:
+                return pct
+
+    if not _EDU_MENTION.search(q):
+        return None
 
     asks_masters = bool(re.search(r"master'?s?\b|post[\s-]?graduat|\bpg\b|m\.?\s?tech\b|m\.?\s?sc\b|m\.?\s?e\b", ql))
     asks_phd = bool(re.search(r"ph\.?\s?d\b|doctorat", ql))

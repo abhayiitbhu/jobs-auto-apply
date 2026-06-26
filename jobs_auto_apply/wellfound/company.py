@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import re
 
 from playwright.async_api import Page
@@ -69,8 +70,10 @@ def parse_company_from_jd(title: str, jd: str) -> str:
 
 async def extract_wellfound_company(page: Page, title: str, jd: str) -> str:
     for sel in (
-        'a[href*="/company/"]',
         '[data-test="startup-link"]',
+        '[data-test="StartupName"]',
+        '[data-test="startup-name"]',
+        'a[href*="/company/"]',
         "h2 a",
     ):
         loc = page.locator(sel)
@@ -81,6 +84,92 @@ async def extract_wellfound_company(page: Page, title: str, jd: str) -> str:
                 return text
 
     return parse_company_from_jd(title, jd)
+
+
+_ABOUT_HEADING = re.compile(
+    r"\babout\s+(?:us|the\s+company|the\s+team|the\s+startup|our\s+company)\b"
+    r"|\bwho\s+we\s+are\b|\bour\s+(?:mission|story)\b|\bcompany\s+(?:overview|description)\b",
+    re.I,
+)
+
+
+def about_from_text(jd: str) -> str:
+    """Best-effort 'about the company' slice from scraped job-page text."""
+    if not jd:
+        return ""
+    # Prefer an explicit "About us / Who we are / Our mission" heading and grab the
+    # paragraph(s) that follow, up to the next blank line.
+    m = _ABOUT_HEADING.search(jd)
+    if m:
+        tail = jd[m.end() :]
+        body = re.search(r"[:\s]*\n+(.{80,1500}?)(?:\n\s*\n|\Z)", tail, re.S)
+        if body:
+            return re.sub(r"\s+", " ", body.group(1)).strip()[:1200]
+        inline = re.search(r"[:\s]+(.{80,1500}?)(?:\n\s*\n|\Z)", tail, re.S)
+        if inline:
+            return re.sub(r"\s+", " ", inline.group(1)).strip()[:1200]
+    m = re.search(
+        r"\babout\b[^\n]{0,40}\n+(.{80,1000}?)(?:\n\s*\n|\Z)",
+        jd,
+        re.I | re.S,
+    )
+    if m:
+        return re.sub(r"\s+", " ", m.group(1)).strip()[:1200]
+    return ""
+
+
+async def extract_wellfound_company_about(page: Page, *, jd: str = "") -> str:
+    """Company 'about' / overview text from the Wellfound job page (JD fallback)."""
+    for sel in (
+        '[data-test="StartupDescription"]',
+        '[data-test="startup-description"]',
+        '[data-test="CompanyDescription"]',
+        '[data-test="AboutCompany"]',
+        '[data-test="about-company"]',
+        '[class*="styles_about" i]',
+        '[class*="aboutCompany" i]',
+        '[class*="companyDescription" i]',
+        '[class*="startupDescription" i]',
+        'div[class*="description"]',
+    ):
+        loc = page.locator(sel)
+        with contextlib.suppress(Exception):
+            if await loc.count() > 0:
+                text = (await loc.first.inner_text()).strip()
+                if len(text) > 60:
+                    return re.sub(r"\s+", " ", text).strip()[:1200]
+
+    # Heading-anchored fallback: find an "About …" / "Who we are" heading in the DOM
+    # and read the sibling content block.
+    with contextlib.suppress(Exception):
+        text = await page.evaluate(
+            r"""() => {
+                const re = /about\s+(us|the\s+company|the\s+team|the\s+startup|our\s+company)|who\s+we\s+are|our\s+(mission|story)|company\s+(overview|description)/i;
+                const heads = [...document.querySelectorAll('h1, h2, h3, h4, [class*="heading" i], [class*="title" i]')];
+                for (const h of heads) {
+                    const t = (h.innerText || '').trim();
+                    if (!re.test(t) || t.length > 80) continue;
+                    let node = h.nextElementSibling;
+                    const parts = [];
+                    while (node && parts.join(' ').length < 1400) {
+                        if (/^h[1-4]$/i.test(node.tagName)) break;
+                        const txt = (node.innerText || '').trim();
+                        if (txt) parts.push(txt);
+                        node = node.nextElementSibling;
+                    }
+                    let body = parts.join('\n').trim();
+                    if (body.length < 60 && h.parentElement) {
+                        body = (h.parentElement.innerText || '').replace(t, '').trim();
+                    }
+                    if (body.length >= 60) return body;
+                }
+                return '';
+            }"""
+        )
+        if text and len(str(text).strip()) > 60:
+            return re.sub(r"\s+", " ", str(text)).strip()[:1200]
+
+    return about_from_text(jd)
 
 
 def repair_cover_letter_company(cover_letter: str, *, old_company: str, new_company: str) -> str:

@@ -116,6 +116,89 @@ def clear_technical_failure(base_dir: Path, job_key: str) -> bool:
     return True
 
 
+def _normalize_url(url: str) -> str:
+    """Strip query/fragment/trailing slash so the same job compares equal."""
+    url = (url or "").strip()
+    if not url:
+        return ""
+    url = url.split("?", 1)[0].split("#", 1)[0]
+    return url.rstrip("/").lower()
+
+
+def matching_failures(
+    base_dir: Path,
+    *,
+    source: str = "",
+    url: str = "",
+    job_id: str = "",
+) -> dict[str, dict[str, Any]]:
+    """Return ``{key: entry}`` for every failure that refers to the same job.
+
+    A single job can be logged under more than one key (e.g. both
+    ``naukri:<numeric id>`` and ``naukri:job-listings-…<numeric id>``), so match
+    by normalized URL, by the job id embedded in the URL, and by exact key.
+    """
+    target_url = _normalize_url(url)
+    failures = _load(technical_failures_path(base_dir))["failures"]
+    out: dict[str, dict[str, Any]] = {}
+    for key, entry in failures.items():
+        if source and entry.get("source") != source:
+            continue
+        entry_url = _normalize_url(str(entry.get("url", "")))
+        matched = (
+            (bool(target_url) and entry_url == target_url)
+            or (bool(job_id) and bool(source) and key == f"{source}:{job_id}")
+            or (bool(job_id) and job_id in str(entry.get("url", "")))
+        )
+        if matched:
+            out[key] = entry
+    return out
+
+
+def clear_technical_failures_for_job(
+    base_dir: Path,
+    *,
+    source: str = "",
+    url: str = "",
+    job_id: str = "",
+) -> list[str]:
+    """Remove every failure entry referring to a job that is no longer failing.
+
+    Unlike :func:`clear_technical_failure` (exact key only), this clears all key
+    variants for the same job. Returns the list of removed keys.
+    """
+    path = technical_failures_path(base_dir)
+    with _lock:
+        data = _load(path)
+        failures = data["failures"]
+        target_url = _normalize_url(url)
+        removed = [
+            key
+            for key, entry in list(failures.items())
+            if (not source or entry.get("source") == source)
+            and (
+                (bool(target_url) and _normalize_url(str(entry.get("url", ""))) == target_url)
+                or (bool(job_id) and bool(source) and key == f"{source}:{job_id}")
+                or (bool(job_id) and job_id in str(entry.get("url", "")))
+            )
+        ]
+        if not removed:
+            return []
+        for key in removed:
+            failures.pop(key, None)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    logger.info(
+        "Cleared %d technical failure(s) for resolved job: %s",
+        len(removed),
+        ", ".join(removed),
+    )
+    return removed
+
+
 def load_technical_failures(base_dir: Path) -> list[dict[str, Any]]:
     items = list(_load(technical_failures_path(base_dir))["failures"].values())
     items.sort(key=lambda e: str(e.get("last_seen", "")), reverse=True)

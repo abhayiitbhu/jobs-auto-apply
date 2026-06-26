@@ -70,29 +70,9 @@ def _job_id_from_url(url: str) -> str:
 
 
 async def _open_profile_job_feed(page: Page) -> None:
-    """Open the job feed using filters already saved on the Wellfound profile."""
-    await goto_settled(page, "https://wellfound.com/jobs/home")
-
-    for label in (r"see more jobs", r"^jobs$", r"browse jobs", r"view all jobs"):
-        link = page.get_by_role("link", name=re.compile(label, re.I))
-        if await link.count() > 0:
-            try:
-                await link.first.click(timeout=5000)
-                await page.wait_for_timeout(3500)
-                logger.info("Opened job feed via link %r → %s", label, page.url)
-                return
-            except (PlaywrightTimeout, PlaywrightError):
-                continue
-
-    jobs_nav = page.locator('a[href*="/jobs"]').filter(has_text=re.compile(r"^jobs$", re.I))
-    if await jobs_nav.count() > 0:
-        try:
-            await jobs_nav.first.click(timeout=5000)
-            await page.wait_for_timeout(3500)
-        except (PlaywrightTimeout, PlaywrightError):
-            pass
-
-    logger.info("Using Wellfound profile job feed at %s", page.url)
+    """Open the job feed directly, relying on filters already saved on the profile."""
+    await goto_settled(page, "https://wellfound.com/jobs")
+    logger.info("Opened Wellfound jobs feed at %s", page.url)
 
 
 async def _select_checkbox_option(page: Page, option: str) -> None:

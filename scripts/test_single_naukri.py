@@ -10,6 +10,7 @@ import asyncio
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Running this file directly puts scripts/ on sys.path, not the repo root, so the
@@ -21,6 +22,10 @@ import contextlib
 from jobs_auto_apply.browser import naukri_session
 from jobs_auto_apply.config import load_config
 from jobs_auto_apply.naukri.apply import apply_to_job
+from jobs_auto_apply.technical_failures import (
+    clear_technical_failures_for_job,
+    matching_failures,
+)
 from jobs_auto_apply.utils import JobListing, setup_logging
 
 
@@ -94,14 +99,38 @@ async def main() -> None:
             print(f"==== {job.url} ====")
             print("=" * 70)
             page = await context.new_page()
+            started = datetime.now(timezone.utc).isoformat()
             try:
                 result = await apply_to_job(page, context, job, config)
                 print(f"\n==== APPLY RESULT [{job.job_id}]: {result!r} ====")
+                _resolve_failure(config.base_dir, job, result, started)
             except Exception as exc:
                 print(f"\n==== ERROR [{job.job_id}]: {type(exc).__name__}: {exc} ====")
             finally:
                 with contextlib.suppress(Exception):
                     await page.close()
+
+
+def _resolve_failure(base_dir: Path, job: JobListing, result, started: str) -> None:
+    """Drop the job from technical_failures.json once it no longer fails.
+
+    ``apply_to_job`` returns ``True`` when applied, ``None`` when skipped /
+    already-applied (but it also re-records a fresh failure for the "could not
+    fill" skip), and ``False`` on a technical failure. Treat the job as resolved
+    when it applied, or when it was skipped without a new failure being logged
+    during this test.
+    """
+    matches = matching_failures(base_dir, source="naukri", url=job.url, job_id=job.job_id)
+    if not matches:
+        return
+    fresh_failure = any(str(e.get("last_seen", "")) >= started for e in matches.values())
+    resolved = result is True or (result is None and not fresh_failure)
+    if not resolved:
+        print(f"==== STILL FAILING [{job.job_id}]: kept in technical_failures.json ====")
+        return
+    removed = clear_technical_failures_for_job(base_dir, source="naukri", url=job.url, job_id=job.job_id)
+    if removed:
+        print(f"==== RESOLVED [{job.job_id}]: removed from technical_failures.json ({', '.join(removed)}) ====")
 
 
 if __name__ == "__main__":

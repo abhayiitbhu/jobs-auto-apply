@@ -14,9 +14,14 @@ from ..config import AppConfig
 from ..cookies import is_external_career_url
 from ..cover_letter import build_cover_letter
 from ..page_load import goto_settled, prepare_interactive_page
+from ..pending_questions import queue_unanswered
 from ..salary import is_job_salary_eligible, job_eligibility
-from ..utils import JobListing, job_key, save_applied_job
-from .company import extract_wellfound_company, looks_like_location_not_company
+from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
+from .company import (
+    extract_wellfound_company,
+    extract_wellfound_company_about,
+    looks_like_location_not_company,
+)
 from .guard import (
     WellfoundAccessRestrictedError,
     WellfoundApplicationLimitReached,
@@ -43,21 +48,112 @@ async def _raise_if_application_limit(page: Page) -> None:
         raise WellfoundApplicationLimitReached("Wellfound: maximum number of active applications reached")
 
 
+def _unanswered_labels(questions: list[dict], answers: dict[str, str]) -> list[str]:
+    missing: list[str] = []
+    for field in questions:
+        label = str(field.get("label", "")).strip()
+        if label and not str(answers.get(label, "")).strip():
+            missing.append(label)
+    return missing
+
+
+def _queue_missing(
+    config: AppConfig,
+    job: JobListing,
+    questions: list[dict],
+    answers: dict[str, str],
+    *,
+    reason: str = "need answers",
+) -> list[str]:
+    """Queue text questions we did not auto-fill and defer the job for re-apply."""
+    missing = _unanswered_labels(questions, answers)
+    if not missing:
+        return []
+    fields_by_label = {str(f.get("label", "")).strip(): f for f in questions if str(f.get("label", "")).strip()}
+    queue_unanswered(
+        config.base_dir,
+        source="wellfound",
+        job_title=job.title,
+        company=job.company,
+        job_url=job.url,
+        labels=missing,
+        job_id=job.job_id,
+        fields_by_label=fields_by_label,
+        config=config,
+    )
+    defer_job_for_run(config.applied_jobs_path, job, reason=reason)
+    return missing
+
+
+async def _resolve_and_fill_questions(
+    page: Page,
+    job: JobListing,
+    config: AppConfig,
+) -> bool:
+    """Resolve modal questions; fill them or queue text ones for review.
+
+    Returns True to proceed with submission, False to defer this job (questions
+    were queued for manual verification and the job will be retried later).
+    """
+    if not config.application.interactive_questions:
+        return True
+    questions = await discover_questions(page)
+    if not questions:
+        return True
+    answers = await resolve_question_answers(
+        config,
+        job,
+        job.description,
+        questions,
+        interactive=False,
+        defer_new=True,
+        verify_free_text=True,
+    )
+    missing = _queue_missing(config, job, questions, answers)
+    if missing:
+        from ..run_issues import record_skip
+
+        record_skip(
+            source="wellfound",
+            title=job.title,
+            company=job.company,
+            url=job.url,
+            reason="need answers",
+            questions=missing,
+        )
+        logger.info(
+            "Queued %d question(s) for review; deferring %s @ %s",
+            len(missing),
+            job.title,
+            job.company,
+        )
+        return False
+    await fill_questions(page, answers)
+    return True
+
+
 async def _enrich_wellfound_job_on_page(page: Page, job: JobListing, config: AppConfig) -> None:
     min_lpa = config.application.min_inr_salary_lpa
     info = await extract_wellfound_job_page(page, min_inr_lpa=min_lpa)
     jd = info.jd
     modal_text = info.modal_text
-    company = await extract_wellfound_company(page, job.title, modal_text or jd)
+    # Prefer the structured company name from __NEXT_DATA__; fall back to DOM scrape.
+    company = info.company or await extract_wellfound_company(page, job.title, modal_text or jd)
     if company:
         job.company = company
     elif looks_like_location_not_company(job.company):
         job.company = ""
     job.description = jd
+    if info.skills and not job.meta.get("skills"):
+        job.meta["skills"] = info.skills
+    if not job.meta.get("company_about"):
+        about = info.company_about or await extract_wellfound_company_about(page, jd=jd)
+        if about:
+            job.meta["company_about"] = about
     if not job.meta.get("salary_display"):
         from ..salary import extract_salary_from_text
 
-        snippet = extract_salary_from_text(modal_text) or extract_salary_from_text(jd[:400])
+        snippet = info.salary_display or extract_salary_from_text(modal_text) or extract_salary_from_text(jd[:400])
         if snippet:
             job.meta["salary_display"] = snippet
     job.meta.update(
@@ -194,21 +290,25 @@ async def process_wellfound_job(
             company_gate.release(job.company)
         return None
 
-    note = str(job.meta.get("cover_letter", "")).strip()
-    if not note:
-        note = await build_cover_letter(config, job=job, jd=job.description)
-        job.meta["cover_letter"] = note
+    note = await build_cover_letter(
+        config,
+        job=job,
+        page=page,
+        jd=job.description,
+        prefer_precomputed=False,
+    )
+    job.meta["cover_letter"] = note
 
     try:
         await _fill_cover_note(page, note)
     except PlaywrightTimeout:
         logger.debug("%sNo cover note field; continuing", prefix)
 
-    if config.application.interactive_questions:
-        questions = await discover_questions(page)
-        if questions:
-            answers = await resolve_question_answers(config, job, job.description, questions)
-            await fill_questions(page, answers)
+    if not await _resolve_and_fill_questions(page, job, config):
+        await close_apply_modal(page)
+        if company_gate is not None:
+            company_gate.release(job.company)
+        return None
 
     if config.application.dry_run:
         logger.info("%s[DRY RUN] Would apply to %s @ %s", prefix, job.title, job.company)
@@ -410,20 +510,23 @@ async def apply_to_job(
         return None
 
     job.description = info.jd or job.description
-    note = str(job.meta.get("cover_letter", "")).strip()
-    if not note:
-        note = await build_cover_letter(config, job=job, jd=job.description)
+    note = await build_cover_letter(
+        config,
+        job=job,
+        page=page,
+        jd=job.description,
+        prefer_precomputed=False,
+    )
+    job.meta["cover_letter"] = note
 
     try:
         await _fill_cover_note(page, note)
     except PlaywrightTimeout:
         logger.debug("No cover note field; continuing")
 
-    if config.application.interactive_questions:
-        questions = await discover_questions(page)
-        if questions:
-            answers = await resolve_question_answers(config, job, job.description, questions)
-            await fill_questions(page, answers)
+    if not await _resolve_and_fill_questions(page, job, config):
+        await close_apply_modal(page)
+        return None
 
     if config.application.dry_run:
         logger.info("[DRY RUN] Would apply to %s @ %s", job.title, job.company)

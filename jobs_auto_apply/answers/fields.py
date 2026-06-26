@@ -143,6 +143,18 @@ def enrich_field_for_llm(field: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
+_FREE_TEXT_INPUT_TYPES = frozenset({"short_text", "long_text", "contenteditable", "text"})
+
+
+def is_free_text_field(field: dict[str, Any]) -> bool:
+    """True for open-ended text fields (not choice/numeric/date/location/etc.).
+
+    These are the answers the user wants to verify manually rather than auto-fill.
+    """
+    enriched = field if field.get("input_type") else enrich_field_for_llm(field)
+    return str(enriched.get("input_type", "")).lower() in _FREE_TEXT_INPUT_TYPES
+
+
 def infer_field_for_question(question: str, config: AppConfig | None = None) -> dict[str, Any]:
     """Best-effort field metadata when options aren't known (e.g. pending queue)."""
     label = question.strip()

@@ -52,6 +52,30 @@ def resolve_chrome_profile_dir(config: AppConfig) -> Path:
     return candidate
 
 
+class ChromeProfileLockedError(RuntimeError):
+    """Raised when Chrome is still running and has the profile locked.
+
+    A subclass of ``RuntimeError`` so existing ``except Exception`` handlers keep
+    working, while callers (e.g. the scheduler) can detect this specific case and
+    retry quickly once Chrome is closed instead of waiting a full interval.
+    """
+
+
+# Module-level flag so the scheduler can tell whether a just-finished apply cycle
+# was wasted purely because Chrome's profile was locked. Reset at the start of a
+# run, set whenever ``assert_chrome_profile_available`` raises.
+_chrome_lock_detected = False
+
+
+def reset_chrome_lock_flag() -> None:
+    global _chrome_lock_detected
+    _chrome_lock_detected = False
+
+
+def chrome_lock_was_detected() -> bool:
+    return _chrome_lock_detected
+
+
 def chrome_profile_lock_path(profile_dir: Path) -> Path:
     return profile_dir.parent / "SingletonLock"
 
@@ -94,7 +118,9 @@ def assert_chrome_profile_available(profile_dir: Path) -> None:
         raise FileNotFoundError(f"Chrome profile directory does not exist: {profile_dir}")
 
     if is_chrome_process_running() or is_chrome_profile_locked(profile_dir):
-        raise RuntimeError(
+        global _chrome_lock_detected
+        _chrome_lock_detected = True
+        raise ChromeProfileLockedError(
             "Google Chrome is still running. Quit Chrome completely before running the script "
             "(Chrome locks its profile while open).\n"
             "  macOS: Cmd+Q Chrome, or run: osascript -e 'quit app \"Google Chrome\"'"

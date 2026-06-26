@@ -54,6 +54,9 @@ class SchedulerState:
     last_error: str | None = None
     next_run_at: str | None = None
     listener_active: bool = False
+    # set when the last cycle was wasted purely because Chrome's profile was locked,
+    # so the scheduler can retry quickly once Chrome is closed instead of waiting.
+    chrome_lock_pending: bool = False
     # created once the event loop is running (avoids binding to no loop on 3.9)
     apply_lock: asyncio.Lock | None = None
     stop_event: asyncio.Event | None = None
@@ -112,6 +115,9 @@ async def _run_one_cycle(state: SchedulerState) -> None:
         state.last_error = f"{type(exc).__name__}: {exc}"
         logger.exception("Scheduler: apply cycle failed")
     finally:
+        from .chrome_profile import chrome_lock_was_detected
+
+        state.chrome_lock_pending = chrome_lock_was_detected()
         state.run_count += 1
         state.last_finished_at = _now_iso()
         state.last_duration_seconds = round(asyncio.get_event_loop().time() - started, 1)
@@ -124,14 +130,55 @@ async def _run_one_cycle(state: SchedulerState) -> None:
         )
 
 
+# How often to check whether Chrome has been closed when a cycle was skipped
+# because the Chrome profile was locked.
+CHROME_RETRY_POLL_SECONDS = 20
+
+
+async def _wait_for_next_run(state: SchedulerState, interval_seconds: int) -> None:
+    """Sleep until the next scheduled cycle.
+
+    Normally this just waits the full ``interval_seconds``. But if the previous
+    cycle was wasted because Chrome's profile was locked (Chrome still open), poll
+    frequently and return as soon as Chrome is closed so we can retry right away
+    instead of waiting out the whole interval. The interval still acts as an upper
+    bound so we never wait longer than a normal cycle gap.
+    """
+    if not state.chrome_lock_pending:
+        state.next_run_at = (datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)).isoformat()
+        await asyncio.sleep(interval_seconds)
+        return
+
+    from .chrome_profile import is_chrome_process_running
+
+    logger.info(
+        "Scheduler: last cycle was skipped because Chrome was open — will retry as soon "
+        "as Chrome is closed (checking every %ds, up to %ds).",
+        CHROME_RETRY_POLL_SECONDS,
+        interval_seconds,
+    )
+    poll = min(CHROME_RETRY_POLL_SECONDS, interval_seconds)
+    state.next_run_at = (datetime.now(timezone.utc) + timedelta(seconds=poll)).isoformat()
+    waited = 0
+    while waited < interval_seconds:
+        await asyncio.sleep(poll)
+        waited += poll
+        if not is_chrome_process_running():
+            logger.info("Scheduler: Chrome is now closed — retrying apply cycle.")
+            return
+    logger.info(
+        "Scheduler: Chrome still open after %ds — running the scheduled cycle anyway.",
+        interval_seconds,
+    )
+
+
 async def _scheduler_loop(state: SchedulerState) -> None:
     interval_seconds = max(60, state.interval_minutes * 60)
     if state.run_on_start:
         await _run_one_cycle(state)
     while True:
-        state.next_run_at = (datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)).isoformat()
         try:
-            await asyncio.sleep(interval_seconds)
+            await _wait_for_next_run(state, interval_seconds)
         except asyncio.CancelledError:
             break
         await _run_one_cycle(state)

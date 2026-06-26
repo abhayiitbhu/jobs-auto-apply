@@ -7,6 +7,17 @@ import re
 
 COVER_NOTE_HINT = re.compile(r"note|message|cover", re.I)
 
+# "Why do you want to join us / work here / interested in this role" style prompts.
+# These are motivation-to-join questions we tailor per job (JD + company) instead of
+# answering from saved memory.
+_WHY_JOIN_PATTERNS = (
+    re.compile(r"\bwhy\b.{0,40}\b(join|work\s+(?:here|with\s+us|for\s+us|at))", re.I),
+    re.compile(r"\bwhy\b.{0,40}\bwant\s+to\b.{0,20}\b(join|work|be\s+(?:a\s+)?part)", re.I),
+    re.compile(r"\bwhy\b.{0,40}\b(interested|excited|keen|drawn|passionate)\b", re.I),
+    re.compile(r"\bwhy\b.{0,20}\b(this|our)\b.{0,16}\b(company|role|team|position|us|opportunity)\b", re.I),
+    re.compile(r"\bwhat\b.{0,24}\b(excites|interests|draws|attracts|motivates|appeals?)\b.{0,20}\byou\b", re.I),
+)
+
 GENERIC_QUESTION_LABELS = frozenset(
     {
         "enter your answer",
@@ -78,6 +89,18 @@ def interactive_prompt_lock() -> asyncio.Lock:
 
 
 _interactive_prompt_lock = interactive_prompt_lock
+
+
+def is_why_company_question(label: str) -> bool:
+    """True for "why do you want to join / work here / interested in this role" prompts.
+
+    These are tailored per job from the JD + company "about" rather than answered
+    from saved memory or queued for manual review.
+    """
+    text = re.sub(r"\s+", " ", (label or "").strip())
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in _WHY_JOIN_PATTERNS)
 
 
 def is_generic_question_label(label: str) -> bool:

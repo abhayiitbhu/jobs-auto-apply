@@ -36,6 +36,7 @@ from jobs_auto_apply.hirist.questions import (
     fill_hirist_questions,
 )
 from jobs_auto_apply.page_load import prepare_interactive_page
+from jobs_auto_apply.technical_failures import clear_technical_failures_for_job
 from jobs_auto_apply.utils import JobListing, setup_logging
 
 
@@ -119,6 +120,7 @@ async def _diagnose_on_page(config, page, url: str) -> None:
     await goto_hirist_job_detail(page, url)
     if await _already_applied(page):
         print("==== Already applied — nothing to test ====")
+        _clear_if_resolved(config.base_dir, job, resolved=True)
         return
 
     # Open the screening form if we're on the job detail page.
@@ -166,7 +168,21 @@ async def _diagnose_on_page(config, page, url: str) -> None:
         print(f"  - {str(f.get('label', ''))[:45]!r} domValue={str(f.get('domValue', ''))[:25]!r}")
 
     print("\n(Not clicking Next/Submit — diagnostic only.)")
+    # Only treat as resolved if we actually reached a form with questions and
+    # every field filled without leaving Next disabled. An empty `questions`
+    # usually means the screening form was never reached, which is not a fix.
+    resolved = bool(questions) and not unfilled and not state.get("nextDisabled")
+    _clear_if_resolved(config.base_dir, job, resolved=resolved)
     await page.wait_for_timeout(1000)
+
+
+def _clear_if_resolved(base_dir: Path, job: JobListing, *, resolved: bool) -> None:
+    if not resolved:
+        print("==== STILL FAILING: kept in technical_failures.json ====")
+        return
+    removed = clear_technical_failures_for_job(base_dir, source="hirist", url=job.url, job_id=job.job_id)
+    if removed:
+        print(f"==== RESOLVED: removed from technical_failures.json ({', '.join(removed)}) ====")
 
 
 async def main() -> None:

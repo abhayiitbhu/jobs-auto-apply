@@ -108,12 +108,31 @@ def _job_detail_url(url: str) -> str:
     return f"{base}?src=directSearch"
 
 
-async def _wait_for_job_detail(page: Page) -> None:
+async def _wait_for_naukri_jd(page: Page) -> None:
+    """Wait for the job-detail DOM to render — cheap, no apply-readiness poll."""
     with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector(_AURUS_JD_SELECTOR, timeout=12000)
     with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector("#jobs-desc button", timeout=8000)
-    await _wait_for_apply_ready(page, timeout_ms=15000)
+
+
+async def _naukri_detail_shows_external_apply(page: Page) -> bool:
+    """True when the JD text explicitly names an external / non-quick apply path.
+
+    Unlike :func:`_naukri_detail_is_non_quick_apply`, this relies only on the
+    job-description copy (e.g. "apply on company site"), not on the apply
+    button's animation state, so it is safe to call *before* the apply-ready
+    poll — the button may still be mid-render. Used for an early bail-out so we
+    don't burn ~15s waiting for a Quick Apply button that will never appear.
+    """
+    jd = page.locator("#jobs-desc")
+    if await jd.count() == 0:
+        return False
+    try:
+        text = (await jd.first.inner_text()).lower()
+    except Exception:
+        return False
+    return bool(_NON_QUICK_DETAIL_RE.search(text))
 
 
 _AURUS_APPLY_STATE_JS = """
@@ -453,15 +472,28 @@ async def _dismiss_overlays(page: Page) -> None:
                 pass
 
 
-async def _fill_cover_letter_if_present(page: Page, note: str) -> None:
+async def _fill_cover_letter_if_present(
+    page: Page,
+    job: JobListing,
+    config: AppConfig,
+    jd: str,
+) -> None:
+    """Fill a cover-letter/message textarea only if the page actually has one.
+
+    Naukri quick-apply is a chatbot (``div.textArea[contenteditable]``), not a
+    ``<textarea>``, so there is normally nowhere to put a cover letter. Generating
+    one up front (LLM, serialized via the Ollama gate) just stalled every worker
+    for ~30-50s and got the browser closed mid-run — so build the letter lazily,
+    only once a real cover-note field is found.
+    """
     for selector in (
         'textarea[placeholder*="cover" i]',
         'textarea[placeholder*="message" i]',
         'textarea[name*="cover" i]',
-        "textarea",
     ):
         area = page.locator(selector)
         if await area.count() > 0 and await area.first.is_visible():
+            note = await build_cover_letter(config, job=job, page=page, jd=jd)
             await area.first.fill(note)
             return
 
@@ -658,7 +690,6 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
         return None
 
     jd = await _page_jd(page)
-    note = await build_cover_letter(config, job=job, page=page, jd=jd)
 
     try:
         await apply_btn.click(timeout=8000)
@@ -694,7 +725,7 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
             polling=200,
         )
 
-    await _fill_cover_letter_if_present(page, note)
+    await _fill_cover_letter_if_present(page, job, config, jd)
 
     chatbot_result = await _handle_chatbot_questions(page, job, config, jd)
     if chatbot_result is None:
@@ -756,12 +787,39 @@ async def apply_to_job(
         await _stabilize_after_naukri_apply(page)
         return None
 
-    await _wait_for_job_detail(page)
+    await _wait_for_naukri_jd(page)
 
+    # Early bail-out: if the JD copy explicitly names an external / non-quick
+    # apply path, there is no Quick Apply button to wait for. Skip the ~15s
+    # apply-ready poll so the worker tab closes right after the page loads.
+    # Guard: a present/ready Quick Apply button is ground truth — never bail on
+    # JD prose (e.g. "company site", "via consultant") when one actually exists.
+    if (
+        await _naukri_detail_shows_external_apply(page)
+        and await _aurus_apply_state(page) != "ready"
+        and await _find_quick_apply_button(page) is None
+    ):
+        logger.info("Skipping non-quick-apply Naukri job on detail (early): %s", job.title)
+        return None
+
+    # Short settle window: quick-apply jobs flip to "ready" within a few
+    # seconds, so this returns fast for them. If after the settle there's still
+    # no Quick Apply button and the detail looks non-quick (button label /
+    # apply state), bail now instead of waiting the full window. The "quick
+    # apply" text guard inside _naukri_detail_is_non_quick_apply keeps real
+    # quick-apply jobs from being misclassified while still loading.
+    await _wait_for_apply_ready(page, timeout_ms=5000)
+    if await _find_quick_apply_button(page) is None and await _naukri_detail_is_non_quick_apply(page):
+        logger.info("Skipping non-quick-apply Naukri job on detail (settled): %s", job.title)
+        return None
+
+    await _wait_for_apply_ready(page, timeout_ms=10000)
+
+    # A present, enabled Quick Apply button is ground truth: apply on it. Do NOT
+    # let a JD-prose regex match (_naukri_detail_is_non_quick_apply) override a
+    # real button — that wrongly skips genuine quick-apply jobs whose
+    # description happens to mention "company site", "via consultant", etc.
     if await _find_quick_apply_button(page) is not None:
-        if await _naukri_detail_is_non_quick_apply(page):
-            logger.info("Skipping non-quick-apply Naukri job on detail: %s", job.title)
-            return None
         return await _try_apply_on_page(page, job, config)
 
     if await _confirm_already_applied_on_site(page):

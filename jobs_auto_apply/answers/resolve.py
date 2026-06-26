@@ -11,9 +11,9 @@ from .chips import is_chip_range_label
 from .config_answers import authoritative_config_answer
 from .draft import DraftResult, draft_answers_for_fields
 from .experience import is_new_experience_question
-from .fields import enrich_field_for_llm
+from .fields import enrich_field_for_llm, is_free_text_field
 from .interactive import prompt_confirm_new_answer
-from .labels import interactive_prompt_lock
+from .labels import interactive_prompt_lock, is_why_company_question
 from .memory_store import (
     build_answer_group_index,
     canonicalize_stored_answer,
@@ -123,6 +123,30 @@ def _draft_is_fillable(
     return draft.confidence >= threshold
 
 
+def _tailored_join_answer(
+    config: AppConfig,
+    *,
+    job: Any,
+    jd: str,
+    company: str,
+    job_title: str,
+) -> str | None:
+    """Generate a per-job 'why do you want to join us' answer (not persisted)."""
+    from ..llm_answers import generate_join_reason
+
+    company_about = ""
+    meta = getattr(job, "meta", None)
+    if isinstance(meta, dict):
+        company_about = str(meta.get("company_about", "") or "")
+    return generate_join_reason(
+        config,
+        job_title=job_title,
+        company=company,
+        jd=jd,
+        company_about=company_about,
+    )
+
+
 async def resolve_question_answers(
     config: AppConfig,
     job: Any,
@@ -132,8 +156,15 @@ async def resolve_question_answers(
     interactive: bool | None = None,
     confirm_new: bool | None = None,
     defer_new: bool = False,
+    verify_free_text: bool = False,
 ) -> dict[str, str]:
-    """Saved answers → RAG rules → LLM → confirm / defer / interactive prompt."""
+    """Saved answers → RAG rules → LLM → confirm / defer / interactive prompt.
+
+    When ``verify_free_text`` is set, open-ended text questions with no saved/config
+    answer are left unanswered (so the caller queues them for manual verification),
+    except 'why do you want to join us' prompts, which are tailored per job from the
+    JD + company 'about' and auto-filled.
+    """
     answers: dict[str, str] = {}
     use_interactive = config.application.interactive_questions if interactive is None else interactive
     use_confirm_new = config.application.confirm_new_answers if confirm_new is None else confirm_new
@@ -207,6 +238,27 @@ async def resolve_question_answers(
 
     for label, field in needs_draft:
         draft = draft_map.get(label, DraftResult())
+
+        if verify_free_text and is_free_text_field(field):
+            # Open-ended text the user wants to verify: tailor "why join us" per job,
+            # otherwise leave unanswered so the caller queues it for manual review.
+            if is_why_company_question(label):
+                tailored = await asyncio.to_thread(
+                    _tailored_join_answer,
+                    config,
+                    job=job,
+                    jd=jd,
+                    company=company,
+                    job_title=job_title,
+                )
+                if tailored and answer_acceptable_for_field(label, tailored, field):
+                    answers[label] = tailored
+                    logger.info("Tailored join-reason answer for: %s", label[:60])
+                else:
+                    logger.info("Join-reason unusable; queuing for review: %s", label[:60])
+            else:
+                logger.info("Free-text question queued for manual verification: %s", label[:60])
+            continue
 
         if defer_new:
             if draft.has_answer and is_new_experience_question(config, label):

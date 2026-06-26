@@ -54,12 +54,18 @@ class TelegramClient:
     # instead of matching them by send order.
     supports_reply_routing = True
 
+    # A Telegram bot token never expires, so the session can't "end" the way a
+    # WhatsApp QR link can. A failing ``is_logged_in`` here is a transient network
+    # blip, not a dead session — the listener should retry instead of giving up.
+    session_can_expire = False
+
     def __init__(
         self,
         *,
         token: str,
         chat_id: str = "",
         chat_id_path: Path | None = None,
+        offset_path: Path | None = None,
         reply_timeout_seconds: int = 900,
         skip_keyword: str = "skip",
         drop_keyword: str = "drop",
@@ -68,6 +74,7 @@ class TelegramClient:
         self.token = (token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.chat_id_path = chat_id_path
+        self.offset_path = offset_path
         self.reply_timeout_seconds = max(30, int(reply_timeout_seconds))
         self.skip_keyword = (skip_keyword or "skip").strip().lower()
         self.drop_keyword = (drop_keyword or "drop").strip().lower()
@@ -96,6 +103,25 @@ class TelegramClient:
         except Exception as exc:
             logger.debug("Could not save telegram chat_id: %s", exc)
 
+    def _load_saved_offset(self) -> int | None:
+        if self.offset_path and self.offset_path.exists():
+            try:
+                data = json.loads(self.offset_path.read_text(encoding="utf-8"))
+                value = data.get("offset")
+                return int(value) if value is not None else None
+            except Exception:
+                return None
+        return None
+
+    def _save_offset(self, offset: int) -> None:
+        if not self.offset_path:
+            return
+        try:
+            self.offset_path.parent.mkdir(parents=True, exist_ok=True)
+            self.offset_path.write_text(json.dumps({"offset": int(offset)}), encoding="utf-8")
+        except Exception as exc:
+            logger.debug("Could not save telegram offset: %s", exc)
+
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def start(self) -> None:
         if not self.token:
@@ -105,7 +131,17 @@ class TelegramClient:
             raise TelegramError(f"Invalid Telegram bot token: {me}")
         if not self.chat_id:
             self.chat_id = self._load_saved_chat_id()
-        await self._drain_updates()
+        # Resume from where a previous run left off so a `serve --reload` restart
+        # doesn't skip replies that arrived while the worker was reloading. Only
+        # drain pre-existing backlog on the very first run (no saved offset),
+        # so an old message is never mistaken for a fresh answer.
+        saved = self._load_saved_offset()
+        if saved is not None:
+            self._offset = saved
+        else:
+            await self._drain_updates()
+            if self._offset is not None:
+                self._save_offset(self._offset)
 
     async def close(self) -> None:  # symmetry with WhatsAppClient
         return None
@@ -169,6 +205,7 @@ class TelegramClient:
             return None
         for upd in res.get("result", []):
             self._offset = int(upd["update_id"]) + 1
+            self._save_offset(self._offset)
             msg = upd.get("message") or upd.get("edited_message") or {}
             text = msg.get("text")
             chat = str((msg.get("chat") or {}).get("id", "")).strip()
@@ -254,6 +291,7 @@ async def telegram_client(config) -> AsyncIterator[TelegramClient]:
         token=config.telegram.bot_token,
         chat_id=config.telegram.chat_id,
         chat_id_path=config.telegram_chat_path,
+        offset_path=config.telegram_offset_path,
         reply_timeout_seconds=config.telegram.reply_timeout_seconds,
         skip_keyword=config.telegram.skip_keyword,
         drop_keyword=config.telegram.drop_keyword,

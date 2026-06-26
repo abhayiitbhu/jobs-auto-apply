@@ -189,9 +189,32 @@ def _adapt_reference_cover_letter(
     return _ensure_signature(text, facts)
 
 
+def _company_about_from_job(job: JobListing) -> str:
+    meta = getattr(job, "meta", None)
+    if isinstance(meta, dict):
+        return str(meta.get("company_about", "") or "")
+    return ""
+
+
 def generate_cover_letter_dynamic(config: AppConfig, *, job: JobListing, jd: str) -> str:
     facts = load_resume_facts(config.base_dir)
     reference = _load_cover_letter_reference(config)
+
+    from .llm_answers import generate_cover_letter_llm
+
+    llm_letter = generate_cover_letter_llm(
+        config,
+        job_title=job.title or "",
+        company=job.company or "",
+        jd=jd,
+        company_about=_company_about_from_job(job),
+        reference=reference,
+        include_ctc=config.cover_letter.include_ctc,
+        max_words=config.cover_letter.max_words,
+    )
+    if llm_letter:
+        return llm_letter
+
     if reference:
         return _adapt_reference_cover_letter(config, job=job, jd=jd, facts=facts, reference=reference)
 
@@ -270,8 +293,9 @@ async def build_cover_letter(
     job: JobListing,
     page: Page | None = None,
     jd: str = "",
+    prefer_precomputed: bool = True,
 ) -> str:
-    if job.meta.get("cover_letter"):
+    if prefer_precomputed and job.meta.get("cover_letter"):
         return str(job.meta["cover_letter"]).strip()
 
     if job.description:
@@ -283,6 +307,13 @@ async def build_cover_letter(
             jd = await extract_wellfound_page_jd(page)
         if not jd:
             jd = await extract_job_description(page)
+
+    if page and job.source == "wellfound" and not _company_about_from_job(job):
+        from .wellfound.company import extract_wellfound_company_about
+
+        about = await extract_wellfound_company_about(page, jd=jd)
+        if about and isinstance(job.meta, dict):
+            job.meta["company_about"] = about
 
     mode = config.cover_letter.mode.lower()
     company = job.company or "your team"
