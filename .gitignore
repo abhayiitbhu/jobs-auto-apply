@@ -146,6 +146,8 @@ data/run.log
 data/sessions/
 data/whatsapp_profile/
 data/telegram_chat.json
+data/telegram_offset.json
+data/naukri_resume_sync.json
 data/user_memory.json
 data/pending_questions.json
 data/technical_failures.json
