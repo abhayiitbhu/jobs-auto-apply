@@ -5,12 +5,13 @@ import logging
 import re
 from urllib.parse import urljoin, urlparse
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import UplersFiltersConfig
 from ..cookies import slugify
 from ..utils import JobListing
-from .auth import UPLERS_ORIGIN, UPLERS_JOBS_URLS
+from .auth import UPLERS_JOBS_URLS, UPLERS_ORIGIN
 
 logger = logging.getLogger("job_apply")
 

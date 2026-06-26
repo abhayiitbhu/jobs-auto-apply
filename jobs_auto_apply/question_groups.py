@@ -130,8 +130,11 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
         "Last working day (LWD)",
         "Date as DD/MM/YYYY — e.g. 12/06/2026 from application_facts",
         (
-            re.compile(r"last working day"),
+            re.compile(r"last working da(?:y|te)"),
             re.compile(r"\blwd\b"),
+            re.compile(r"last day of (?:work|working|employment)"),
+            re.compile(r"(?:date of |)relieving date"),
+            re.compile(r"date of relieving"),
         ),
     ),
     QuestionGroupDef(

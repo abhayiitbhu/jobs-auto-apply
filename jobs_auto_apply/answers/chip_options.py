@@ -49,9 +49,7 @@ def value_in_chip_range(value: int, option: str) -> bool:
     nums = [int(m.group(1)) for m in re.finditer(r"(\d+)", chip_l)]
     if len(nums) == 2 and nums[0] <= nums[1]:
         return nums[0] <= value <= nums[1]
-    if len(nums) == 1 and nums[0] == value:
-        return True
-    return False
+    return bool(len(nums) == 1 and nums[0] == value)
 
 
 def lpa_in_chip_range(value: float, option: str) -> bool:

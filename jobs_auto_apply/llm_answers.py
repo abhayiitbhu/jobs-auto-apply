@@ -21,6 +21,10 @@ from .rag_answers import load_application_facts
 logger = logging.getLogger("job_apply")
 
 _QUOTE_WRAP = re.compile(r'^["\'](.+)["\']$', re.S)
+# Floor on how many top vector matches are surfaced to the LLM for answer
+# generation. Even when rag_top_k is configured lower, the LLM should see at
+# least this many similar prior Q/A pairs so it has enough context to adapt.
+_MIN_RAG_FOR_LLM = 10
 _FAISS_STORE_NAME = "user_memory_qa"
 _FAISS_CACHE: dict[str, tuple[float, Any]] = {}
 _OLLAMA_LOCK = threading.Lock()  # legacy single-flight (kept for any direct users)
@@ -156,8 +160,7 @@ def _field_instructions(field: dict[str, Any]) -> str:
             )
         else:
             lines.append(
-                "Reply with CTC as a single number in lakhs only (e.g. 38). "
-                "No LPA text, breakdown, or sentences."
+                "Reply with CTC as a single number in lakhs only (e.g. 38). No LPA text, breakdown, or sentences."
             )
     elif input_type == "years_numeric":
         platform = str(field.get("platform", "")).lower()
@@ -193,9 +196,7 @@ def _field_instructions(field: dict[str, Any]) -> str:
         if options:
             lines.append(f"Options: {', '.join(options)}")
             lines.append("Reply with comma-separated option labels from the list.")
-    elif input_type == "yes_no_checkbox":
-        lines.append("Reply with exactly Yes or No.")
-    elif kind in ("radio", "checkbox") and not options:
+    elif input_type == "yes_no_checkbox" or (kind in ("radio", "checkbox") and not options):
         lines.append("Reply with exactly Yes or No.")
     elif kind in ("input", "textarea", "text", "short_text"):
         lines.append("Reply with a short, direct answer. Use digits only when the field expects a number.")
@@ -369,7 +370,7 @@ def retrieve_similar_answers(
     k: int | None = None,
 ) -> list[SimilarAnswer]:
     """Top-k prior Q/A pairs from user_memory via FAISS similarity_search_with_score."""
-    limit = k if k is not None else config.llm.rag_top_k
+    limit = k if k is not None else max(config.llm.rag_top_k, _MIN_RAG_FOR_LLM)
     limit = max(1, limit)
 
     store = _get_faiss_store(config)
@@ -419,9 +420,7 @@ def _composite_similarity_score(question: str, matched_question: str, distance: 
     group_match = 1.0 if current_group == matched_group else 0.0
     query_tokens = _token_set(question)
     match_tokens = _token_set(matched_question)
-    token_overlap = (
-        len(query_tokens & match_tokens) / max(len(query_tokens), 1) if query_tokens else 0.0
-    )
+    token_overlap = len(query_tokens & match_tokens) / max(len(query_tokens), 1) if query_tokens else 0.0
     return 0.50 * cosine_sim + 0.40 * group_match + 0.10 * token_overlap
 
 
@@ -432,9 +431,7 @@ def retrieve_best_similar_answer(
     require_same_group: bool = True,
 ) -> SimilarAnswer | None:
     """Best composite-scored prior Q/A for vector top-1 auto-answer."""
-    candidates = retrieve_similar_answers(
-        config, question, k=max(config.llm.rag_top_k, 5)
-    )
+    candidates = retrieve_similar_answers(config, question, k=max(config.llm.rag_top_k, _MIN_RAG_FOR_LLM))
     if not candidates:
         return None
 
@@ -486,10 +483,7 @@ def _lexical_similar_answers(
         scored.append((score, q, a))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [
-        SimilarAnswer(question=q, answer=a, score=score)
-        for score, q, a in scored[:limit]
-    ]
+    return [SimilarAnswer(question=q, answer=a, score=score) for score, q, a in scored[:limit]]
 
 
 def _format_free_tier_hints(ctx: Any) -> str:
@@ -507,10 +501,7 @@ def _format_free_tier_hints(ctx: Any) -> str:
         lines.append(f"Rule RAG answer: {ctx.rag_fill.strip()}")
     if ctx.vector_best is not None:
         v = ctx.vector_best
-        lines.append(
-            f"Vector match (score={v.score:.3f}, same question group): "
-            f"Q: {v.question} → A: {v.answer}"
-        )
+        lines.append(f"Vector match (score={v.score:.3f}, same question group): Q: {v.question} → A: {v.answer}")
     if not lines:
         return ""
     return (
@@ -537,9 +528,7 @@ def _memory_examples(
     similar_answers: list[SimilarAnswer] | None = None,
 ) -> str:
     """Format similarity-ranked prior Q/A pairs for the LLM prompt."""
-    answers = similar_answers if similar_answers is not None else retrieve_similar_answers(
-        config, question
-    )
+    answers = similar_answers if similar_answers is not None else retrieve_similar_answers(config, question)
     return _format_similar_answers(answers)
 
 
@@ -709,10 +698,7 @@ def verify_llm_answer_detailed(
         if ans:
             databank_lines.append(f"Past answer — Q: {ques[:80]} -> A: {ans[:80]}")
     databank_block = (
-        "\n\n=== CANDIDATE DATABANK (past answers + rules) ===\n"
-        + "\n".join(databank_lines)
-        if databank_lines
-        else ""
+        "\n\n=== CANDIDATE DATABANK (past answers + rules) ===\n" + "\n".join(databank_lines) if databank_lines else ""
     )
 
     system = SystemMessage(
@@ -792,9 +778,7 @@ def _option_numeric_bounds(opt: str) -> tuple[float, float] | None:
         return None
     if len(nums) >= 2 and re.search(r"-|–|—|\bto\b|\bbetween\b", o):
         return (min(nums[0], nums[1]), max(nums[0], nums[1]))
-    if re.search(r"more than|greater than|above|over|at least|minimum|\bmin\b", o) or re.search(
-        r"\d+\s*\+", o
-    ):
+    if re.search(r"more than|greater than|above|over|at least|minimum|\bmin\b", o) or re.search(r"\d+\s*\+", o):
         return (nums[0], float("inf"))
     if re.search(
         r"less than|under|below|up\s*to|upto|at most|maximum|\bmax\b|within|"
@@ -920,12 +904,9 @@ def map_answer_to_option(
     # to map so the question is left unanswered/queued rather than claiming, say,
     # "2-4 years" of Salesforce. Notice-period style "0 -> Immediate / 15 days or
     # less" still maps because those options DO represent zero.
-    if _numeric_answer_value(answer) == 0 and not any(
-        _option_represents_zero(o) for o in opts
-    ):
+    if _numeric_answer_value(answer) == 0 and not any(_option_represents_zero(o) for o in opts):
         logger.info(
-            "Answer %r is zero experience but no zero option in %r — not mapping "
-            "(avoid overstating) for: %s",
+            "Answer %r is zero experience but no zero option in %r — not mapping (avoid overstating) for: %s",
             answer[:40],
             opts,
             question[:50],
@@ -956,12 +937,12 @@ def map_answer_to_option(
             "- Always pick the SINGLE nearest option, even if the wording differs.\n"
             "- For numbers, pick the option whose numeric range CONTAINS the "
             "answer; if none contains it, pick the closest range.\n"
-            "  Examples: answer 7 with [\"1-3 years\",\"6-8 years\",\"8+ years\"] -> 2; "
-            "answer 0 with [\"Immediate\",\"15 Days or less\",\"1 Month\"] -> 1 (0 days = immediate); "
-            "answer 12 (days) with [\"15 Days or less\",\"1 Month\",\"2 Months\"] -> 1.\n"
-            "- For yes/no options, map an affirmative/relevant answer to \"Yes\" "
-            "and a negative/irrelevant one to \"No\" "
-            "(e.g. question \"Are you based in Bengaluru?\" answer \"Bengaluru\" -> Yes).\n"
+            '  Examples: answer 7 with ["1-3 years","6-8 years","8+ years"] -> 2; '
+            'answer 0 with ["Immediate","15 Days or less","1 Month"] -> 1 (0 days = immediate); '
+            'answer 12 (days) with ["15 Days or less","1 Month","2 Months"] -> 1.\n'
+            '- For yes/no options, map an affirmative/relevant answer to "Yes" '
+            'and a negative/irrelevant one to "No" '
+            '(e.g. question "Are you based in Bengaluru?" answer "Bengaluru" -> Yes).\n'
             "- Only return index 0 if NO option is even loosely related to the "
             "answer.\n"
             'Return STRICT JSON only: {"index": N} (1-based option number, or 0).'
@@ -1030,11 +1011,7 @@ def select_options_for_question(
         return []
     profile = _build_application_context(config)
     numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(opts))
-    count_hint = (
-        "Return every option that applies to the candidate"
-        if multi
-        else "Return exactly one option"
-    )
+    count_hint = "Return every option that applies to the candidate" if multi else "Return exactly one option"
     system = SystemMessage(
         content=(
             "You select the option(s) that best fit the candidate for a "
@@ -1153,14 +1130,7 @@ def generate_llm_decision(
             f"{_field_instructions(field)}"
         )
     )
-    human = HumanMessage(
-        content=(
-            f"{profile}"
-            f"{examples_block}"
-            f"{hints_block}\n\n"
-            f"Question: {question}"
-        ).strip()
-    )
+    human = HumanMessage(content=(f"{profile}{examples_block}{hints_block}\n\nQuestion: {question}").strip())
 
     try:
         with _ollama_gate(config):
@@ -1193,9 +1163,7 @@ def generate_llm_decision(
         if answer:
             from .answers.format_finalize import finalize_answer_for_field
 
-            finalized = finalize_answer_for_field(
-                question, field, config, raw_answer=answer
-            )
+            finalized = finalize_answer_for_field(question, field, config, raw_answer=answer)
             if not finalized:
                 return None
             fill, stored = finalized

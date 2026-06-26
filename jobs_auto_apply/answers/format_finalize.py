@@ -27,9 +27,7 @@ def is_high_risk_question(
     if is_skill_years_question(label) or is_new_experience_question(config, label):
         return True
     input_type = infer_field_input_type(label, field)
-    if input_type in ("ctc_numeric", "years_numeric"):
-        return True
-    return False
+    return input_type in ("ctc_numeric", "years_numeric")
 
 
 def finalize_answer_for_field(
@@ -49,9 +47,7 @@ def finalize_answer_for_field(
         return None
 
     field = enrich_field_for_llm(field)
-    stored = (canonical or "").strip() or canonicalize_stored_answer(
-        question, text, field, config
-    )
+    stored = (canonical or "").strip() or canonicalize_stored_answer(question, text, field, config)
     if not stored:
         return None
 

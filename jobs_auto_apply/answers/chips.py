@@ -5,9 +5,6 @@ from __future__ import annotations
 import re
 
 from .chip_options import (
-    is_lpa_chip_option,
-    is_notice_chip_option,
-    pick_lpa_chip_option,
     value_in_chip_range,
 )
 
@@ -53,8 +50,7 @@ def _no_experience_option(options: list[str]) -> str | None:
 
 
 _IMMEDIATE_NOTICE = re.compile(
-    r"\bimmediate\b|\bimmediately\b|join\s*immediately|(?:^|\b)0\s*days?\b|"
-    r"\bavailable\s*now\b|\bright\s*away\b",
+    r"\bimmediate\b|\bimmediately\b|join\s*immediately|(?:^|\b)0\s*days?\b|" r"\bavailable\s*now\b|\bright\s*away\b",
     re.I,
 )
 _SHORT_NOTICE = re.compile(r"15\s*days?\s*or\s*less", re.I)
@@ -63,9 +59,7 @@ _SHORT_NOTICE = re.compile(r"15\s*days?\s*or\s*less", re.I)
 def pick_notice_period_option(answer: str, options: list[str]) -> str | None:
     """Map notice-period answers to Hirist/Naukri radio options."""
     a = answer.lower().strip()
-    if re.fullmatch(r"0(?:\s*days?)?", a) or re.search(
-        r"\b(immediate|immediately|available now)\b", a
-    ):
+    if re.fullmatch(r"0(?:\s*days?)?", a) or re.search(r"\b(immediate|immediately|available now)\b", a):
         for opt in options:
             if _IMMEDIATE_NOTICE.search(opt):
                 return opt.strip()

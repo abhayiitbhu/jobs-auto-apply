@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from playwright.async_api import BrowserContext, Page
@@ -58,18 +59,14 @@ async def run_naukri_pipeline(
                         grew = await scroll_naukri_srp_more(page)
                     except Exception as exc:
                         if is_target_closed_error(exc):
-                            logger.error(
-                                "Naukri pipeline: SRP tab closed during scroll — stopping"
-                            )
+                            logger.error("Naukri pipeline: SRP tab closed during scroll — stopping")
                             stop.set()
                             break
                         raise
                     if not grew:
                         empty_rounds += 1
                         if empty_rounds >= 3:
-                            logger.info(
-                                "Naukri pipeline: no more SRP listings after scroll"
-                            )
+                            logger.info("Naukri pipeline: no more SRP listings after scroll")
                             break
                         await page.wait_for_timeout(400)
 
@@ -85,9 +82,7 @@ async def run_naukri_pipeline(
                     )
                 except Exception as exc:
                     if is_target_closed_error(exc):
-                        logger.error(
-                            "Naukri pipeline: SRP tab closed — stopping collection"
-                        )
+                        logger.error("Naukri pipeline: SRP tab closed — stopping collection")
                         stop.set()
                         break
                     raise
@@ -102,9 +97,7 @@ async def run_naukri_pipeline(
                     continue
 
                 applied_ids = load_applied_jobs(config.applied_jobs_path)
-                pending = filter_pending_jobs(
-                    jobs, applied_ids, config.application.max_jobs_per_run, config
-                )
+                pending = filter_pending_jobs(jobs, applied_ids, config.application.max_jobs_per_run, config)
                 if config.application.dry_run:
                     for job in pending:
                         logger.info("[dry-run] Would apply: %s @ %s", job.title, job.company)
@@ -149,9 +142,7 @@ async def run_naukri_pipeline(
                 except ApplyBatchStopped:
                     # Browser/page closed mid-apply — stop the whole pipeline
                     # rather than letting every worker crash separately.
-                    logger.error(
-                        "%s Stopping pipeline — browser/page was closed", label
-                    )
+                    logger.error("%s Stopping pipeline — browser/page was closed", label)
                     stop.set()
                     break
                 async with stats_lock:
@@ -162,10 +153,8 @@ async def run_naukri_pipeline(
                     else:
                         stats["failed"] += 1
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 await tab.close()
-            except Exception:
-                pass
 
     logger.info(
         "Naukri pipeline: %d workers — scroll SRP and apply in parallel",

@@ -4,8 +4,8 @@ from typing import Any
 
 import click
 
-from .labels import interactive_prompt_lock
 from .chips import _normalize_to_option
+
 
 def prompt_confirm_new_answer(
     label: str,
@@ -76,7 +76,7 @@ def prompt_confirm_new_answer(
                 raw = click.prompt(
                     "Your answer (Yes/No)",
                     default=draft or "Yes",
-                    show_default=bool(draft or True),
+                    show_default=True,
                 ).strip()
                 if raw.lower() in ("yes", "no", "y", "n"):
                     click.echo("Confirmed.")
@@ -95,7 +95,6 @@ def prompt_confirm_new_answer(
             continue
 
         click.echo("Invalid choice. Use a, e, or s.")
-
 
 
 _prompt_confirm_new_answer = prompt_confirm_new_answer

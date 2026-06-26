@@ -19,16 +19,16 @@ class SalaryRange:
         return 0.0
 
 
-# ₹7.2L – ₹9.6L | ₹35L | ₹60,000 – ₹1L (monthly) | Rs 35 LPA
+# ₹7.2L - ₹9.6L | ₹35L | ₹60,000 - ₹1L (monthly) | Rs 35 LPA
 _L_SUFFIX = r"(?:L|LPA|lakhs?)"
 _INR_RANGE = re.compile(
     rf"(?:₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?"
-    rf"(?:\s*[–-]\s*(?:₹|Rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?)?",
+    rf"(?:\s*[-]\s*(?:₹|Rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?)?",
     re.I,
 )
-# 2.5L – 15L | 7.2L-9.6L (Wellfound sometimes omits ₹ on the range)
+# 2.5L - 15L | 7.2L-9.6L (Wellfound sometimes omits ₹ on the range)
 _INR_BARE = re.compile(
-    rf"\b([\d.]+)\s*{_L_SUFFIX}\s*[–-]\s*([\d.]+)\s*{_L_SUFFIX}\b",
+    rf"\b([\d.]+)\s*{_L_SUFFIX}\s*[-]\s*([\d.]+)\s*{_L_SUFFIX}\b",
     re.I,
 )
 _INR_SINGLE = re.compile(
@@ -36,9 +36,9 @@ _INR_SINGLE = re.compile(
     re.I,
 )
 _MONTHLY_HINT = re.compile(r"(?:/month|per\s+month|monthly|p\.?m\.?)", re.I)
-_USD = re.compile(r"\$\s*([\d.]+)\s*k(?:\s*[–-]\s*\$?\s*([\d.]+)\s*k)?", re.I)
-_GBP = re.compile(r"£\s*([\d.]+)\s*k(?:\s*[–-]\s*£?\s*([\d.]+)\s*k)?", re.I)
-_EUR = re.compile(r"€\s*([\d.]+)\s*k(?:\s*[–-]\s*€?\s*([\d.]+)\s*k)?", re.I)
+_USD = re.compile(r"\$\s*([\d.]+)\s*k(?:\s*[-]\s*\$?\s*([\d.]+)\s*k)?", re.I)
+_GBP = re.compile(r"£\s*([\d.]+)\s*k(?:\s*[-]\s*£?\s*([\d.]+)\s*k)?", re.I)
+_EUR = re.compile(r"€\s*([\d.]+)\s*k(?:\s*[-]\s*€?\s*([\d.]+)\s*k)?", re.I)
 _CAD = re.compile(
     r"\$\s*([\d.]+)\s*k\s*CAD|\bCAD\s*\$?\s*([\d.]+)\s*k",
     re.I,
@@ -78,16 +78,14 @@ def _is_monthly_inr_range(
         return False
     if not lo_has_l and 1_000 <= lo_amt < 1_000_000:
         return True
-    if not hi_has_l and 1_000 <= hi_amt < 1_000_000:
-        return True
-    return False
+    return bool(not hi_has_l and 1000 <= hi_amt < 1000000)
 
 
 def _inr_token_to_lpa(amount: float, suffix: str | None, *, monthly: bool) -> float:
     """Convert one INR salary token to annual LPA."""
     if _has_lakh_suffix(suffix):
         if monthly and amount < 10:
-            # ₹1L in "₹60,000 – ₹1L" means ₹1 lakh/month → 12 LPA
+            # ₹1L in "₹60,000 - ₹1L" means ₹1 lakh/month → 12 LPA
             return amount * 12.0
         return amount
     if amount >= 100_000:
@@ -131,7 +129,7 @@ def parse_salary_ranges(text: str) -> list[SalaryRange]:
         return _parse_amount(s) if s else 0.0
 
     def add(currency: str, lo: float, hi: float, raw: str) -> None:
-        if raw in seen_raw or lo <= 0 and hi <= 0:
+        if raw in seen_raw or (lo <= 0 and hi <= 0):
             return
         seen_raw.add(raw)
         found.append(SalaryRange(currency=currency, min_value=lo, max_value=hi, raw=raw))
@@ -220,9 +218,7 @@ def eligibility_summary(text: str, *, min_inr_lpa: float = 25.0) -> dict[str, An
         "location_blocked": loc_blocked,
         "eligible_to_apply": salary_ok and not loc_blocked,
         "block_reason": (
-            "location not accepted for your profile"
-            if loc_blocked
-            else (salary_reason if not salary_ok else "")
+            "location not accepted for your profile" if loc_blocked else (salary_reason if not salary_ok else "")
         ),
     }
 

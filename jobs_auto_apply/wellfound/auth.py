@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 
@@ -71,16 +72,14 @@ async def _has_session_cookie(page: Page) -> bool:
 
 async def verify_logged_in(page: Page, expected_name: str) -> bool:
     await page.goto(f"{WELLFOUND_ORIGIN}/jobs", wait_until="domcontentloaded", timeout=90000)
-    try:
+    with contextlib.suppress(Exception):
         await page.wait_for_load_state("networkidle", timeout=15000)
-    except Exception:
-        pass
     await page.wait_for_timeout(2000)
 
     if await is_access_restricted(page):
         logger.warning(
-            "Wellfound shows 'Access is temporarily restricted' — wait 30–60 min, "
-            "then retry with apply_workers: 2–3 and delay_seconds 2–5."
+            "Wellfound shows 'Access is temporarily restricted' — wait 30-60 min, "
+            "then retry with apply_workers: 2-3 and delay_seconds 2-5."
         )
         return False
 
@@ -104,8 +103,4 @@ async def verify_logged_in(page: Page, expected_name: str) -> bool:
     name = (expected_name or "").strip().lower()
     if name and name in body:
         return True
-    for token in ("log out", "logout", "my applications", "see more jobs"):
-        if token in body:
-            return True
-
-    return False
+    return any(token in body for token in ("log out", "logout", "my applications", "see more jobs"))

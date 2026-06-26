@@ -15,9 +15,26 @@ dependencies = [
     "click>=8.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.12.0",
+    "pre-commit>=4.0.0",
+    "dataclasses-jsonschema>=2.16.0",
+]
+
 [project.scripts]
 jobs-apply = "jobs_auto_apply.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["jobs_auto_apply*"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+

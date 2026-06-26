@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import AppConfig
-from ..llm_answers import SimilarAnswer, retrieve_similar_answers
+from ..llm_answers import _MIN_RAG_FOR_LLM, SimilarAnswer, retrieve_similar_answers
 from ..question_groups import classify_question
 from .config_answers import authoritative_config_answer
 from .fields import enrich_field_for_llm
@@ -78,10 +78,8 @@ def collect_free_tier_context(
                 ctx.rag_auto = finalized
 
     if config.llm.use_faiss_memory:
-        k = max(config.llm.rag_top_k, 5)
+        k = max(config.llm.rag_top_k, _MIN_RAG_FOR_LLM)
         ctx.similar_answers = retrieve_similar_answers(config, question, k=k)
-        ctx.vector_best = _best_similar_match(
-            config, question, ctx.similar_answers, require_same_group=True
-        )
+        ctx.vector_best = _best_similar_match(config, question, ctx.similar_answers, require_same_group=True)
 
     return ctx

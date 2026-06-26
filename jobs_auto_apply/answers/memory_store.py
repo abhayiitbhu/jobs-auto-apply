@@ -14,19 +14,21 @@ from .chips import (
     _match_years_to_chip_option,
     _normalize_to_option,
     _value_in_answer_range,
-    is_chip_range_label,
     parse_years_numeric_value,
     pick_notice_period_option,
 )
-from .compensation import compensation_answer_compatible, resolve_ctc_numeric_answer
+from .compensation import resolve_ctc_numeric_answer
 from .config_answers import ctc_want_kind
 from .experience import is_skill_years_question
-from .fields import enrich_field_for_llm, infer_field_input_type, is_last_working_day_question, is_numeric_ctc_question, is_pincode_field
+from .fields import (
+    enrich_field_for_llm,
+    infer_field_input_type,
+    is_numeric_ctc_question,
+)
 from .labels import normalize_question_label
 from .location import (
     is_location_value_question,
     is_relocation_yesno_question,
-    location_like_answer_fits,
     saved_location_answer_matches_question,
 )
 from .validation import (
@@ -100,7 +102,6 @@ def canonicalize_stored_answer(
     return text
 
 
-
 def resolve_fill_answer(
     stored: str,
     field: dict[str, Any],
@@ -169,10 +170,7 @@ def resolve_fill_answer(
             or re.search(r"\bnp\b", label, re.I)
             or input_type == "notice_period"
         )
-        if notice_opts and (
-            is_notice_q
-            or (is_numeric_ctc_question(label) and not lpa_opts)
-        ):
+        if notice_opts and (is_notice_q or (is_numeric_ctc_question(label) and not lpa_opts)):
             notice = pick_notice_period_option(text, notice_opts)
             if notice:
                 return notice
@@ -181,17 +179,12 @@ def resolve_fill_answer(
             notice = pick_notice_period_option(text, options)
             if notice:
                 return notice
-        if kind == "checkbox_group" and re.search(
-            r"\b(how soon|available to join|join)\b", label, re.I
-        ):
+        if kind == "checkbox_group" and re.search(r"\b(how soon|available to join|join)\b", label, re.I):
             if re.search(r"\b(yes|immediate|immediately|available)\b", text, re.I):
                 for opt in options:
                     if re.search(r"\bimmediate", opt, re.I):
                         return opt.strip()
-        years_field = (
-            is_skill_years_question(label)
-            or infer_field_input_type(label, field) == "years_numeric"
-        )
+        years_field = is_skill_years_question(label) or infer_field_input_type(label, field) == "years_numeric"
         if years_field:
             years = parse_years_numeric_value(text)
             if years is not None:
@@ -216,9 +209,7 @@ def resolve_fill_answer(
                     return "No"
                 if re.search(r"\b(current|native)\b", text, re.I) or ":" in text:
                     return "Yes"
-            if re.search(r"\bpan\b", label, re.I) and re.fullmatch(
-                r"[A-Z]{5}\d{4}[A-Z]", text.strip(), re.I
-            ):
+            if re.search(r"\bpan\b", label, re.I) and re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]", text.strip(), re.I):
                 return "Yes"
 
     if kind == "radio" and not options and re.search(r"\b(yes|no)\b", text, re.I):
@@ -239,12 +230,9 @@ def resolve_fill_answer(
     return text
 
 
-
 logger = logging.getLogger("job_apply")
 
-_USER_CONFIRMED_SOURCES = frozenset(
-    {"pending", "manual", "confirmed", "interactive"}
-)
+_USER_CONFIRMED_SOURCES = frozenset({"pending", "manual", "confirmed", "interactive"})
 
 
 def persist_answer(
@@ -323,7 +311,6 @@ def persist_answer(
     return stored, fill, True
 
 
-
 def flag_rejected_saved_answer(
     base_dir,
     question: str,
@@ -338,6 +325,7 @@ def flag_rejected_saved_answer(
     rejected = rejected_answer.strip()
     if not rejected:
         return
+
     def _apply(data: dict[str, Any]) -> None:
         answers = data.get("question_answers", {})
         for entry_key, entry in answers.items():
@@ -352,7 +340,6 @@ def flag_rejected_saved_answer(
                 entry["reviewed"] = False
 
     mutate_memory(base_dir, _apply)
-
 
 
 def _try_saved_entry(
@@ -378,11 +365,16 @@ def _try_saved_entry(
     enriched = enrich_field_for_llm({**(field or {}), "label": question})
     if answer_usable(question, ans, enriched, config):
         return ans
-    if exact_match and entry.get("reviewed") and str(entry.get("source", "")) in (
-        "manual",
-        "pending",
-        "confirmed",
-        "interactive",
+    if (
+        exact_match
+        and entry.get("reviewed")
+        and str(entry.get("source", ""))
+        in (
+            "manual",
+            "pending",
+            "confirmed",
+            "interactive",
+        )
     ):
         # The user explicitly reviewed/provided this answer for this exact
         # question. Trust it and never re-queue — coerce only to fit the field
@@ -400,7 +392,6 @@ def _try_saved_entry(
         fill = resolve_fill_answer(ans, enriched, config)
         return fill or ans
     return None
-
 
 
 def build_answer_group_index(
@@ -462,9 +453,7 @@ def get_saved_answer(
         seen_keys.add(lookup_key)
         entry = answers.get(lookup_key)
         if isinstance(entry, dict):
-            matched = _try_saved_entry(
-                question, entry, field, exact_match=True, config=config
-            )
+            matched = _try_saved_entry(question, entry, field, exact_match=True, config=config)
             if matched:
                 return matched
 
@@ -512,9 +501,7 @@ def get_saved_answer(
                 continue
             if listed_cities and not saved_location_answer_matches_question(question, ans):
                 continue
-            matched = _try_saved_entry(
-                question, entry, field, exact_match=False, group_id=group_id, stored_q=stored_q
-            )
+            matched = _try_saved_entry(question, entry, field, exact_match=False, group_id=group_id, stored_q=stored_q)
             if not matched:
                 continue
             score = _score_stored_question_match(stored_q, question)
@@ -527,16 +514,13 @@ def get_saved_answer(
     for stored_q, entry in _group_saved_entries(answers, group_index, group_id):
         if not saved_location_answer_matches_question(question, str(entry.get("answer", ""))):
             continue
-        matched = _try_saved_entry(
-            question, entry, field, exact_match=False, group_id=group_id, stored_q=stored_q
-        )
+        matched = _try_saved_entry(question, entry, field, exact_match=False, group_id=group_id, stored_q=stored_q)
         if not matched:
             continue
         score = _score_stored_question_match(stored_q, question)
         if best is None or score > best[0]:
             best = (score, matched)
     return best[1] if best else None
-
 
 
 # Source trust ranking — higher wins. Reconciliation never lets a weaker source
@@ -621,10 +605,7 @@ def save_answer(
         # Keep the stronger answer: don't let a weaker source overwrite a
         # human-reviewed one. Same-or-higher rank (or unreviewed prev) → update.
         keep_prev = bool(
-            prev_ans
-            and prev_ans != answer
-            and prev_reviewed
-            and _source_rank(entry.get("source")) > new_rank
+            prev_ans and prev_ans != answer and prev_reviewed and _source_rank(entry.get("source")) > new_rank
         )
 
         examples = [str(e) for e in entry.get("examples", []) if str(e)]
@@ -657,7 +638,6 @@ def save_answer(
     mutate_memory(base_dir, _apply, config)
 
 
-
 def _saved_entry_reusable(
     entry: dict[str, Any],
     *,
@@ -680,26 +660,42 @@ def _saved_entry_reusable(
     return bool(entry.get("reviewed"))
 
 
-
 def _skill_questions_compatible(stored_q: str, question: str, group_id: str) -> bool:
     if not (group_id.startswith("skill:") or group_id.startswith("skill_yesno:")):
         return True
     skill_part = group_id.split(":", 1)[1].replace("_", " ")
     stored_l = stored_q.lower()
     question_l = question.lower()
-    skill_tokens = [
-        t for t in re.findall(r"[a-z0-9+#./-]+", skill_part.lower()) if len(t) > 2
-    ]
-    if skill_tokens and not all(
-        any(tok in text for tok in skill_tokens) for text in (stored_l, question_l)
-    ):
+    skill_tokens = [t for t in re.findall(r"[a-z0-9+#./-]+", skill_part.lower()) if len(t) > 2]
+    if skill_tokens and not all(any(tok in text for tok in skill_tokens) for text in (stored_l, question_l)):
         return False
     if skill_part and skill_part in stored_l and skill_part in question_l:
         return True
     stop = {
-        "how", "many", "years", "experience", "have", "you", "your", "the", "with",
-        "and", "for", "are", "any", "all", "our", "this", "that", "what", "which",
-        "language", "domain", "domains", "knowledge", "capabilities",
+        "how",
+        "many",
+        "years",
+        "experience",
+        "have",
+        "you",
+        "your",
+        "the",
+        "with",
+        "and",
+        "for",
+        "are",
+        "any",
+        "all",
+        "our",
+        "this",
+        "that",
+        "what",
+        "which",
+        "language",
+        "domain",
+        "domains",
+        "knowledge",
+        "capabilities",
     }
     st = {t for t in re.findall(r"[a-z0-9+#./-]+", stored_l) if len(t) > 2 and t not in stop}
     qt = {t for t in re.findall(r"[a-z0-9+#./-]+", question_l) if len(t) > 2 and t not in stop}
@@ -707,7 +703,6 @@ def _skill_questions_compatible(stored_q: str, question: str, group_id: str) -> 
     if skill_tokens:
         return len(overlap) >= 1 and any(t in overlap for t in skill_tokens)
     return len(overlap) >= 2
-
 
 
 def _score_stored_question_match(stored_q: str, question: str) -> float:
@@ -722,4 +717,3 @@ def _score_stored_question_match(stored_q: str, question: str) -> float:
     if not st or not qt:
         return 0.0
     return len(st & qt) / max(len(st), len(qt))
-

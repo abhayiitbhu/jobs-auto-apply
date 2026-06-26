@@ -117,9 +117,7 @@ def main() -> None:
         print("\nDRY RUN — no changes written. Re-run with --apply to write.")
         return
 
-    backup = MEMORY_PATH.with_suffix(
-        f".backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-    )
+    backup = MEMORY_PATH.with_suffix(f".backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json")
     shutil.copy2(MEMORY_PATH, backup)
     data["question_answers"] = new_answers
     MEMORY_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

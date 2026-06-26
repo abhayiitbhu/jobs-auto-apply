@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from pathlib import Path
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import AppConfig, WorkdayConfig
 from ..cookies import split_name
@@ -57,8 +59,7 @@ async def _fill_automation_input(page: Page, automation_id: str, value: str) -> 
     if not value:
         return False
     locator = page.locator(
-        f'input[data-automation-id="{automation_id}"], '
-        f'textarea[data-automation-id="{automation_id}"]'
+        f'input[data-automation-id="{automation_id}"], textarea[data-automation-id="{automation_id}"]'
     )
     if await locator.count() == 0:
         return False
@@ -142,8 +143,7 @@ async def _handle_auth(page: Page, config: AppConfig) -> None:
         await _fill_automation_input(page, "password", wd.password)
         await _fill_automation_input(page, "verifyPassword", wd.password)
         checkbox = page.locator(
-            '[data-automation-id="createAccountCheckbox"], '
-            'input[data-automation-id="createAccountCheckbox"]'
+            '[data-automation-id="createAccountCheckbox"], input[data-automation-id="createAccountCheckbox"]'
         )
         if await checkbox.count() > 0 and not await checkbox.first.is_checked():
             await checkbox.first.click(force=True)
@@ -152,9 +152,7 @@ async def _handle_auth(page: Page, config: AppConfig) -> None:
 
 
 async def _upload_resume(page: Page, resume_path: Path) -> bool:
-    file_input = page.locator(
-        'input[data-automation-id="file-upload-input-ref"], input[type="file"]'
-    )
+    file_input = page.locator('input[data-automation-id="file-upload-input-ref"], input[type="file"]')
     if await file_input.count() == 0:
         return False
     for i in range(await file_input.count()):
@@ -201,10 +199,7 @@ async def _select_dropdown_option(page: Page, container_id: str, option_label: s
             await page.wait_for_timeout(400)
             return True
         # Typeahead fallback
-        search = page.locator(
-            f'[data-automation-id="{container_id}"] input, '
-            'input[data-automation-id="searchBox"]'
-        )
+        search = page.locator(f'[data-automation-id="{container_id}"] input, input[data-automation-id="searchBox"]')
         if await search.count() > 0:
             await search.first.fill(option_label)
             await page.wait_for_timeout(800)
@@ -225,9 +220,9 @@ async def _fill_how_did_you_hear(page: Page, source: str) -> None:
         if await multi.count() > 0:
             await multi.first.click(force=True)
             await page.wait_for_timeout(500)
-            await page.locator(
-                '[data-automation-label="Job Board"], [data-automation-label="LinkedIn"]'
-            ).first.click(force=True)
+            await page.locator('[data-automation-label="Job Board"], [data-automation-label="LinkedIn"]').first.click(
+                force=True
+            )
     except PlaywrightTimeout:
         pass
 
@@ -287,10 +282,8 @@ async def _handle_voluntary_disclosures(page: Page, wd: WorkdayConfig) -> None:
     for label in decline_labels:
         option = page.get_by_text(label, exact=False)
         if await option.count() > 0:
-            try:
+            with contextlib.suppress(Exception):
                 await option.first.click(force=True)
-            except Exception:
-                pass
 
 
 async def _fill_current_page(page: Page, config: AppConfig, note: str) -> None:
@@ -403,10 +396,9 @@ async def apply_workday(
 
         if await _is_review_page(page):
             await _tick_agreement_checkboxes(page)
-            if await _submit_application(page):
-                if await _confirm_success(page):
-                    logger.info("Workday application submitted for %s @ %s", title, company)
-                    return True
+            if await _submit_application(page) and await _confirm_success(page):
+                logger.info("Workday application submitted for %s @ %s", title, company)
+                return True
             break
 
         if not await _click_next(page):

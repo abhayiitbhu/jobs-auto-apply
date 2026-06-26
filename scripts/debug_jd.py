@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Debug Wellfound JD extraction for a single job URL."""
+
 import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from jobs_auto_apply.config import load_config
 from jobs_auto_apply.browser import wellfound_session
+from jobs_auto_apply.config import load_config
 from jobs_auto_apply.wellfound.modal import extract_wellfound_job_page
 
 

@@ -8,6 +8,7 @@ from playwright.async_api import Page
 from ..page_load import ensure_page_ready
 from .labels import COVER_NOTE_HINT, is_generic_question_label
 
+
 async def discover_questions(page: Page) -> list[dict[str, Any]]:
     """Find mandatory application fields beyond the cover-note textarea."""
     await ensure_page_ready(page, for_form=True)
@@ -44,7 +45,7 @@ async def discover_questions(page: Page) -> list[dict[str, Any]]:
     for i in range(await selects.count()):
         el = selects.nth(i)
         label = await _label_for(page, el)
-        fields.append({"kind": "select", "label": label or f"Question {i+1}", "index": i})
+        fields.append({"kind": "select", "label": label or f"Question {i + 1}", "index": i})
 
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
@@ -57,7 +58,6 @@ async def discover_questions(page: Page) -> list[dict[str, Any]]:
     return unique
 
 
-
 async def _label_for(page: Page, el) -> str:
     el_id = await el.get_attribute("id")
     if el_id:
@@ -66,7 +66,6 @@ async def _label_for(page: Page, el) -> str:
             return (await label.first.inner_text()).strip()
     aria = await el.get_attribute("aria-label")
     return (aria or "").strip()
-
 
 
 async def fill_questions(page: Page, answers: dict[str, str]) -> None:

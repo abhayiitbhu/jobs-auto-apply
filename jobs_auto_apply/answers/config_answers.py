@@ -19,9 +19,7 @@ from .fields import infer_field_input_type, is_numeric_ctc_question
 from .location import is_location_value_question, is_relocation_yesno_question
 
 
-def compensation_answer(
-    config: AppConfig, question: str, field: dict[str, Any] | None = None
-) -> str | None:
+def compensation_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     if not looks_like_compensation_question(question):
         return None
     want = ctc_want_kind(question)
@@ -34,10 +32,7 @@ def compensation_answer(
         input_type = infer_field_input_type(question, field or {})
         if input_type == "ctc_numeric" or is_numeric_ctc_question(question):
             return f"{format_lpa(comp.current_ctc_lpa)}/{format_lpa(comp.expected_ctc_lpa)}"
-        return (
-            f"Current: {format_lpa(comp.current_ctc_lpa)} LPA. "
-            f"Expected: {format_lpa(comp.expected_ctc_lpa)} LPA."
-        )
+        return f"Current: {format_lpa(comp.current_ctc_lpa)} LPA. Expected: {format_lpa(comp.expected_ctc_lpa)} LPA."
     return format_lpa(comp.current_ctc_lpa)
 
 
@@ -84,9 +79,7 @@ def skill_years_config_answer(config: AppConfig, question: str) -> str | None:
     return skill_years_answer(config, facts, app_facts, skill.replace("_", " "))
 
 
-def multi_skill_years_answer(
-    config: AppConfig, question: str, field: dict[str, Any] | None = None
-) -> str | None:
+def multi_skill_years_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     """Per-skill years for a free-text question that lists multiple skills.
 
     e.g. "How many years in Java, Python and AWS?" -> "Java: 4 years, Python: 4
@@ -199,9 +192,7 @@ def _known_employers(config: AppConfig) -> set[str]:
     return names
 
 
-def prior_association_answer(
-    config: AppConfig, question: str, field: dict[str, Any] | None = None
-) -> str | None:
+def prior_association_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     """Deterministic Yes/No for "associated with / worked at <employer>?" questions.
 
     Default is "No" (you're usually not associated with the hiring company). Returns
@@ -266,9 +257,7 @@ def _education_facts(config: AppConfig) -> dict[str, Any]:
     }
 
 
-def education_answer(
-    config: AppConfig, question: str, field: dict[str, Any] | None = None
-) -> str | None:
+def education_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     """Deterministic answers for degree/qualification questions from education facts."""
     q = question or ""
     if not _EDU_MENTION.search(q):
@@ -276,9 +265,7 @@ def education_answer(
     ql = q.lower()
     edu = _education_facts(config)
 
-    asks_masters = bool(
-        re.search(r"master'?s?\b|post[\s-]?graduat|\bpg\b|m\.?\s?tech\b|m\.?\s?sc\b|m\.?\s?e\b", ql)
-    )
+    asks_masters = bool(re.search(r"master'?s?\b|post[\s-]?graduat|\bpg\b|m\.?\s?tech\b|m\.?\s?sc\b|m\.?\s?e\b", ql))
     asks_phd = bool(re.search(r"ph\.?\s?d\b|doctorat", ql))
     asks_mba = bool(re.search(r"\bmba\b", ql))
     asks_bachelors = bool(
@@ -344,9 +331,7 @@ def _is_free_text_field(field: dict[str, Any] | None) -> bool:
     if input_type in _SINGLE_VALUE_INPUT_TYPES:
         return False
     opts = field.get("options") or field.get("answer_options") or []
-    if len([o for o in opts if str(o).strip()]) >= 2:
-        return False
-    return True
+    return not len([o for o in opts if str(o).strip()]) >= 2
 
 
 def _notice_segment(config: AppConfig, app_facts: dict[str, Any], norm: str) -> str | None:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import hashlib
 import json
 import logging
 import re
@@ -10,12 +13,17 @@ from typing import Any
 
 import click
 
-from .application_questions import (
-    _infer_field_for_question,
-    draft_answer_for_field,
+from .answers.compensation import is_numeric_ctc_question
+from .answers.fields import (
     enrich_field_for_llm,
-    get_saved_answer,
+    infer_field_for_question,
     infer_field_input_type,
+)
+from .answers.memory_store import memory_key, sanitize_user_answer
+from .answers.validation import answer_acceptable_for_field, answer_usable
+from .application_questions import (
+    draft_answer_for_field,
+    get_saved_answer,
     is_chip_range_label,
     is_generic_question_label,
     is_plausible_application_question,
@@ -27,14 +35,10 @@ from .application_questions import (
     resolve_fill_answer,
     save_answer,
 )
-from .answers.compensation import is_numeric_ctc_question
-from .answers.memory_store import memory_key, sanitize_user_answer
-from .answers.validation import answer_acceptable_for_field, answer_usable
 from .config import AppConfig
 from .memory import load_memory
-from .question_groups import PendingQuestionGroup, classify_question, group_pending_entries
-
 from .pending_job_ref import PendingJobRef
+from .question_groups import PendingQuestionGroup, classify_question, group_pending_entries
 from .utils import job_key, record_abandoned_apply
 
 logger = logging.getLogger("job_apply")
@@ -60,9 +64,7 @@ def _load(base_dir: Path, config: AppConfig | None = None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _save(
-    base_dir: Path, data: dict[str, Any], config: AppConfig | None = None
-) -> None:
+def _save(base_dir: Path, data: dict[str, Any], config: AppConfig | None = None) -> None:
     path = pending_questions_path(base_dir, config)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -72,19 +74,17 @@ def _pending_field_meta(field: dict[str, Any] | None) -> dict[str, Any]:
     if not field:
         return {}
     keep = ("kind", "input_type", "input_mode", "options", "platform", "placeholder")
-    return {k: field[k] for k in keep if k in field and field[k]}
+    return {k: field[k] for k in keep if field.get(k)}
 
 
-def _field_for_pending_entry(
-    label: str, entry: dict[str, Any], config: AppConfig | None
-) -> dict[str, Any]:
+def _field_for_pending_entry(label: str, entry: dict[str, Any], config: AppConfig | None) -> dict[str, Any]:
     stored = entry.get("field")
     if isinstance(stored, dict) and stored:
         field = dict(stored)
         field.setdefault("label", label)
         field.pop("input_type", None)
         return enrich_field_for_llm(field)
-    return enrich_field_for_llm(_infer_field_for_question(label, config))
+    return enrich_field_for_llm(infer_field_for_question(label, config))
 
 
 def _memory_has_user_answer(
@@ -100,9 +100,7 @@ def _memory_has_user_answer(
         fill = resolve_fill_answer(saved, field, config)
         if fill and answer_usable(label, fill, field, config):
             return True
-    entry = load_memory(base_dir, config).get("question_answers", {}).get(
-        memory_key(label)
-    )
+    entry = load_memory(base_dir, config).get("question_answers", {}).get(memory_key(label))
     if not isinstance(entry, dict) or entry.get("needs_review"):
         return False
     ans = str(entry.get("answer", "")).strip()
@@ -144,10 +142,7 @@ def _coerce_pending_user_answer(
     wants_years = (
         input_type == "years_numeric"
         or is_skill_years_question(label)
-        or (
-            re.search(r"\bhow (many|much)\b.*\b(years?|experience)\b", label, re.I)
-            and not opts_lower <= {"yes", "no"}
-        )
+        or (re.search(r"\bhow (many|much)\b.*\b(years?|experience)\b", label, re.I) and not opts_lower <= {"yes", "no"})
         or (
             years is not None
             and re.search(
@@ -200,7 +195,7 @@ def _group_has_saved_answer(
             continue
         if classify_question(stored_q) != group_id:
             continue
-        field = enrich_field_for_llm(_infer_field_for_question(stored_q, config))
+        field = enrich_field_for_llm(infer_field_for_question(stored_q, config))
         if answer_acceptable_for_field(stored_q, ans, field):
             return True
         fill = resolve_fill_answer(ans, field, config)
@@ -225,9 +220,7 @@ def _save_pending_group_answers(
 
     for variant in group.variants:
         entry = pending_questions.get(question_key(variant), {})
-        field = _field_for_pending_entry(
-            variant, entry if isinstance(entry, dict) else {}, config
-        )
+        field = _field_for_pending_entry(variant, entry if isinstance(entry, dict) else {}, config)
         stored = _coerce_pending_user_answer(variant, user_answer, field, config)
         if not config:
             save_answer(
@@ -241,7 +234,7 @@ def _save_pending_group_answers(
             )
             stored_values.append(stored)
             continue
-        canonical, fill, saved = persist_answer(
+        canonical, _fill, saved = persist_answer(
             base_dir,
             variant,
             stored,
@@ -282,6 +275,7 @@ def queue_unanswered(
     company: str,
     job_url: str,
     labels: list[str],
+    job_id: str = "",
     fields_by_label: dict[str, dict[str, Any]] | None = None,
     config: AppConfig | None = None,
 ) -> int:
@@ -330,6 +324,7 @@ def queue_unanswered(
                         "title": job_title,
                         "company": company,
                         "url": job_url,
+                        "job_id": str(job_id or ""),
                         "at": now,
                     }
                 )
@@ -348,9 +343,7 @@ def pending_question_list(base_dir: Path, config: AppConfig | None = None) -> li
         label = str(entry.get("question", "")).strip()
         if not label:
             continue
-        field = _field_for_pending_entry(
-            label, entry if isinstance(entry, dict) else {}, config
-        )
+        field = _field_for_pending_entry(label, entry if isinstance(entry, dict) else {}, config)
         if _saved_answer_covers_field(base_dir, label, field, config):
             continue
         pending.append(entry)
@@ -407,6 +400,27 @@ def _default_ignore_answer(
     return "Not applicable"
 
 
+def _pending_job_id(job: dict[str, Any], source: str, url: str, title: str) -> str:
+    """Resolve the job_id used as the apply-pipeline key for a pending job.
+
+    Prefers the id stored when the question was queued. Legacy entries (queued
+    before job_id was persisted) are reconstructed the same way each source's
+    search derives it, so the abandoned key matches what the run filters on.
+    """
+    stored = str(job.get("job_id", "")).strip()
+    if stored:
+        return stored
+    if source == "naukri":
+        match = re.search(r"(\d{6,})", url)
+        if match:
+            return match.group(1)
+        return hashlib.sha256(url.encode()).hexdigest()[:16]
+    if source == "hirist":
+        return hashlib.sha1(f"{url}|{title}".encode()).hexdigest()[:16]
+    # Unknown/legacy source — fall back to the URL slug (previous behaviour).
+    return url.rstrip("/").split("/")[-1] or url
+
+
 def abandon_pending_jobs(
     config: AppConfig,
     jobs: list[dict[str, Any]],
@@ -420,13 +434,14 @@ def abandon_pending_jobs(
         source = str(job.get("source", "")).strip()
         if not url or not source:
             continue
-        slug = url.rstrip("/").split("/")[-1] or url
+        title = str(job.get("title", ""))
+        job_id = _pending_job_id(job, source, url, title)
         record_abandoned_apply(
             config.applied_jobs_path,
-            job_key(source, slug),
+            job_key(source, job_id),
             {
                 "source": source,
-                "title": str(job.get("title", "")),
+                "title": title,
                 "company": str(job.get("company", "")),
                 "url": url,
             },
@@ -542,17 +557,11 @@ def prune_answered(base_dir: Path, config: AppConfig | None = None) -> int:
             # Keep DOM-discovered questions (those with stored field metadata) even
             # if their wording fails the plausibility heuristic — they were real
             # live form fields, not scraped chrome.
-            has_dom_field = bool(
-                isinstance(questions[key], dict) and questions[key].get("field")
-            )
-            if is_generic_question_label(label) or (
-                not has_dom_field and not is_plausible_application_question(label)
-            ):
+            has_dom_field = bool(isinstance(questions[key], dict) and questions[key].get("field"))
+            if is_generic_question_label(label) or (not has_dom_field and not is_plausible_application_question(label)):
                 del questions[key]
                 continue
-            field = _field_for_pending_entry(
-                label, questions[key], config
-            )
+            field = _field_for_pending_entry(label, questions[key], config)
             if _saved_answer_covers_field(base_dir, label, field, config):
                 del questions[key]
         _save(base_dir, data, config)
@@ -584,19 +593,11 @@ def _prompt_pending_group_action(
 ) -> tuple[str, str]:
     """Return (action, answer). action is answer|skip|drop|ignore."""
     if draft:
-        click.echo(
-            f"\nSuggested ({draft_source or 'LLM'}): {draft[:120]}"
-            + ("…" if len(draft) > 120 else "")
-        )
-        prompt = (
-            "Action — (a)ccept suggested  (e)dit answer  (s)kip  "
-            "(d)rop job(s)  (i)gnore question"
-        )
+        click.echo(f"\nSuggested ({draft_source or 'LLM'}): {draft[:120]}" + ("…" if len(draft) > 120 else ""))
+        prompt = "Action — (a)ccept suggested  (e)dit answer  (s)kip  (d)rop job(s)  (i)gnore question"
         default = "a"
     else:
-        prompt = (
-            "Action — (e)nter answer  (s)kip  (d)rop job(s)  (i)gnore question"
-        )
+        prompt = "Action — (e)nter answer  (s)kip  (d)rop job(s)  (i)gnore question"
         default = "e"
 
     while True:
@@ -747,10 +748,7 @@ def answer_pending_groups_interactive(
     # them later via `answer-questions`. Without this, the loop below would prompt
     # regardless because of the `not auto_pending` branch.
     if not auto_pending and not prompt_on_failure:
-        click.echo(
-            f"\n{total} pending question group(s) deferred — "
-            "run: python3 main.py answer-questions to resolve."
-        )
+        click.echo(f"\n{total} pending question group(s) deferred — run: python3 main.py answer-questions to resolve.")
         return 0, []
 
     if auto_pending:
@@ -765,9 +763,7 @@ def answer_pending_groups_interactive(
             click.echo("  LLM may suggest an answer — you confirm before it is saved.")
         else:
             click.echo("  Type your answer for each group (no LLM wait between questions).")
-        click.echo(
-            "  Actions: answer, (s)kip for later, (d)rop job(s), (i)gnore question forever."
-        )
+        click.echo("  Actions: answer, (s)kip for later, (d)rop job(s), (i)gnore question forever.")
         click.echo(f"{'=' * 60}")
 
     answered = 0
@@ -828,15 +824,9 @@ def answer_pending_groups_interactive(
             if pending_action == "drop":
                 if config:
                     dropped = drop_pending_group_jobs(base_dir, group, config)
-                    click.echo(
-                        f"Dropped {dropped} job(s) — they will not be retried."
-                    )
+                    click.echo(f"Dropped {dropped} job(s) — they will not be retried.")
                 else:
-                    urls = {
-                        str(job.get("url", "")).strip()
-                        for job in group.jobs
-                        if job.get("url")
-                    }
+                    urls = {str(job.get("url", "")).strip() for job in group.jobs if job.get("url")}
                     remove_jobs_from_pending(base_dir, urls, config)
                     click.echo(f"Removed {len(urls)} job(s) from pending queue.")
                 continue
@@ -846,10 +836,7 @@ def answer_pending_groups_interactive(
                     click.echo("Ignored — saved a default answer and removed from pending.")
                     jobs_to_retry.extend(_collect_retry_jobs(group))
                 else:
-                    click.echo(
-                        "Cannot ignore this question type (e.g. salary) — "
-                        "use drop to skip the job instead."
-                    )
+                    click.echo("Cannot ignore this question type (e.g. salary) — use drop to skip the job instead.")
                 continue
 
         if not new_answer:
@@ -885,18 +872,12 @@ def answer_pending_groups_interactive(
             saved = True
 
         if not saved:
-            click.echo(
-                "  [red]Not saved[/red] — answer failed validation. "
-                "Try a fuller answer or run with --suggest."
-            )
+            click.echo("  [red]Not saved[/red] — answer failed validation. Try a fuller answer or run with --suggest.")
             continue
 
         _remove_group(base_dir, group.group_id)
         answered += 1
-        click.echo(
-            f"  Saved to user_memory.json ({canonical[:60]}"
-            f"{'…' if len(canonical) > 60 else ''})."
-        )
+        click.echo(f"  Saved to user_memory.json ({canonical[:60]}{'…' if len(canonical) > 60 else ''}).")
         jobs_to_retry.extend(_collect_retry_jobs(group))
 
     if answered and jobs_to_retry and config and config.llm.retry_pending_jobs:
@@ -949,6 +930,122 @@ def _whatsapp_question_message(
     return "\n".join(lines)
 
 
+def _prepare_group_question(
+    base_dir: Path,
+    config: AppConfig,
+    group: PendingQuestionGroup,
+    index: int,
+    total: int,
+    *,
+    use_llm_draft: bool,
+    skip_keyword: str,
+    drop_keyword: str,
+    ignore_keyword: str,
+) -> dict[str, Any]:
+    """Build the message + context for one pending group (shared by both flows)."""
+    example = group.jobs[0] if group.jobs else {}
+    primary = group.variants[0]
+    job_title = str(example.get("title", ""))
+    company = str(example.get("company", ""))
+    pending_data = _load(base_dir, config)
+    primary_entry = pending_data.get("questions", {}).get(question_key(primary), {})
+    field = _field_for_pending_entry(
+        primary,
+        primary_entry if isinstance(primary_entry, dict) else {},
+        config,
+    )
+
+    draft = None
+    if use_llm_draft:
+        try:
+            draft_result = draft_answer_for_field(
+                config,
+                question=primary,
+                field=field,
+                job_title=job_title,
+                company=company,
+            )
+            draft = draft_result.fill
+        except Exception as exc:
+            logger.debug("Messenger draft failed for %s: %s", primary[:60], exc)
+
+    options = list(field.get("options") or [])
+    message = _whatsapp_question_message(
+        index=index,
+        total=total,
+        question=primary,
+        job_title=job_title,
+        company=company,
+        options=options,
+        draft=draft,
+        skip_keyword=skip_keyword,
+        drop_keyword=drop_keyword,
+        ignore_keyword=ignore_keyword,
+    )
+    return {"primary": primary, "company": company, "job_title": job_title, "message": message}
+
+
+def _reply_send_kwargs(client, reply_to_message_id: int | None) -> dict[str, Any]:
+    """Quote the user's reply in confirmations when the transport supports it."""
+    if reply_to_message_id is not None and getattr(client, "supports_reply_routing", False):
+        return {"reply_to_message_id": reply_to_message_id}
+    return {}
+
+
+async def _process_messenger_reply(
+    base_dir: Path,
+    config: AppConfig,
+    client,
+    group: PendingQuestionGroup,
+    *,
+    primary: str,
+    company: str,
+    job_title: str,
+    reply: str,
+    reply_to_message_id: int | None = None,
+) -> tuple[str, list[PendingJobRef]]:
+    """Apply one already-parsed reply to a group.
+
+    Returns ``(outcome, jobs_to_retry)`` where outcome is one of:
+    ``"answered"`` (saved/ignored), ``"skipped"``, ``"dropped"``, or ``"retry"``
+    (could not save — caller should keep the question open for another reply).
+    """
+    send_kw = _reply_send_kwargs(client, reply_to_message_id)
+    if reply == PENDING_REPLY_SKIP:
+        return "skipped", []
+    if reply == PENDING_REPLY_DROP:
+        dropped = drop_pending_group_jobs(base_dir, group, config)
+        with contextlib.suppress(Exception):
+            await client.send(f"Dropped {dropped} job(s) — will not retry.", **send_kw)
+        return "dropped", []
+    if reply == PENDING_REPLY_IGNORE:
+        if ignore_pending_group(base_dir, group, config):
+            with contextlib.suppress(Exception):
+                await client.send("Ignored — saved default answer.", **send_kw)
+            return "answered", _collect_retry_jobs(group)
+        with contextlib.suppress(Exception):
+            await client.send("Cannot ignore this question type — use drop to skip the job.", **send_kw)
+        return "retry", []
+
+    stored_values = _save_pending_group_answers(
+        base_dir,
+        group,
+        reply,
+        config,
+        company=company,
+        job_title=job_title,
+    )
+    if not stored_values:
+        with contextlib.suppress(Exception):
+            await client.send("Could not save that answer (failed validation). Try again.", **send_kw)
+        return "retry", []
+
+    _remove_group(base_dir, group.group_id)
+    with contextlib.suppress(Exception):
+        await client.send(f"Saved: {stored_values[0][:80]}", **send_kw)
+    return "answered", _collect_retry_jobs(group)
+
+
 async def answer_pending_groups_via_messenger(
     base_dir: Path,
     config: AppConfig,
@@ -960,12 +1057,12 @@ async def answer_pending_groups_via_messenger(
 ) -> tuple[int, list[PendingJobRef]]:
     """Ask each pending question over a messenger (WhatsApp/Telegram), save replies.
 
-    Transport-neutral: ``client`` only needs ``send(text)`` and
-    ``ask(text, timeout=...)``. Sequential — one question per message, waits for
-    the reply, then moves on. A reply of the configured skip keyword skips the
-    group; a timeout stops the round (user assumed away) and leaves the rest
-    pending. ``per_question_timeout`` overrides the per-reply wait (the listener
-    uses a very large value to wait effectively indefinitely).
+    Transport-neutral: ``client`` needs ``send(text)`` and ``ask(text, timeout=...)``.
+    When the client advertises ``supports_reply_routing`` (Telegram), all questions
+    are sent up front and each reply is routed to the question its ``reply_to``
+    quotes — so you can answer them in any order. Otherwise it falls back to the
+    sequential one-question-at-a-time flow. ``per_question_timeout`` overrides the
+    per-reply wait (the listener uses a very large value to wait indefinitely).
     """
     prune_answered(base_dir, config)
     groups = pending_groups(base_dir, config)
@@ -977,132 +1074,192 @@ async def answer_pending_groups_via_messenger(
     skip_keyword = getattr(client, "skip_keyword", "skip")
     drop_keyword = getattr(client, "drop_keyword", "drop")
     ignore_keyword = getattr(client, "ignore_keyword", "ignore")
-    answered = 0
-    jobs_to_retry: list[PendingJobRef] = []
+    routed = bool(getattr(client, "supports_reply_routing", False)) and hasattr(client, "wait_for_reply_routed")
 
-    # Heads-up so you know questions are coming before the first one lands.
     if send_heads_up:
-        applied_part = (
-            f"{applied_count} applied" if applied_count is not None else "Run complete"
-        )
+        applied_part = f"{applied_count} applied" if applied_count is not None else "Run complete"
         question_word = "question" if total == 1 else "questions"
+        how_to = (
+            "Reply to each question (tap it → Reply) and I'll match your answer to it."
+            if routed
+            else "I'll send them one at a time."
+        )
         try:
             await client.send(
                 f"✅ {applied_part} — {total} {question_word} need your input.\n"
-                f"I'll send them one at a time. Reply with your answer, or "
+                f"{how_to} Reply with your answer, or "
                 f'"{skip_keyword}" (later), "{drop_keyword}" (skip job), '
                 f'"{ignore_keyword}" (not applicable).'
             )
         except Exception as exc:
-            logger.debug("WhatsApp heads-up message failed: %s", exc)
+            logger.debug("Messenger heads-up message failed: %s", exc)
 
-    for index, group in enumerate(groups, 1):
-        example = group.jobs[0] if group.jobs else {}
-        primary = group.variants[0]
-        job_title = str(example.get("title", ""))
-        company = str(example.get("company", ""))
-        pending_data = _load(base_dir, config)
-        primary_entry = pending_data.get("questions", {}).get(question_key(primary), {})
-        field = _field_for_pending_entry(
-            primary,
-            primary_entry if isinstance(primary_entry, dict) else {},
+    if routed:
+        return await _answer_pending_groups_reply_routed(
+            base_dir,
             config,
+            client,
+            groups,
+            total=total,
+            use_llm_draft=use_llm_draft,
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+            per_question_timeout=per_question_timeout,
         )
 
-        draft = None
-        if use_llm_draft:
-            try:
-                draft_result = draft_answer_for_field(
-                    config,
-                    question=primary,
-                    field=field,
-                    job_title=job_title,
-                    company=company,
-                )
-                draft = draft_result.fill
-            except Exception as exc:
-                logger.debug("WhatsApp draft failed for %s: %s", primary[:60], exc)
-
-        options = list(field.get("options") or [])
-        message = _whatsapp_question_message(
-            index=index,
-            total=total,
-            question=primary,
-            job_title=job_title,
-            company=company,
-            options=options,
-            draft=draft,
+    answered = 0
+    jobs_to_retry: list[PendingJobRef] = []
+    for index, group in enumerate(groups, 1):
+        prep = _prepare_group_question(
+            base_dir,
+            config,
+            group,
+            index,
+            total,
+            use_llm_draft=use_llm_draft,
             skip_keyword=skip_keyword,
             drop_keyword=drop_keyword,
             ignore_keyword=ignore_keyword,
         )
-
         try:
-            reply = await client.ask(message, timeout=per_question_timeout)
+            reply = await client.ask(prep["message"], timeout=per_question_timeout)
         except Exception as exc:
-            logger.warning("WhatsApp ask failed for %s: %s", primary[:60], exc)
+            logger.warning("Messenger ask failed for %s: %s", prep["primary"][:60], exc)
             break
 
         if reply is None:
-            logger.info("No WhatsApp reply within timeout — leaving remaining questions pending.")
-            try:
+            logger.info("No messenger reply within timeout — leaving remaining questions pending.")
+            with contextlib.suppress(Exception):
                 await client.send(
                     "No reply received — remaining questions saved for later. "
                     "Run again or use: python main.py answer-questions"
                 )
-            except Exception:
-                pass
             break
-        if reply == PENDING_REPLY_SKIP:
-            continue
-        if reply == PENDING_REPLY_DROP:
-            dropped = drop_pending_group_jobs(base_dir, group, config)
-            try:
-                await client.send(f"Dropped {dropped} job(s) — will not retry.")
-            except Exception:
-                pass
-            continue
-        if reply == PENDING_REPLY_IGNORE:
-            if ignore_pending_group(base_dir, group, config):
-                answered += 1
-                jobs_to_retry.extend(_collect_retry_jobs(group))
-                try:
-                    await client.send("Ignored — saved default answer.")
-                except Exception:
-                    pass
-            else:
-                try:
-                    await client.send(
-                        "Cannot ignore this question type — use drop to skip the job."
-                    )
-                except Exception:
-                    pass
-            continue
 
-        stored_values = _save_pending_group_answers(
+        outcome, retry = await _process_messenger_reply(
             base_dir,
-            group,
-            reply,
             config,
-            company=company,
-            job_title=job_title,
+            client,
+            group,
+            primary=prep["primary"],
+            company=prep["company"],
+            job_title=prep["job_title"],
+            reply=reply,
         )
-        if not stored_values:
-            try:
-                await client.send("Could not save that answer (failed validation). Skipping.")
-            except Exception:
-                pass
-            continue
+        if outcome == "answered":
+            answered += 1
+            jobs_to_retry.extend(retry)
 
-        _remove_group(base_dir, group.group_id)
-        answered += 1
-        canonical = stored_values[0]
+    return answered, jobs_to_retry
+
+
+async def _answer_pending_groups_reply_routed(
+    base_dir: Path,
+    config: AppConfig,
+    client,
+    groups: list[PendingQuestionGroup],
+    *,
+    total: int,
+    use_llm_draft: bool,
+    skip_keyword: str,
+    drop_keyword: str,
+    ignore_keyword: str,
+    per_question_timeout: int | None,
+) -> tuple[int, list[PendingJobRef]]:
+    """Send all questions, then route each reply to the question it quotes.
+
+    Telegram tags a reply with the ``message_id`` it was sent in answer to, so we
+    can save out-of-order replies against the right question. Replies that don't
+    quote a question (a plain message) fall back to the oldest unanswered one.
+    """
+    states_by_msg_id: dict[int, dict[str, Any]] = {}
+    order: list[dict[str, Any]] = []
+
+    for index, group in enumerate(groups, 1):
+        prep = _prepare_group_question(
+            base_dir,
+            config,
+            group,
+            index,
+            total,
+            use_llm_draft=use_llm_draft,
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+        )
         try:
-            await client.send(f"Saved: {canonical[:80]}")
-        except Exception:
-            pass
+            message_id = await client.send(prep["message"])
+        except Exception as exc:
+            logger.warning("Messenger send failed for %s: %s", prep["primary"][:60], exc)
+            break
+        state = {
+            "group": group,
+            "primary": prep["primary"],
+            "company": prep["company"],
+            "job_title": prep["job_title"],
+            "message_id": message_id,
+            "done": False,
+        }
+        order.append(state)
+        if message_id is not None:
+            states_by_msg_id[message_id] = state
+        await asyncio.sleep(0.3)  # gentle pacing so we don't trip Telegram rate limits
 
-        jobs_to_retry.extend(_collect_retry_jobs(group))
+    answered = 0
+    jobs_to_retry: list[PendingJobRef] = []
+    remaining = sum(1 for s in order if not s["done"])
+
+    while remaining > 0:
+        upd = await client.wait_for_reply_routed(timeout=per_question_timeout)
+        if upd is None:
+            logger.info("No messenger reply within timeout — leaving remaining questions pending.")
+            with contextlib.suppress(Exception):
+                await client.send(
+                    "No reply received — remaining questions saved for later. "
+                    "Run again or use: python main.py answer-questions"
+                )
+            break
+
+        reply_to = upd.get("reply_to")
+        state = states_by_msg_id.get(reply_to) if reply_to is not None else None
+        if state is not None and state["done"]:
+            with contextlib.suppress(Exception):
+                await client.send(
+                    "That one's already handled — reply to another question instead.",
+                    **_reply_send_kwargs(client, reply_to),
+                )
+            continue
+        if state is None:
+            # No (or unrecognized) reply target — fall back to the oldest open one.
+            state = next((s for s in order if not s["done"]), None)
+        if state is None:
+            break
+
+        parsed = parse_pending_reply(
+            upd.get("text") or "",
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+        )
+        outcome, retry = await _process_messenger_reply(
+            base_dir,
+            config,
+            client,
+            state["group"],
+            primary=state["primary"],
+            company=state["company"],
+            job_title=state["job_title"],
+            reply=parsed,
+            reply_to_message_id=state["message_id"],
+        )
+        if outcome == "retry":
+            continue  # keep the question open so the user can correct their answer
+        state["done"] = True
+        remaining -= 1
+        if outcome == "answered":
+            answered += 1
+            jobs_to_retry.extend(retry)
 
     return answered, jobs_to_retry
 
@@ -1123,9 +1280,7 @@ def answer_pending_interactive(base_dir: Path, config: AppConfig | None = None) 
     return answered
 
 
-def summary_for_run(
-    base_dir: Path, *, platform: str | None = None, config: AppConfig | None = None
-) -> str:
+def summary_for_run(base_dir: Path, *, platform: str | None = None, config: AppConfig | None = None) -> str:
     prune_answered(base_dir, config)
     pending_n = len(pending_question_list(base_dir, config))
     review_n = saved_answers_needing_review_count(base_dir)
@@ -1134,17 +1289,11 @@ def summary_for_run(
     lines: list[str] = []
     if pending_n:
         group_n = len(pending_groups(base_dir, config))
-        lines.append(
-            f"[yellow]{pending_n} question(s) in {group_n} group(s) need answers.[/yellow]"
-        )
+        lines.append(f"[yellow]{pending_n} question(s) in {group_n} group(s) need answers.[/yellow]")
     if review_n:
         lines.append(f"[yellow]{review_n} saved answer(s) need your review.[/yellow]")
         lines.append("Run: [bold]python3 main.py answer-questions --review[/bold]")
-    rerun = (
-        f"python3 main.py run --platform {platform}"
-        if platform and platform != "all"
-        else "python3 main.py run"
-    )
+    rerun = f"python3 main.py run --platform {platform}" if platform and platform != "all" else "python3 main.py run"
     if pending_n:
         lines.append(f"Then re-run: [bold]{rerun}[/bold]")
     return "\n" + "\n".join(lines) + "\n"
@@ -1179,9 +1328,7 @@ def saved_answers_needing_review_count(base_dir: Path) -> int:
 def _answers_for_review(base_dir: Path, *, all_answers: bool) -> list[dict[str, Any]]:
     entries = _saved_answer_entries(base_dir)
     if not all_answers:
-        entries = [
-            e for e in entries if needs_review_answer(e["question"], e["answer"])
-        ]
+        entries = [e for e in entries if needs_review_answer(e["question"], e["answer"])]
     entries.sort(key=lambda e: e["question"].lower())
     return entries
 

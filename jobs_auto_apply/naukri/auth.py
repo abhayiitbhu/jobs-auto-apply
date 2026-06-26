@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from pathlib import Path
-from urllib.parse import quote_plus, urljoin
 
 from playwright.async_api import BrowserContext, Page
 

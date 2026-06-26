@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import re
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
-from playwright.async_api import Page, Response, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page, Response
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import NaukriFiltersConfig
+from ..cookies import slugify
 from ..page_load import (
     goto_settled,
     reveal_footer_actions,
     scroll_lazy_page,
     wait_for_page_settled,
 )
-from ..cookies import slugify
 from ..utils import JobListing
 
 logger = logging.getLogger("job_apply")
@@ -23,7 +25,7 @@ logger = logging.getLogger("job_apply")
 NAUKRI_ORIGIN = "https://www.naukri.com"
 
 # Naukri TopTier / Aurus SRP (Next.js) — job cards are clickable divs, not <a> tags.
-AURUS_CARD_SELECTOR = 'div.cursor-pointer.rounded-3xl.bg-n800:has(.text-title18Sb.text-n100)'
+AURUS_CARD_SELECTOR = "div.cursor-pointer.rounded-3xl.bg-n800:has(.text-title18Sb.text-n100)"
 
 _AURUS_COLLECT_JS = """
 () => {
@@ -77,7 +79,7 @@ _AURUS_COLLECT_JS = """
 _LEGACY_LINK_SELECTORS = (
     'a[href*="-jobs-"]',
     'a[href*="/job-listings-"]',
-    'article a.title',
+    "article a.title",
     ".jobTuple a",
     ".srp-jobtuple-wrapper a",
     ".cust-job-tuple a",
@@ -440,9 +442,7 @@ def _normalize_job_listing_url(path_or_url: str) -> str:
     raw = (path_or_url or "").strip()
     if not raw:
         return ""
-    if raw.startswith("/"):
-        raw = urljoin(NAUKRI_ORIGIN, raw)
-    elif not raw.startswith("http"):
+    if raw.startswith("/") or not raw.startswith("http"):
         raw = urljoin(NAUKRI_ORIGIN, raw)
     if "job-listings" not in raw.lower():
         return ""
@@ -461,6 +461,41 @@ def _url_matches_company(url: str, company: str) -> bool:
     if not tokens:
         tokens = [company_slug.split("-")[0]]
     return any(token in path for token in tokens)
+
+
+# Same job posted across many cities yields one /job-listings- URL per city,
+# differing only by the city slug — used to disambiguate masked-company cards
+# that share a title.
+_CITY_ALIASES = {
+    "bangalore": "bengaluru",
+    "gurgaon": "gurugram",
+    "delhi-ncr": "delhi",
+    "new-delhi": "delhi",
+}
+
+_LOCATION_NOISE = frozenset({"hybrid", "remote", "work-from-office", "wfo", "wfh", "onsite"})
+
+
+def _location_tokens(location: str) -> list[str]:
+    """City slugs from a card's location string (handles 'Hybrid - Pune, Bengaluru')."""
+    tokens: list[str] = []
+    for part in re.split(r"[,/|]|\s-\s|\sand\s", location):
+        slug = slugify(part)
+        if not slug or slug in _LOCATION_NOISE:
+            continue
+        slug = _CITY_ALIASES.get(slug, slug)
+        if slug not in tokens:
+            tokens.append(slug)
+    return tokens
+
+
+def _disambiguate_by_location(candidates: list[str], location: str) -> list[str]:
+    """Narrow same-title candidate URLs to the one(s) whose city slug matches the card."""
+    tokens = _location_tokens(location)
+    if not tokens:
+        return candidates
+    matched = [url for url in candidates if any(tok in url.lower() for tok in tokens)]
+    return matched or candidates
 
 
 class _JobUrlIndex:
@@ -546,6 +581,35 @@ class _JobUrlIndex:
             return best_url
         return ""
 
+    def candidates_by_title(self, title: str) -> list[str]:
+        """All distinct captured URLs whose path contains this card's title slug."""
+        title_slug = slugify(title)
+        if not title_slug:
+            return []
+        out: list[str] = []
+        for url in self.urls:
+            if title_slug in url.lower() and url not in out:
+                out.append(url)
+        return out
+
+    def match_by_title_location(self, title: str, location: str) -> str:
+        """Resolve masked-company cards: title slug + city, only if unambiguous.
+
+        Naukri hides the employer on many branded cards ("Hiring for an IT
+        Services & Consulting company"), defeating the company-aware match. The
+        title slug is highly specific; when it maps to several cities, the card's
+        rendered location picks the right one. Returns "" when still ambiguous so
+        we never guess a wrong employer's URL.
+        """
+        candidates = self.candidates_by_title(title)
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            narrowed = _disambiguate_by_location(candidates, location)
+            if len(narrowed) == 1:
+                return narrowed[0]
+        return ""
+
 
 def _quick_apply_from_api_obj(obj: dict[str, Any]) -> bool | None:
     for key in (
@@ -599,12 +663,7 @@ def _walk_job_json(obj: Any, index: _JobUrlIndex, depth: int = 0) -> None:
         return
     if isinstance(obj, dict):
         title = obj.get("title") or obj.get("jobTitle") or obj.get("designation")
-        company = (
-            obj.get("companyName")
-            or obj.get("company")
-            or obj.get("companyNameEncoded")
-            or ""
-        )
+        company = obj.get("companyName") or obj.get("company") or obj.get("companyNameEncoded") or ""
         job_id = str(obj.get("jobId") or obj.get("jobid") or obj.get("jdId") or "")
         url_val = ""
         for key in ("jdURL", "jobUrl", "url", "slug", "jobDetailsUrl", "seoUrl", "jdUrl"):
@@ -673,13 +732,11 @@ def ensure_url_index(page: Page) -> _JobUrlIndex:
 
 async def _wait_for_results(page: Page) -> bool:
     """Wait for either the new Aurus SRP or legacy job tuples to render."""
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector(
             '#jobs-list-header, header:has-text("jobs for you"), .srp-jobtuple-wrapper, .jobTuple',
             timeout=20_000,
         )
-    except PlaywrightTimeout:
-        pass
 
     try:
         await page.wait_for_selector(AURUS_CARD_SELECTOR, timeout=8_000)
@@ -693,9 +750,7 @@ async def _wait_for_results(page: Page) -> bool:
     return False
 
 
-_AURUS_CARD_COUNT_JS = (
-    "() => document.querySelectorAll('div.cursor-pointer.rounded-3xl.bg-n800').length"
-)
+_AURUS_CARD_COUNT_JS = "() => document.querySelectorAll('div.cursor-pointer.rounded-3xl.bg-n800').length"
 
 
 async def _scroll_results(page: Page, rounds: int = 3, *, min_cards: int = 0) -> None:
@@ -736,7 +791,7 @@ async def _collect_aurus_listings(
     seen: set[str] = set()
     with_url = 0
     skipped_non_quick = 0
-    skipped_unknown = 0
+    kept_unknown = 0
     skipped_api_reject = 0
     missing: list[str] = []
 
@@ -759,11 +814,21 @@ async def _collect_aurus_listings(
         # cardUrl) belongs to this card — no fuzzy matching, so don't second
         # guess it with the company-name heuristic below.
         url = _normalize_job_listing_url(href) or _normalize_job_listing_url(card_url)
-        url_from_card = bool(url)
+        # URLs we trust enough to skip the company-name guard below: taken from
+        # the card's own markup, keyed by an exact jobId, or uniquely resolved by
+        # title+city (where the company is masked and so can't be checked anyway).
+        url_trusted = bool(url)
         if not url and card_job_id:
             url = url_index.url_for_job_id(card_job_id)
+            url_trusted = bool(url)
         if not url:
             url = url_index.match(title, company)
+        # Masked-company branded cards have no href/jobId and the company name is
+        # hidden, so the fuzzy match above fails. Fall back to the title slug
+        # disambiguated by the card's city (skips genuinely ambiguous collisions).
+        if not url:
+            url = url_index.match_by_title_location(title, location)
+            url_trusted = bool(url)
 
         if not url:
             missing.append(title)
@@ -774,7 +839,7 @@ async def _collect_aurus_listings(
             continue
 
         job_id = card_job_id or _job_id_from_url(url)
-        if not url_from_card and company and not _url_matches_company(url, company):
+        if not url_trusted and company and not _url_matches_company(url, company):
             logger.debug(
                 "Aurus SRP: URL does not match company for %s @ %s — skipping",
                 title,
@@ -786,14 +851,18 @@ async def _collect_aurus_listings(
 
         api_quick = url_index.quick_apply(job_id) if job_id else None
         quick_apply = _resolve_quick_apply(card_quick, url_index, job_id)
-        if quick_apply_only and quick_apply is not True:
-            if quick_apply is False:
-                skipped_non_quick += 1
-                if card_quick is True and api_quick is False:
-                    skipped_api_reject += 1
-            else:
-                skipped_unknown += 1
+        # Only drop cards that are CLEARLY external/non-quick-apply. Cards with an
+        # unknown status (no badge on the SRP card, no API flag) are kept — Naukri
+        # SRP often omits the quick-apply badge, so dropping them loses real
+        # quick-apply jobs. The detail page (_naukri_detail_is_non_quick_apply)
+        # is the source of truth and skips any external job that slips through.
+        if quick_apply_only and quick_apply is False:
+            skipped_non_quick += 1
+            if card_quick is True and api_quick is False:
+                skipped_api_reject += 1
             continue
+        if quick_apply is None:
+            kept_unknown += 1
 
         seen.add(job_id)
         with_url += 1
@@ -810,7 +879,7 @@ async def _collect_aurus_listings(
                     "location": location,
                     "salary": salary,
                     "experience": experience,
-                    "quick_apply": True,
+                    "quick_apply": quick_apply if quick_apply is not None else "unknown",
                     "posted": posted,
                 },
             )
@@ -828,10 +897,10 @@ async def _collect_aurus_listings(
             skipped_non_quick,
             f" ({skipped_api_reject} badge/API mismatch)" if skipped_api_reject else "",
         )
-    if quick_apply_only and skipped_unknown:
+    if quick_apply_only and kept_unknown:
         logger.info(
-            "Aurus SRP: skipped %d cards with unknown quick-apply status (no badge, no API flag)",
-            skipped_unknown,
+            "Aurus SRP: kept %d cards with unknown quick-apply status (detail page will verify)",
+            kept_unknown,
         )
     logger.info(
         "Aurus SRP: resolved %d / %d quick-apply job-listings URLs",
@@ -881,17 +950,17 @@ async def _collect_legacy_listings(
 
             quick_apply = "quick apply" in parent_text
             external_apply = any(
-                token in parent_text
-                for token in ("company site", "apply on company", "registered consult")
+                token in parent_text for token in ("company site", "apply on company", "registered consult")
             )
             if external_apply:
                 quick_apply = False
             elif not quick_apply:
                 quick_apply = None
 
-            if quick_apply_only and quick_apply is not True:
-                if quick_apply is False:
-                    skipped_non_quick += 1
+            # Keep unknown-status listings; only drop clearly external ones.
+            # The detail page is the source of truth for quick-apply eligibility.
+            if quick_apply_only and quick_apply is False:
+                skipped_non_quick += 1
                 continue
 
             seen.add(job_id)
@@ -904,7 +973,7 @@ async def _collect_legacy_listings(
                     url=url,
                     source="naukri",
                     easy_apply=True,
-                    meta={"quick_apply": True},
+                    meta={"quick_apply": quick_apply if quick_apply is not None else "unknown"},
                 )
             )
         if listings:
@@ -940,10 +1009,8 @@ async def _drag_slider_handle(
 
 
 async def _apply_experience_filter(page: Page, max_years: int) -> None:
-    """Set Naukri max experience (Aurus slider is 0–N yrs; URL ?experience=N is also max)."""
-    track = page.locator(
-        ".Experience_sliderContainer___ZY_i .rc-slider, .exp-container .rc-slider"
-    ).first
+    """Set Naukri max experience (Aurus slider is 0-N yrs; URL ?experience=N is also max)."""
+    track = page.locator(".Experience_sliderContainer___ZY_i .rc-slider, .exp-container .rc-slider").first
     handles = page.locator(
         ".Experience_sliderContainer___ZY_i .rc-slider-handle, "
         ".Experience_sliderContainer___ZY_i .handle, "
@@ -1007,10 +1074,8 @@ async def scroll_naukri_srp_more(page: Page) -> bool:
     """Scroll the infinite-scroll SRP to load more job cards. Returns True if count grew."""
     before = await _aurus_card_count(page)
     for _ in range(5):
-        try:
+        with contextlib.suppress(Exception):
             await page.evaluate(_SCROLL_LAST_CARD_JS)
-        except Exception:
-            pass
         await page.wait_for_timeout(350)
     load_more = page.locator("#load-more-btn, button:has-text('Load more'), [class*='load-more']")
     if await load_more.count() > 0:

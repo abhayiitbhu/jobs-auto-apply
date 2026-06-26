@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..application_questions import discover_questions, fill_questions, resolve_question_answers
-from ..page_load import goto_settled, prepare_interactive_page
 from ..apply_runner import run_apply_batch
 from ..ats.apply import apply_on_company_site
 from ..config import AppConfig
 from ..cookies import is_external_career_url
 from ..cover_letter import build_cover_letter
+from ..page_load import goto_settled, prepare_interactive_page
 from ..salary import is_job_salary_eligible, job_eligibility
 from ..utils import JobListing, job_key, save_applied_job
+from .company import extract_wellfound_company, looks_like_location_not_company
+from .guard import (
+    WellfoundAccessRestrictedError,
+    WellfoundApplicationLimitReached,
+    is_access_restricted,
+    is_application_limit_reached,
+    resolve_post_submit,
+)
 from .modal import (
     click_apply,
     close_apply_modal,
@@ -23,26 +31,16 @@ from .modal import (
     inspect_apply_modal,
     open_and_inspect_apply_modal,
 )
-from .company import extract_wellfound_company, looks_like_location_not_company
-from .guard import (
-    WellfoundAccessRestricted,
-    WellfoundApplicationLimitReached,
-    is_access_restricted,
-    is_application_limit_reached,
-    resolve_post_submit,
-)
 
 logger = logging.getLogger("job_apply")
 
 if TYPE_CHECKING:
-    from .pipeline import ApplyBudget, CompanyGate
+    from .pipeline import CompanyGate
 
 
 async def _raise_if_application_limit(page: Page) -> None:
     if await is_application_limit_reached(page):
-        raise WellfoundApplicationLimitReached(
-            "Wellfound: maximum number of active applications reached"
-        )
+        raise WellfoundApplicationLimitReached("Wellfound: maximum number of active applications reached")
 
 
 async def _enrich_wellfound_job_on_page(page: Page, job: JobListing, config: AppConfig) -> None:
@@ -78,16 +76,12 @@ async def process_wellfound_job(
     job: JobListing,
     config: AppConfig,
     *,
-    company_gate: Optional["CompanyGate"] = None,
+    company_gate: CompanyGate | None = None,
     label: str = "",
 ) -> bool | None:
     """Open one job page, enrich, filter, and apply — single tab, single navigation."""
     prefix = f"{label} " if label else ""
-    use_external = (
-        config.application.follow_external_from_wellfound
-        and job.external_ats
-        and not job.easy_apply
-    )
+    use_external = config.application.follow_external_from_wellfound and job.external_ats and not job.easy_apply
     if config.application.skip_external_ats and job.external_ats and not job.easy_apply and not use_external:
         logger.info("%sSkipping external ATS: %s", prefix, job.title)
         return None
@@ -95,7 +89,7 @@ async def process_wellfound_job(
     await goto_settled(page, job.url, timeout_ms=60_000)
 
     if await is_access_restricted(page):
-        raise WellfoundAccessRestricted("Wellfound access restricted on job page")
+        raise WellfoundAccessRestrictedError("Wellfound access restricted on job page")
 
     min_lpa = config.application.min_inr_salary_lpa
 
@@ -231,9 +225,7 @@ async def process_wellfound_job(
             company_gate.release(job.company)
         return False
 
-    if not await _verify_wellfound_submit(
-        page, job, prefix=prefix, company_gate=company_gate
-    ):
+    if not await _verify_wellfound_submit(page, job, prefix=prefix, company_gate=company_gate):
         return False
 
     save_applied_job(
@@ -265,9 +257,7 @@ async def ensure_resume_on_profile(page: Page, resume_path) -> None:
 
 
 async def _fill_cover_note(page: Page, note: str) -> None:
-    textarea = page.locator(
-        'textarea[placeholder*="note" i], textarea[placeholder*="message" i], textarea'
-    )
+    textarea = page.locator('textarea[placeholder*="note" i], textarea[placeholder*="message" i], textarea')
     await textarea.first.wait_for(state="visible", timeout=10000)
     await textarea.first.fill(note)
 
@@ -293,7 +283,7 @@ async def _verify_wellfound_submit(
     job: JobListing,
     *,
     prefix: str = "",
-    company_gate: Optional["CompanyGate"] = None,
+    company_gate: CompanyGate | None = None,
 ) -> bool:
     """Confirm submit succeeded; raise on application cap."""
     outcome = await resolve_post_submit(page)
@@ -301,9 +291,7 @@ async def _verify_wellfound_submit(
         await close_apply_modal(page)
         if company_gate is not None:
             company_gate.release(job.company)
-        raise WellfoundApplicationLimitReached(
-            "Wellfound: maximum number of active applications reached"
-        )
+        raise WellfoundApplicationLimitReached("Wellfound: maximum number of active applications reached")
     if outcome == "success":
         return True
     logger.warning("%sCould not confirm Wellfound submit for %s", prefix, job.url)
@@ -338,11 +326,7 @@ async def apply_to_job(
     config: AppConfig,
 ) -> bool | None:
     """Return True if applied, None if intentionally skipped, False if failed."""
-    use_external = (
-        config.application.follow_external_from_wellfound
-        and job.external_ats
-        and not job.easy_apply
-    )
+    use_external = config.application.follow_external_from_wellfound and job.external_ats and not job.easy_apply
     if config.application.skip_external_ats and job.external_ats and not job.easy_apply and not use_external:
         logger.info("Skipping external ATS job: %s @ %s", job.title, job.company)
         return None

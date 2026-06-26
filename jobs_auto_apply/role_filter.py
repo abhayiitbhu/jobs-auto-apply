@@ -10,8 +10,7 @@ logger = logging.getLogger("job_apply")
 # Titles that are clearly backend/platform even if they mention a UI stack.
 # NOTE: deliberately excludes devops/sre/infra so those can be skipped via keywords.
 BACKEND_TITLE_HINT = re.compile(
-    r"\b(backend|back[\s-]?end|platform|"
-    r"python developer|java developer|node\.?js backend)\b",
+    r"\b(backend|back[\s-]?end|platform|" r"python developer|java developer|node\.?js backend)\b",
     re.I,
 )
 
@@ -131,10 +130,7 @@ def should_skip_no_experience_role(
     if not title or not no_exp_skills:
         return False, ""
     matched = next(
-        (
-            s for s in no_exp_skills
-            if s.strip() and re.search(_keyword_regex(s.strip()), title, re.I)
-        ),
+        (s for s in no_exp_skills if s.strip() and re.search(_keyword_regex(s.strip()), title, re.I)),
         None,
     )
     if not matched:

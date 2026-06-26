@@ -58,9 +58,7 @@ def _load_applied_payload(path: Path) -> dict[str, Any]:
             try:
                 payload = json.loads(raw)
             except json.JSONDecodeError:
-                logging.getLogger("job_apply").warning(
-                    "Invalid %s — resetting to empty state", path.name
-                )
+                logging.getLogger("job_apply").warning("Invalid %s — resetting to empty state", path.name)
                 payload = {"applied": [], "history": []}
     if not isinstance(payload, dict):
         return {"applied": [], "history": []}
@@ -139,8 +137,7 @@ def reconcile_applied_jobs(path: Path) -> int:
         payload["history"] = [
             entry
             for entry in payload["history"]
-            if isinstance(entry, dict)
-            and str(entry.get("status", "")).strip() in ("applied", "abandoned")
+            if isinstance(entry, dict) and str(entry.get("status", "")).strip() in ("applied", "abandoned")
         ]
         payload["applied"] = sorted(_confirmed_job_keys_from_history(payload["history"]))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,9 +166,7 @@ def load_applied_jobs(path: Path, *, include_deferred: bool = True) -> set[str]:
     if history:
         if include_deferred:
             return _blocking_job_keys_from_history(history)
-        return _confirmed_job_keys_from_history(history) | _abandoned_job_keys_from_history(
-            history
-        )
+        return _confirmed_job_keys_from_history(history) | _abandoned_job_keys_from_history(history)
     # Legacy files without history — fall back to applied list.
     legacy = payload.get("applied") or []
     if isinstance(legacy, list):
@@ -246,10 +241,7 @@ def clear_deferred_applies(path: Path) -> int:
         payload["history"] = [
             entry
             for entry in payload["history"]
-            if not (
-                isinstance(entry, dict)
-                and str(entry.get("status", "")).strip() == "deferred"
-            )
+            if not (isinstance(entry, dict) and str(entry.get("status", "")).strip() == "deferred")
         ]
         payload["applied"] = sorted(_blocking_job_keys_from_history(payload["history"]))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -306,11 +298,7 @@ def record_abandoned_apply(
 
 def render_cover_note(template: str, *, title: str, company: str) -> str:
     """Legacy static template helper."""
-    return (
-        template.replace("{{title}}", title)
-        .replace("{{company}}", company)
-        .replace("{{job_title}}", title)
-    )
+    return template.replace("{{title}}", title).replace("{{company}}", company).replace("{{job_title}}", title)
 
 
 def _normalize_company(name: str) -> str:
@@ -347,4 +335,3 @@ def filter_skipped_companies(jobs: list[JobListing], skip_list: list[str]) -> li
             continue
         kept.append(job)
     return kept
-

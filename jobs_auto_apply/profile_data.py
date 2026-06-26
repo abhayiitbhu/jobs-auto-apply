@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +38,7 @@ class ResumeFacts:
 
 def build_resume_context(facts: ResumeFacts) -> str:
     """Structured resume context from profile/resume_facts.yaml."""
-    skill_lines = [
-        f"  {category}: {', '.join(items)}"
-        for category, items in facts.technical_skills.items()
-        if items
-    ]
+    skill_lines = [f"  {category}: {', '.join(items)}" for category, items in facts.technical_skills.items() if items]
     exp_lines: list[str] = []
     for role in facts.experience:
         exp_lines.append(f"- {role.get('title', '')} @ {role.get('company', '')} ({role.get('period', '')})")

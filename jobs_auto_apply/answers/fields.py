@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from ..config import AppConfig
-from .location import is_location_value_question, is_relocation_yesno_question
+from .location import is_location_value_question
 
 _PINCODE_FIELD = re.compile(r"\b(pin\s*code|pincode|zip\s*code|postal\s*code)\b", re.I)
 
@@ -47,7 +47,6 @@ def is_numeric_ctc_question(label: str) -> bool:
     return bool(re.search(r"\bin\s+lacs?\b", norm))
 
 
-
 def is_last_working_day_question(question: str) -> bool:
     from ..question_groups import classify_question
 
@@ -56,15 +55,12 @@ def is_last_working_day_question(question: str) -> bool:
     return bool(re.search(r"\b(last working day|lwd)\b", question, re.I))
 
 
-
 def _label_implies_years_numeric(label: str) -> bool:
     norm = label.lower()
     # "Do you have experience in X?" / "Have you ... experience in X?" with no
     # "how many/much" and no "years" is a yes/no question, not a numeric-years
     # one — don't let the broad "experience ... in" match below mislabel it.
-    if re.search(r"\b(do you have|have you)\b", norm) and not re.search(
-        r"\bhow (many|much)\b|\byears?\b", norm
-    ):
+    if re.search(r"\b(do you have|have you)\b", norm) and not re.search(r"\bhow (many|much)\b|\byears?\b", norm):
         return False
     if re.search(
         r"\bhow (many|much)\b.*\bexperience\b|\bexperience\b.*\bin\b",
@@ -102,9 +98,7 @@ def infer_field_input_type(label: str, field: dict[str, Any] | None = None) -> s
         return "location"
     if is_last_working_day_question(label):
         return "date"
-    if is_numeric_ctc_question(label) or (
-        placeholder and re.search(r"lakh|lac", placeholder, re.I)
-    ):
+    if is_numeric_ctc_question(label) or (placeholder and re.search(r"lakh|lac", placeholder, re.I)):
         return "ctc_numeric"
     if re.search(r"\b(date of birth|dob|birth date)\b", label, re.I) or field.get("hasDobInput"):
         return "date"
@@ -114,18 +108,17 @@ def infer_field_input_type(label: str, field: dict[str, Any] | None = None) -> s
         opts = {str(o).strip().lower() for o in field.get("options", []) if str(o).strip()}
         if opts <= {"yes", "no"} and opts:
             return "single_choice"
-    if re.search(r"\b(do you have|have you)\b", label, re.I) and not re.search(
-        r"\bhow (many|much)\b", label, re.I
-    ):
-        if re.search(
-            r"\b(experience|using|worked with|hands?.on)\b", label, re.I
-        ) and re.search(
-            r"\b(genai|llm|copilot|dataiku|ai/ml|ml models?)\b",
-            label,
-            re.I,
+    if re.search(r"\b(do you have|have you)\b", label, re.I) and not re.search(r"\bhow (many|much)\b", label, re.I):
+        if (
+            re.search(r"\b(experience|using|worked with|hands?.on)\b", label, re.I)
+            and re.search(
+                r"\b(genai|llm|copilot|dataiku|ai/ml|ml models?)\b",
+                label,
+                re.I,
+            )
+            and (kind in ("text", "input", "textarea", "number") or field.get("hasVisibleInput"))
         ):
-            if kind in ("text", "input", "textarea", "number") or field.get("hasVisibleInput"):
-                return "years_numeric"
+            return "years_numeric"
     if _label_implies_years_numeric(label):
         if kind in ("text", "input", "textarea", "number") or field.get("hasVisibleInput"):
             return "years_numeric"
@@ -142,7 +135,6 @@ def infer_field_input_type(label: str, field: dict[str, Any] | None = None) -> s
     return kind or "text"
 
 
-
 def enrich_field_for_llm(field: dict[str, Any]) -> dict[str, Any]:
     """Attach input_type and keep discovery metadata for LLM prompts."""
     enriched = dict(field)
@@ -151,9 +143,7 @@ def enrich_field_for_llm(field: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
-def infer_field_for_question(
-    question: str, config: AppConfig | None = None
-) -> dict[str, Any]:
+def infer_field_for_question(question: str, config: AppConfig | None = None) -> dict[str, Any]:
     """Best-effort field metadata when options aren't known (e.g. pending queue)."""
     label = question.strip()
     q = label.lower()
@@ -168,13 +158,12 @@ def infer_field_for_question(
             "label": label,
             "options": chip_options,
         }
-    if re.search(r"\b(do you have|have you).*\b(experience|using|worked with|hands?.on)\b", q):
-        if re.search(
-            r"\b(genai|llm|copilot|dataiku|ai/ml|ml models?|artificial intelligence)\b",
-            q,
-            re.I,
-        ):
-            return {"kind": "text", "label": label, "input_type": "years_numeric"}
+    if re.search(r"\b(do you have|have you).*\b(experience|using|worked with|hands?.on)\b", q) and re.search(
+        r"\b(genai|llm|copilot|dataiku|ai/ml|ml models?|artificial intelligence)\b",
+        q,
+        re.I,
+    ):
+        return {"kind": "text", "label": label, "input_type": "years_numeric"}
     if re.search(
         r"\b(do you have|have you|are you|do you|any offers?|holding any offer|"
         r"received an offer|currently have|previously uploaded|interview attended|"
@@ -195,4 +184,3 @@ def infer_field_for_question(
     if re.search(r"\b(yes|no|available|willing|employed|associated|immediate|offer)\b", q):
         return {"kind": "radio", "label": label, "options": ["Yes", "No"]}
     return {"kind": "text", "label": label}
-

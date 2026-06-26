@@ -5,7 +5,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from .auth import NAUKRI_ORIGIN
 

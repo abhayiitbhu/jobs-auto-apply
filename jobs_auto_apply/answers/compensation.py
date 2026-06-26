@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from ..config import AppConfig
 from ..question_groups import classify_question
@@ -46,9 +45,7 @@ def ctc_want_kind(question: str) -> str:
 def looks_like_compensation_question(label: str) -> bool:
     if classify_question(label) == "compensation":
         return True
-    return bool(
-        re.search(r"\b(ctc|salary|lpa|compensation|ectc|cctc)\b", label, re.I)
-    )
+    return bool(re.search(r"\b(ctc|salary|lpa|compensation|ectc|cctc)\b", label, re.I))
 
 
 def compensation_answer_compatible(question: str, answer: str) -> bool:
@@ -88,7 +85,6 @@ def compensation_answer_compatible(question: str, answer: str) -> bool:
             return True
         return has_current and has_expected
     return True
-
 
 
 def _format_lpa(value: float) -> str:
@@ -153,10 +149,7 @@ def resolve_ctc_numeric_answer(
             return f"{current}/{expected}"
         if config:
             comp = config.compensation
-            return (
-                f"{_format_lpa(comp.current_ctc_lpa)}/"
-                f"{_format_lpa(comp.expected_ctc_lpa)}"
-            )
+            return f"{_format_lpa(comp.current_ctc_lpa)}/{_format_lpa(comp.expected_ctc_lpa)}"
 
     nums = re.findall(r"(\d+(?:\.\d+)?)", text)
     if want == "expected" and nums:
@@ -181,7 +174,6 @@ def resolve_ctc_numeric_answer(
             return _format_lpa(comp.expected_ctc_lpa)
         return _format_lpa(comp.current_ctc_lpa)
     return None
-
 
 
 # Private aliases

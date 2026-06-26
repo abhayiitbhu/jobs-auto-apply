@@ -11,17 +11,18 @@ from typing import Any
 from playwright.async_api import BrowserContext, Page
 
 from .cover_letter import build_cover_letter
+from .jd import is_noisy_jd
 from .page_load import goto_settled
+from .salary import job_eligibility
+from .utils import JobListing
+from .utils import job_key as make_job_key
 from .wellfound.company import (
     extract_wellfound_company,
     looks_like_location_not_company,
     parse_company_from_jd,
     repair_cover_letter_company,
 )
-from .jd import is_noisy_jd
-from .salary import is_job_salary_eligible, job_eligibility
 from .wellfound.modal import is_apply_metadata_only
-from .utils import JobListing, job_key as make_job_key
 
 logger = logging.getLogger("job_apply")
 
@@ -88,9 +89,7 @@ def load_review_queue(base_dir: Path, platform: str, review_dir: str = "data/rev
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def save_review_queue(
-    base_dir: Path, platform: str, payload: dict[str, Any], review_dir: str = "data/review"
-) -> Path:
+def save_review_queue(base_dir: Path, platform: str, payload: dict[str, Any], review_dir: str = "data/review") -> Path:
     path = review_queue_path(base_dir, platform, review_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -104,9 +103,7 @@ def items_from_payload(payload: dict[str, Any]) -> list[ReviewItem]:
     return items
 
 
-async def enrich_job_for_review(
-    page: Page, config, job: JobListing, *, with_cover_letter: bool = True
-) -> ReviewItem:
+async def enrich_job_for_review(page: Page, config, job: JobListing, *, with_cover_letter: bool = True) -> ReviewItem:
     await goto_settled(page, job.url, timeout_ms=60_000)
     old_company = job.company
     min_lpa = config.application.min_inr_salary_lpa
@@ -141,9 +138,7 @@ async def enrich_job_for_review(
     if with_cover_letter:
         cover = await build_cover_letter(config, job=job, page=None, jd=jd)
         if job.source == "wellfound" and job.company and old_company != job.company:
-            cover = repair_cover_letter_company(
-                cover, old_company=old_company, new_company=job.company
-            )
+            cover = repair_cover_letter_company(cover, old_company=old_company, new_company=job.company)
     return ReviewItem.from_job(job, cover_letter=cover, jd_excerpt=jd)
 
 
@@ -226,8 +221,7 @@ def build_review_payload(platform: str, items: list[ReviewItem]) -> dict[str, An
         "platform": platform,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "instructions": (
-            "Set status to approved or rejected for each item. "
-            "Run: python main.py apply-reviewed --platform <name>"
+            "Set status to approved or rejected for each item. Run: python main.py apply-reviewed --platform <name>"
         ),
         "items": [asdict(item) for item in items],
     }

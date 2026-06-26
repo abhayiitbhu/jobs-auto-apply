@@ -18,6 +18,9 @@ from pathlib import Path
 # Running this file directly puts scripts/ on sys.path, not the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import contextlib
+
+from jobs_auto_apply.application_questions import resolve_question_answers
 from jobs_auto_apply.browser import hirist_session
 from jobs_auto_apply.config import load_config
 from jobs_auto_apply.hirist.apply import (
@@ -32,9 +35,9 @@ from jobs_auto_apply.hirist.questions import (
     discover_hirist_questions,
     fill_hirist_questions,
 )
-from jobs_auto_apply.application_questions import resolve_question_answers
 from jobs_auto_apply.page_load import prepare_interactive_page
 from jobs_auto_apply.utils import JobListing, setup_logging
+
 
 def _load_failure_urls(base_dir: Path) -> list[str]:
     """Hirist screening URLs from data/technical_failures.json (source=hirist)."""
@@ -73,9 +76,7 @@ async def _diagnose_question(page, label: str) -> None:
         radios = await box.locator("input[type=radio]").count()
         checks = await box.locator("input[type=checkbox]").count()
         textareas = await box.locator("textarea").count()
-        inputs = await box.locator(
-            "input[type=text], input[type=number], input:not([type])"
-        ).count()
+        inputs = await box.locator("input[type=text], input[type=number], input:not([type])").count()
         visible = await box.first.is_visible()
         html = await box.evaluate("el => el.outerHTML.slice(0, 500)")
         print(
@@ -101,14 +102,11 @@ async def _diagnose_url(config, context, url: str) -> None:
     try:
         await _diagnose_on_page(config, page, url)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await page.close()
-        except Exception:
-            pass
 
 
 async def _diagnose_on_page(config, page, url: str) -> None:
-
     job = JobListing(
         job_id=_job_id_from_url(url),
         title="Hirist test job",
@@ -151,17 +149,13 @@ async def _diagnose_on_page(config, page, url: str) -> None:
     for q in questions:
         await _diagnose_question(page, str(q.get("label", "")))
 
-    answers = await resolve_question_answers(
-        config, job, "", questions, interactive=False, defer_new=True
-    )
+    answers = await resolve_question_answers(config, job, "", questions, interactive=False, defer_new=True)
     print("\n==== Resolved answers ====")
     for q in questions:
         label = str(q.get("label", ""))
         print(f"  {label[:60]!r} -> {str(answers.get(label, ''))[:60]!r}")
 
-    unfilled = await fill_hirist_questions(
-        page, questions, answers, prep=False, config=config
-    )
+    unfilled = await fill_hirist_questions(page, questions, answers, prep=False, config=config)
     print(f"\n==== fill_hirist_questions unfilled: {unfilled} ====")
 
     state = await page.evaluate(_FORM_STATE_JS) or {}
@@ -169,10 +163,7 @@ async def _diagnose_on_page(config, page, url: str) -> None:
     print(f"  nextDisabled={state.get('nextDisabled')}")
     print(f"  empty={state.get('empty')}")
     for f in (state.get("fields") or [])[:14]:
-        print(
-            f"  - {str(f.get('label',''))[:45]!r} "
-            f"domValue={str(f.get('domValue',''))[:25]!r}"
-        )
+        print(f"  - {str(f.get('label', ''))[:45]!r} domValue={str(f.get('domValue', ''))[:25]!r}")
 
     print("\n(Not clicking Next/Submit — diagnostic only.)")
     await page.wait_for_timeout(1000)
@@ -185,10 +176,7 @@ async def main() -> None:
     cli_urls = [a for a in sys.argv[1:] if a.startswith("http")]
     urls = cli_urls or _load_failure_urls(config.base_dir)
     if not urls:
-        print(
-            "No Hirist jobs to diagnose "
-            "(no URLs given and no source=hirist entries in technical_failures.json)."
-        )
+        print("No Hirist jobs to diagnose (no URLs given and no source=hirist entries in technical_failures.json).")
         return
 
     print(f"Diagnosing {len(urls)} Hirist screening form(s)...")

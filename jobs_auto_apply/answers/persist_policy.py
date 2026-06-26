@@ -93,8 +93,6 @@ def draft_should_persist_to_memory(
         return confidence >= threshold
 
     if src == "RAG":
-        return rag_rule_persist_confidence(
-            config, question=question, field=field, answer=answer
-        ) >= threshold
+        return rag_rule_persist_confidence(config, question=question, field=field, answer=answer) >= threshold
 
     return False

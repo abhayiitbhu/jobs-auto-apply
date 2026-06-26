@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-import threading
 from collections.abc import Awaitable, Callable
-from typing import Optional
 
 from playwright.async_api import BrowserContext, Page
 
@@ -16,8 +15,8 @@ from .utils import JobListing, job_key
 logger = logging.getLogger("job_apply")
 
 ApplyFn = Callable[
-    [Page, Optional[BrowserContext], JobListing, AppConfig],
-    Awaitable[Optional[bool]],
+    [Page, BrowserContext | None, JobListing, AppConfig],
+    Awaitable[bool | None],
 ]
 
 
@@ -47,7 +46,7 @@ async def _apply_job_with_retries(
     job: JobListing,
     config: AppConfig,
     page: Page,
-    context: Optional[BrowserContext],
+    context: BrowserContext | None,
     apply_one: ApplyFn,
     *,
     max_attempts: int,
@@ -136,7 +135,7 @@ async def run_apply_batch(
     jobs: list[JobListing],
     config: AppConfig,
     page: Page,
-    context: Optional[BrowserContext],
+    context: BrowserContext | None,
     apply_one: ApplyFn,
     *,
     workers: int | None = None,
@@ -194,19 +193,14 @@ async def run_apply_batch(
                     label=label,
                 )
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     await tab.close()
-                except Exception:
-                    pass
 
-    results = await asyncio.gather(
-        *[_one(job, i) for i, job in enumerate(jobs, 1)], return_exceptions=True
-    )
+    results = await asyncio.gather(*[_one(job, i) for i, job in enumerate(jobs, 1)], return_exceptions=True)
     applied = sum(1 for ok in results if ok is True)
     if any(isinstance(r, ApplyBatchStopped) for r in results):
         logger.error(
-            "Parallel apply stopped early — browser/page was closed. "
-            "Applied %d before the browser closed.",
+            "Parallel apply stopped early — browser/page was closed. Applied %d before the browser closed.",
             applied,
         )
     else:

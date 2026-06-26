@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from .application_questions import clear_draft_answer_cache
+from .apply_filters import filter_pending_jobs
 from .browser import (
     PARALLEL_COOKIE_PLATFORMS,
     hirist_session,
@@ -32,65 +35,62 @@ from .hirist.search import apply_filters as hirist_apply_filters
 from .hirist.search import collect_from_search_urls as hirist_collect_from_search_urls
 from .hirist.search import collect_job_listings as hirist_collect_jobs
 from .hirist.search import iter_paginated_feed_pages
-from .instahyre.apply import apply_batch as instahyre_apply_batch, apply_from_feeds as instahyre_apply_from_feeds
+from .instahyre.apply import apply_batch as instahyre_apply_batch
+from .instahyre.apply import apply_from_feeds as instahyre_apply_from_feeds
 from .instahyre.search import apply_filters as instahyre_apply_filters
 from .instahyre.search import collect_from_search_urls as instahyre_collect_from_search_urls
 from .instahyre.search import collect_job_listings as instahyre_collect_jobs
-from .apply_filters import filter_pending_jobs
 from .limits import apply_cap, is_unlimited, scrape_limit
 from .memory import get_decision, load_memory, record_decision, save_preferences
+from .naukri.apply import apply_batch as naukri_apply_batch
+from .naukri.pipeline import run_naukri_pipeline
+from .naukri.resume_sync import (
+    run_naukri_resume_sync_scheduler,
+    sync_naukri_resume_if_due,
+)
+from .naukri.search import apply_filters as naukri_apply_filters
+from .naukri.search import collect_job_listings as naukri_collect_jobs
+from .naukri.search import collect_naukri_srp_batch, scroll_naukri_srp_more
+from .naukri.search import go_to_search_page as naukri_go_to_search_page
 from .pending_questions import (
     answer_pending_groups_interactive,
     answer_pending_groups_via_messenger,
-    answer_pending_interactive,
     pending_count,
     review_saved_answers_interactive,
     saved_answers_needing_review_count,
     summary_for_run,
 )
-from .run_issues import (
-    clear_run_issues,
-    run_attempted_job_keys,
-    run_issue_count,
-    run_issues_summary,
-)
-from .application_questions import clear_draft_answer_cache
 from .pending_retry import retry_pending_jobs
-from .naukri.apply import apply_batch as naukri_apply_batch
-from .naukri.pipeline import run_naukri_pipeline
-from .naukri.search import apply_filters as naukri_apply_filters
-from .naukri.search import collect_job_listings as naukri_collect_jobs
-from .naukri.resume_sync import (
-    run_naukri_resume_sync_scheduler,
-    sync_naukri_resume_if_due,
-)
-from .naukri.search import collect_naukri_srp_batch, scroll_naukri_srp_more
-from .naukri.search import go_to_search_page as naukri_go_to_search_page
 from .review import (
     ReviewItem,
     approved_items,
     build_review_payload,
     enrich_jobs_parallel,
     items_from_payload,
+    load_review_queue,
     needs_re_enrich,
     refresh_cover_letters,
     repair_review_queue_items,
-    load_review_queue,
     review_summary,
     save_review_queue,
+)
+from .role_filter import auto_reject_skipped_roles, filter_skipped_roles, should_skip_role
+from .run_issues import (
+    clear_run_issues,
+    run_issue_count,
+    run_issues_summary,
 )
 from .uplers.apply import apply_batch as uplers_apply_batch
 from .uplers.search import apply_filters as uplers_apply_filters
 from .uplers.search import collect_job_listings as uplers_collect_jobs
-from .role_filter import auto_reject_skipped_roles, filter_skipped_roles, should_skip_role
 from .utils import (
     JobListing,
+    clear_deferred_applies,
     company_key,
     filter_skipped_companies,
     job_key,
     load_applied_jobs,
     reconcile_applied_jobs,
-    clear_deferred_applies,
     setup_logging,
     should_skip_company,
 )
@@ -183,9 +183,7 @@ async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
             f"[cyan]Running {len(parallel)} platforms in parallel: {names}[/cyan]\n"
             "[dim]Each uses its own browser + cookies (naukri/hirist/instahyre apply workers still apply per site).[/dim]\n"
         )
-        results = await asyncio.gather(
-            *[_run_single_platform(name, runner, config) for name, runner in parallel]
-        )
+        results = await asyncio.gather(*[_run_single_platform(name, runner, config) for name, runner in parallel])
         total += sum(results)
     elif parallel:
         total += await _run_single_platform(parallel[0][0], parallel[0][1], config)
@@ -196,7 +194,9 @@ async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
 
 
 @main.command("run")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 @click.option("--verbose", is_flag=True)
 def run_cmd(config_path: Path, platform: str, verbose: bool) -> None:
@@ -205,13 +205,23 @@ def run_cmd(config_path: Path, platform: str, verbose: bool) -> None:
 
 
 @main.command("serve")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
-@click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all", help="Platforms to apply to each cycle ('all' = every enabled platform).")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
+@click.option(
+    "--platform",
+    type=click.Choice(PLATFORM_CHOICES),
+    default="all",
+    help="Platforms to apply to each cycle ('all' = every enabled platform).",
+)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8765, show_default=True, type=int)
 @click.option("--interval-minutes", default=30, show_default=True, type=int, help="Minutes between apply cycles.")
-@click.option("--run-on-start/--no-run-on-start", default=True, show_default=True, help="Run one cycle immediately on startup.")
+@click.option(
+    "--run-on-start/--no-run-on-start", default=True, show_default=True, help="Run one cycle immediately on startup."
+)
 @click.option("--verbose", is_flag=True)
+@click.option("--reload", is_flag=True, help="Automatically reload server on file changes (dev only).")
 def serve_cmd(
     config_path: Path,
     platform: str,
@@ -220,8 +230,11 @@ def serve_cmd(
     interval_minutes: int,
     run_on_start: bool,
     verbose: bool,
+    reload: bool,
 ) -> None:
     """Run as an always-on server that re-applies every N minutes (default 30) via uvicorn."""
+    import os
+
     import uvicorn
 
     from .server import create_app
@@ -252,14 +265,46 @@ def serve_cmd(
         "[dim]GET /status, POST /run-now. Stop with Ctrl+C.[/dim]"
     )
 
-    app = create_app(
-        config_path=config_path,
-        platform=platform,
-        interval_minutes=interval_minutes,
-        verbose=verbose,
-        run_on_start=run_on_start,
-    )
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    # Set environment variables for reload mode
+    os.environ["JAA_CONFIG_PATH"] = str(config_path)
+    os.environ["JAA_PLATFORM"] = platform
+    os.environ["JAA_INTERVAL_MINUTES"] = str(interval_minutes)
+    os.environ["JAA_VERBOSE"] = "1" if verbose else "0"
+    os.environ["JAA_RUN_ON_START"] = "1" if run_on_start else "0"
+
+    if reload:
+        # For reload, use factory function via string import.
+        # Only watch the Python package so runtime data writes (data/*.json,
+        # caches, cookies, logs) don't trigger an endless restart loop.
+        from pathlib import Path as _Path
+
+        pkg_dir = str(_Path(__file__).resolve().parent)
+        uvicorn.run(
+            "jobs_auto_apply.server:create_app_from_env",
+            host=host,
+            port=port,
+            log_level="warning",
+            reload=True,
+            factory=True,
+            reload_dirs=[pkg_dir],
+            reload_includes=["*.py"],
+            reload_excludes=["*.json", "*.txt", "*.log", "data/*"],
+        )
+    else:
+        # Without reload, pass app object directly
+        app = create_app(
+            config_path=config_path,
+            platform=platform,
+            interval_minutes=interval_minutes,
+            verbose=verbose,
+            run_on_start=run_on_start,
+        )
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level="warning",
+        )
 
 
 async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, asyncio.Task]:
@@ -276,10 +321,8 @@ async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, a
 async def _stop_naukri_resume_sync(stop: asyncio.Event, task: asyncio.Task) -> None:
     stop.set()
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
 
 async def _run(config_path: Path, platform: str, verbose: bool) -> None:
@@ -392,10 +435,7 @@ async def _answer_pending_via_messenger(
     except Exception as exc:
         logger.exception("%s pending flow failed: %s", label, exc)
         console.print(f"[red]{label} unavailable: {exc}[/red]")
-        console.print(
-            "[dim]Questions left pending — resolve with: "
-            "[bold]python main.py answer-questions[/bold][/dim]"
-        )
+        console.print("[dim]Questions left pending — resolve with: [bold]python main.py answer-questions[/bold][/dim]")
         return 0, []
 
 
@@ -431,8 +471,7 @@ async def _finish_pending_questions(
     if channel and _messenger_mode(config, channel) == "listener":
         if server_listener_channel() == channel:
             console.print(
-                f"[dim]Questions deferred to the {_messenger_label(channel)} listener "
-                f"(running with serve).[/dim]"
+                f"[dim]Questions deferred to the {_messenger_label(channel)} listener (running with serve).[/dim]"
             )
         else:
             listen_cmd = "telegram-listen" if channel == "telegram" else "whatsapp-listen"
@@ -451,12 +490,7 @@ async def _finish_pending_questions(
             config=config,
             prompt_on_failure=prompt_on_failure,
         )
-    if (
-        answered
-        and jobs_to_retry
-        and config.llm.retry_pending_jobs
-        and not config.application.dry_run
-    ):
+    if answered and jobs_to_retry and config.llm.retry_pending_jobs and not config.application.dry_run:
         clear_deferred_applies(config.applied_jobs_path)
         console.print("[bold]Retrying skipped jobs with new answers…[/bold]")
         try:
@@ -476,7 +510,9 @@ async def _finish_pending_questions(
 
 
 @main.command("review")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 @click.option("--no-prompt", is_flag=True, help="Only collect jobs to JSON; skip interactive approve/reject.")
 @click.option("--re-enrich", is_flag=True, help="Re-scrape job page to refresh JD and cover letters for pending items.")
@@ -487,7 +523,9 @@ def review_cmd(config_path: Path, platform: str, no_prompt: bool, re_enrich: boo
 
 
 @main.command("apply-reviewed")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 @click.option("--verbose", is_flag=True)
 def apply_reviewed_cmd(config_path: Path, platform: str, verbose: bool) -> None:
@@ -496,7 +534,9 @@ def apply_reviewed_cmd(config_path: Path, platform: str, verbose: bool) -> None:
 
 
 @main.command("review-status")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 def review_status_cmd(config_path: Path, platform: str) -> None:
     """Show pending / approved / rejected counts per platform."""
@@ -553,10 +593,7 @@ async def _apply_reviewed(config: AppConfig, platform: str) -> None:
                 keywords=config.profile.skip_role_keywords,
                 jd=item.jd_excerpt,
             )[0]
-            and (
-                not config.application.one_job_per_company
-                or company_key(item.company) not in applied_companies
-            )
+            and (not config.application.one_job_per_company or company_key(item.company) not in applied_companies)
         ]
         if config.application.skip_ineligible_salary:
             from .salary import is_job_salary_eligible
@@ -575,8 +612,7 @@ async def _apply_reviewed(config: AppConfig, platform: str) -> None:
                         f"INR < {config.application.min_inr_salary_lpa:g}L",
                     )
                     console.print(
-                        f"[yellow]Skipping salary-ineligible: {job.title} @ {job.company} "
-                        f"({reason})[/yellow]"
+                        f"[yellow]Skipping salary-ineligible: {job.title} @ {job.company} ({reason})[/yellow]"
                     )
             pending = kept
         if not pending:
@@ -587,8 +623,7 @@ async def _apply_reviewed(config: AppConfig, platform: str) -> None:
         for job, winner, reason in skipped:
             if job.job_id != winner.job_id:
                 console.print(
-                    f"[dim]Skipping duplicate @ {job.company}: {job.title} "
-                    f"(selected: {winner.title} — {reason})[/dim]"
+                    f"[dim]Skipping duplicate @ {job.company}: {job.title} (selected: {winner.title} — {reason})[/dim]"
                 )
 
         limit = apply_cap(config.application.jobs_per_platform)
@@ -627,21 +662,14 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
             keywords=config.profile.skip_role_keywords,
         )
         if rejected_roles:
-            save_review_queue(
-                config.base_dir, name, build_review_payload(name, items), review_dir
-            )
-            console.print(
-                f"[yellow]{name}: auto-rejected {rejected_roles} frontend/skipped roles.[/yellow]"
-            )
+            save_review_queue(config.base_dir, name, build_review_payload(name, items), review_dir)
+            console.print(f"[yellow]{name}: auto-rejected {rejected_roles} frontend/skipped roles.[/yellow]")
 
         if re_enrich:
             to_fix = [item for item in items if item.status == "pending" and needs_re_enrich(item)]
             if to_fix:
                 workers = config.application.enrich_workers
-                console.print(
-                    f"[bold]{name}:[/bold] re-enriching {len(to_fix)} items "
-                    f"({workers} parallel tabs)..."
-                )
+                console.print(f"[bold]{name}:[/bold] re-enriching {len(to_fix)} items ({workers} parallel tabs)...")
                 async with _platform_session(name, config) as (_, context, page):
                     jobs = [item.to_job_listing() for item in to_fix]
                     enriched = await enrich_jobs_parallel(context, config, jobs, workers=workers)
@@ -649,20 +677,14 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
                         enriched_item.status = item.status
                         by_key[item.job_key] = enriched_item
                 items = list(by_key.values())
-                save_review_queue(
-                    config.base_dir, name, build_review_payload(name, items), review_dir
-                )
+                save_review_queue(config.base_dir, name, build_review_payload(name, items), review_dir)
                 console.print(f"[green]{name}: refreshed JD and cover letters.[/green]")
             else:
                 pending = [item for item in items if item.status == "pending" and item.jd_excerpt]
                 if pending:
-                    console.print(
-                        f"[bold]{name}:[/bold] refreshing {len(pending)} cover letters..."
-                    )
+                    console.print(f"[bold]{name}:[/bold] refreshing {len(pending)} cover letters...")
                     count = await refresh_cover_letters(config, pending)
-                    save_review_queue(
-                        config.base_dir, name, build_review_payload(name, items), review_dir
-                    )
+                    save_review_queue(config.base_dir, name, build_review_payload(name, items), review_dir)
                     console.print(f"[green]{name}: regenerated {count} cover letters.[/green]")
                 else:
                     console.print(f"[cyan]{name}: no pending items need re-enrich.[/cyan]")
@@ -671,10 +693,7 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
         existing_keys = {item.job_key for item in items}
         applied_ids = load_applied_jobs(config.applied_jobs_path)
 
-        if unlimited_review:
-            need = None
-        else:
-            need = max(0, target - sum(1 for item in items if item.status == "pending"))
+        need = None if unlimited_review else max(0, target - sum(1 for item in items if item.status == "pending"))
         if need == 0:
             console.print(f"[cyan]{name}: review queue already has {len(items)} items (target {target}).[/cyan]")
         else:
@@ -716,12 +735,8 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
                         break
 
                 workers = config.application.enrich_workers
-                console.print(
-                    f"  Enriching {len(candidates)} jobs ({workers} parallel tabs)..."
-                )
-                enriched_items = await enrich_jobs_parallel(
-                    context, config, candidates, workers=workers
-                )
+                console.print(f"  Enriching {len(candidates)} jobs ({workers} parallel tabs)...")
+                enriched_items = await enrich_jobs_parallel(context, config, candidates, workers=workers)
 
                 new_items: list[ReviewItem] = []
                 for item in enriched_items:
@@ -732,13 +747,9 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
                         keywords=config.profile.skip_role_keywords,
                         jd=item.jd_excerpt,
                     )[0]:
-                        console.print(
-                            f"  Skip frontend/skipped role: {item.title} @ {item.company}"
-                        )
+                        console.print(f"  Skip frontend/skipped role: {item.title} @ {item.company}")
                         continue
-                    if config.application.skip_ineligible_salary and not item.meta.get(
-                        "salary_eligible", True
-                    ):
+                    if config.application.skip_ineligible_salary and not item.meta.get("salary_eligible", True):
                         console.print(
                             f"  Skip salary-ineligible: {item.title} @ {item.company} "
                             f"— {item.meta.get('salary_reason', '')}"
@@ -998,18 +1009,14 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
 
         if config.application.pipeline_apply:
             workers = config.application.apply_workers
-            console.print(
-                f"[bold]Pipeline mode: {workers} workers scroll feed and apply in parallel[/bold]"
-            )
+            console.print(f"[bold]Pipeline mode: {workers} workers scroll feed and apply in parallel[/bold]")
             if config.application.dry_run:
                 console.print("[cyan]Dry run — Wellfound submissions disabled.[/cyan]")
             return await run_wellfound_pipeline(page, context, config, applied_ids)
 
         raw_jobs = filter_skipped_roles(
             filter_skipped_companies(
-                await wellfound_collect_jobs(
-                    page, scrape_limit(config.application.max_jobs_per_run, multiplier=1)
-                ),
+                await wellfound_collect_jobs(page, scrape_limit(config.application.max_jobs_per_run, multiplier=1)),
                 config.profile.skip_companies,
             ),
             skip_frontend=config.profile.skip_frontend_roles,
@@ -1061,9 +1068,7 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
             pending.append(item.to_job_listing())
 
         if skipped_role or skipped_salary:
-            console.print(
-                f"[dim]Filtered: {skipped_role} role, {skipped_salary} salary[/dim]"
-            )
+            console.print(f"[dim]Filtered: {skipped_role} role, {skipped_salary} salary[/dim]")
 
         if not pending:
             console.print("[yellow]No eligible Wellfound jobs after filters.[/yellow]")
@@ -1074,13 +1079,10 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
         for job, winner, reason in skipped:
             if job.job_id != winner.job_id:
                 console.print(
-                    f"[dim]Skipping duplicate @ {job.company}: {job.title} "
-                    f"(selected: {winner.title} — {reason})[/dim]"
+                    f"[dim]Skipping duplicate @ {job.company}: {job.title} (selected: {winner.title} — {reason})[/dim]"
                 )
         if before_dedup != len(pending):
-            console.print(
-                f"[dim]One job per company: {before_dedup} → {len(pending)} openings[/dim]"
-            )
+            console.print(f"[dim]One job per company: {before_dedup} → {len(pending)} openings[/dim]")
 
         cap = apply_cap(config.application.jobs_per_platform)
         if cap is None:
@@ -1121,15 +1123,10 @@ async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
         last_batch_with_jobs = 0
         session_seen: set[str] = set()
         for batch_num in range(1, max_batches + 1):
-            console.print(
-                f"\n[bold cyan]Naukri scroll batch {batch_num}/{max_batches} — collect & apply[/bold cyan]"
-            )
-            if batch_num > 1:
-                if not await scroll_naukri_srp_more(page):
-                    console.print(
-                        "[dim]Naukri: no new listings after scroll — stopping[/dim]"
-                    )
-                    break
+            console.print(f"\n[bold cyan]Naukri scroll batch {batch_num}/{max_batches} — collect & apply[/bold cyan]")
+            if batch_num > 1 and not await scroll_naukri_srp_more(page):
+                console.print("[dim]Naukri: no new listings after scroll — stopping[/dim]")
+                break
             jobs = await collect_naukri_srp_batch(
                 page,
                 per_batch_limit,
@@ -1143,9 +1140,7 @@ async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
                 session_seen.add(job.job_id)
             if not jobs:
                 if batch_num > 1:
-                    console.print(
-                        f"[dim]Naukri: no new jobs in batch {batch_num} — stopping[/dim]"
-                    )
+                    console.print(f"[dim]Naukri: no new jobs in batch {batch_num} — stopping[/dim]")
                 break
             last_batch_with_jobs = batch_num
             n = await _apply_list(
@@ -1195,24 +1190,18 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
                 session_seen.add(job.job_id)
             if not new_jobs:
                 if page_num > 1:
-                    console.print(
-                        f"[dim]Hirist: no new jobs on page {page_num} — next feed/page[/dim]"
-                    )
+                    console.print(f"[dim]Hirist: no new jobs on page {page_num} — next feed/page[/dim]")
                 continue
             all_jobs.extend(new_jobs)
             console.print(
-                f"[dim]Hirist: collected {len(new_jobs)} new on page {page_num} "
-                f"({len(all_jobs)} total)[/dim]"
+                f"[dim]Hirist: collected {len(new_jobs)} new on page {page_num} ({len(all_jobs)} total)[/dim]"
             )
 
         if not all_jobs:
             console.print("[yellow]No Hirist listings collected.[/yellow]")
             return 0
 
-        console.print(
-            f"[cyan]Hirist: collected {len(all_jobs)} unique listing(s) — "
-            "applying in one batch[/cyan]"
-        )
+        console.print(f"[cyan]Hirist: collected {len(all_jobs)} unique listing(s) — applying in one batch[/cyan]")
         return await _apply_list(
             "Hirist",
             all_jobs,
@@ -1257,9 +1246,7 @@ async def _apply_list(title, jobs, applied_ids, config, apply_fn, page, context)
     return await apply_fn(page, context, pending, config)
 
 
-def _pending_jobs(
-    jobs: list[JobListing], applied_ids: set[str], limit: int, config: AppConfig
-) -> list[JobListing]:
+def _pending_jobs(jobs: list[JobListing], applied_ids: set[str], limit: int, config: AppConfig) -> list[JobListing]:
     return filter_pending_jobs(jobs, applied_ids, limit, config)
 
 
@@ -1289,7 +1276,9 @@ def chrome_profiles_cmd() -> None:
 
 
 @main.command("login")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 def login_cmd(config_path: Path, platform: str) -> None:
     """Sign in once (Google/passkey) and save session."""
@@ -1317,7 +1306,9 @@ async def _login(config_path: Path, platform: str) -> None:
 
 
 @main.command("verify")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--platform", type=click.Choice(PLATFORM_CHOICES), default="all")
 def verify_cmd(config_path: Path, platform: str) -> None:
     asyncio.run(_login(config_path, platform))
@@ -1333,7 +1324,9 @@ def export_cookies_help(platform: str) -> None:
 
 
 @main.command("answer-questions")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--review", is_flag=True, help="Fix bad auto-generated saved answers.")
 @click.option("--all", "review_all", is_flag=True, help="Review/edit all saved answers.")
 @click.option("--suggest", is_flag=True, help="Ask LLM for a suggested answer before each prompt (slower).")
@@ -1342,9 +1335,7 @@ def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, sugg
     """Answer pending questions or review saved answers in user_memory.json."""
     config = load_config(config_path)
     if review or review_all:
-        review_saved_answers_interactive(
-            config.base_dir, all_answers=review_all, config=config
-        )
+        review_saved_answers_interactive(config.base_dir, all_answers=review_all, config=config)
     else:
         answered, jobs_to_retry = answer_pending_groups_interactive(
             config.base_dir,
@@ -1363,7 +1354,9 @@ def answer_questions_cmd(config_path: Path, review: bool, review_all: bool, sugg
 
 
 @main.command("whatsapp-login")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 def whatsapp_login_cmd(config_path: Path) -> None:
     """Link WhatsApp Web once by scanning the QR code (session is then reused)."""
     config = load_config(config_path)
@@ -1390,7 +1383,9 @@ def whatsapp_login_cmd(config_path: Path) -> None:
 
 
 @main.command("whatsapp-answer")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--no-retry", is_flag=True, help="Save answers only; do not re-apply to skipped jobs.")
 @click.option("--test", "test_send", is_flag=True, help="Send a single test message to verify the WhatsApp link works.")
 def whatsapp_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> None:
@@ -1405,15 +1400,13 @@ def whatsapp_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> N
 
         async def _test() -> None:
             console.print(
-                f"[bold]Sending a test question to {config.whatsapp.phone} and waiting "
-                f"for your reply…[/bold]"
+                f"[bold]Sending a test question to {config.whatsapp.phone} and waiting for your reply…[/bold]"
             )
             console.print("[dim]Reply to the WhatsApp message; this keeps the window open until you do.[/dim]")
             try:
                 async with whatsapp_client(config) as client:
                     reply = await client.ask(
-                        "🧪 Test from jobs-auto-apply — reply to this message to confirm "
-                        "the app can read your replies."
+                        "🧪 Test from jobs-auto-apply — reply to this message to confirm the app can read your replies."
                     )
                 if reply is None:
                     console.print("[yellow]No reply detected before the timeout.[/yellow]")
@@ -1442,12 +1435,25 @@ def whatsapp_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> N
     asyncio.run(_run())
 
 
+def _format_apply_result(applied: int, total: int, titles: str) -> str:
+    """Build a clear per-batch outcome message for the messenger result."""
+    if applied >= total and total > 0:
+        return f"✅ Applied to {applied}/{total} job(s): {titles}"
+    if applied == 0:
+        return (
+            f"❌ Couldn't apply to {total} job(s): {titles}. "
+            "It may already be applied, need more answers, or be on a platform "
+            "without retry support. I'll try again next cycle."
+        )
+    return f"⚠️ Applied to {applied}/{total} job(s): {titles}. The rest couldn't complete this time."
+
+
 async def _messenger_listen(
     config: AppConfig,
     *,
     channel: str | None = None,
-    apply_lock: "asyncio.Lock | None" = None,
-    stop_event: "asyncio.Event | None" = None,
+    apply_lock: asyncio.Lock | None = None,
+    stop_event: asyncio.Event | None = None,
 ) -> None:
     """Keep one messaging session open, asking pending questions and applying replies.
 
@@ -1473,23 +1479,18 @@ async def _messenger_listen(
     idle = max(5, msg_cfg.listen_idle_seconds)
 
     async with _messenger_client_cm(config, channel) as client:
-        try:
+        with contextlib.suppress(Exception):
             await client.send(
                 "👋 jobs-auto-apply listener is on. I'll send questions here as they "
                 "come up; reply to answer and I'll apply automatically."
             )
-        except Exception:
-            pass
         console.print(f"[green]{label} listener running. Press Ctrl+C to stop.[/green]")
         while True:
             if stop_event is not None and stop_event.is_set():
                 break
             try:
                 if not await client.is_logged_in():
-                    console.print(
-                        f"[red]{label} session ended — re-link with: "
-                        f"python main.py {relink_cmd}[/red]"
-                    )
+                    console.print(f"[red]{label} session ended — re-link with: python main.py {relink_cmd}[/red]")
                     break
                 answered, jobs = await answer_pending_groups_via_messenger(
                     config.base_dir,
@@ -1498,32 +1499,27 @@ async def _messenger_listen(
                     send_heads_up=False,
                     per_question_timeout=per_question_timeout,
                 )
-                if (
-                    answered
-                    and jobs
-                    and config.llm.retry_pending_jobs
-                    and not config.application.dry_run
-                ):
+                if answered and jobs and config.llm.retry_pending_jobs and not config.application.dry_run:
                     clear_deferred_applies(config.applied_jobs_path)
-                    try:
-                        await client.send(f"Applying {len(jobs)} job(s) with your answer(s)…")
-                    except Exception:
-                        pass
+                    total = len(jobs)
+                    titles = ", ".join(
+                        (ref.title or ref.url) + (f" @ {ref.company}" if ref.company else "") for ref in jobs
+                    )
+                    with contextlib.suppress(Exception):
+                        await client.send(f"⏳ Applying to {total} job(s) with your answer(s): {titles}")
                     try:
                         if apply_lock is not None:
                             async with apply_lock:
                                 retried = await retry_pending_jobs(config, jobs)
                         else:
                             retried = await retry_pending_jobs(config, jobs)
-                        await client.send(f"✅ Applied to {retried} job(s).")
+                        await client.send(_format_apply_result(retried, total, titles))
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
                         logger.exception("Listener retry failed: %s", exc)
-                        try:
-                            await client.send(f"⚠️ Could not re-apply: {exc}")
-                        except Exception:
-                            pass
+                        with contextlib.suppress(Exception):
+                            await client.send(f"⚠️ Could not apply ({titles}): {exc}")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -1532,7 +1528,9 @@ async def _messenger_listen(
 
 
 @main.command("whatsapp-listen")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 def whatsapp_listen_cmd(config_path: Path) -> None:
     """Stay running: send pending questions to WhatsApp and apply as replies arrive.
 
@@ -1551,7 +1549,9 @@ def whatsapp_listen_cmd(config_path: Path) -> None:
 
 
 @main.command("telegram-login")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 def telegram_login_cmd(config_path: Path) -> None:
     """Verify the bot token and capture your chat_id (send /start to the bot)."""
     config = load_config(config_path)
@@ -1570,13 +1570,9 @@ def telegram_login_cmd(config_path: Path) -> None:
             return
         username = await client.bot_username()
         if client.chat_id:
-            console.print(
-                f"[green]Telegram ready.[/green] Bot @{username}, chat_id={client.chat_id}."
-            )
-            try:
+            console.print(f"[green]Telegram ready.[/green] Bot @{username}, chat_id={client.chat_id}.")
+            with contextlib.suppress(Exception):
                 await client.send("✅ jobs-auto-apply is linked to this chat.")
-            except Exception:
-                pass
             return
         console.print(
             f"[bold]Open Telegram, find your bot @{username}, and send it /start "
@@ -1585,13 +1581,10 @@ def telegram_login_cmd(config_path: Path) -> None:
         chat_id = await client.capture_chat_id(timeout=120)
         if chat_id:
             console.print(
-                f"[green]Captured chat_id={chat_id}.[/green] Saved to "
-                f"{config.telegram_chat_path.name}; you're all set."
+                f"[green]Captured chat_id={chat_id}.[/green] Saved to {config.telegram_chat_path.name}; you're all set."
             )
-            try:
+            with contextlib.suppress(Exception):
                 await client.send("✅ jobs-auto-apply is linked to this chat.")
-            except Exception:
-                pass
         else:
             console.print("[red]No message received. Re-run and send /start to the bot.[/red]")
 
@@ -1599,7 +1592,9 @@ def telegram_login_cmd(config_path: Path) -> None:
 
 
 @main.command("telegram-answer")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 @click.option("--no-retry", is_flag=True, help="Save answers only; do not re-apply to skipped jobs.")
 @click.option("--test", "test_send", is_flag=True, help="Send a test message and wait for your reply.")
 def telegram_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> None:
@@ -1647,7 +1642,9 @@ def telegram_answer_cmd(config_path: Path, no_retry: bool, test_send: bool) -> N
 
 
 @main.command("telegram-listen")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 def telegram_listen_cmd(config_path: Path) -> None:
     """Stay running: send pending questions to Telegram and apply as replies arrive.
 
@@ -1667,7 +1664,9 @@ def telegram_listen_cmd(config_path: Path) -> None:
 
 
 @main.command("memory")
-@click.option("--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
 def memory_cmd(config_path: Path) -> None:
     """Show saved review decisions, preferences, and question answers."""
     config = load_config(config_path)

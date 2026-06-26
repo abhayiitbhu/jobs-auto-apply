@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
 import re
@@ -12,8 +11,7 @@ from ..apply_runner import ApplyBatchStopped
 logger = logging.getLogger("job_apply")
 
 RESTRICTED_TEXT = re.compile(
-    r"access is temporarily restricted|temporarily restricted|"
-    r"unusual traffic|verify you are human|access denied",
+    r"access is temporarily restricted|temporarily restricted|" r"unusual traffic|verify you are human|access denied",
     re.I,
 )
 
@@ -33,7 +31,7 @@ APPLY_SUCCESS_TEXT = re.compile(
 )
 
 
-class WellfoundAccessRestricted(Exception):
+class WellfoundAccessRestrictedError(Exception):
     """Wellfound / DataDome blocked this session."""
 
 
@@ -87,9 +85,7 @@ async def wellfound_apply_succeeded(page: Page) -> bool:
         body = await page.locator("body").inner_text(timeout=3000)
         if APPLY_SUCCESS_TEXT.search(body):
             return True
-        applied = page.locator("button, a").filter(
-            has_text=re.compile(r"^applied$", re.I)
-        )
+        applied = page.locator("button, a").filter(has_text=re.compile(r"^applied$", re.I))
         if await applied.count() > 0:
             try:
                 return await applied.first.is_visible()
@@ -130,9 +126,9 @@ async def resolve_post_submit(page: Page) -> str:
 
 async def assert_not_restricted(page: Page) -> None:
     if await is_access_restricted(page):
-        raise WellfoundAccessRestricted(
+        raise WellfoundAccessRestrictedError(
             "Wellfound shows 'Access is temporarily restricted' — "
-            "stop the run, wait 30–60 minutes, then retry with fewer workers and delays."
+            "stop the run, wait 30-60 minutes, then retry with fewer workers and delays."
         )
 
 

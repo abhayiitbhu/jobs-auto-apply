@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+from dataclasses_jsonschema import JsonSchemaMixin
 
 # Skills/domains the candidate has no experience in — titles centered on these
 # (and not also naming a known skill) are skipped before apply. Override via
@@ -54,7 +54,7 @@ DEFAULT_NO_EXPERIENCE_SKILLS: tuple[str, ...] = (
 
 
 @dataclass
-class UserConfig:
+class UserConfig(JsonSchemaMixin):
     name: str
     email: str
     phone: str
@@ -64,7 +64,7 @@ class UserConfig:
 
 
 @dataclass
-class CompensationConfig:
+class CompensationConfig(JsonSchemaMixin):
     current_ctc_lpa: float = 38.0
     current_fixed_lpa: float = 30.0
     current_variable_lpa: float = 2.0
@@ -73,7 +73,7 @@ class CompensationConfig:
 
 
 @dataclass
-class ProfileConfig:
+class ProfileConfig(JsonSchemaMixin):
     headline: str = "Senior Backend / Platform Engineer"
     years_experience: int = 5
     core_skills: list[str] = field(default_factory=list)
@@ -87,13 +87,11 @@ class ProfileConfig:
     # about one of these AND does not also name a skill you do have (core_skills /
     # skill_years > 0) — i.e. "Salesforce Developer" is skipped, "Java Developer
     # (Salesforce integration)" is kept.
-    skip_no_experience_skills: list[str] = field(
-        default_factory=lambda: list(DEFAULT_NO_EXPERIENCE_SKILLS)
-    )
+    skip_no_experience_skills: list[str] = field(default_factory=lambda: list(DEFAULT_NO_EXPERIENCE_SKILLS))
 
 
 @dataclass
-class CoverLetterConfig:
+class CoverLetterConfig(JsonSchemaMixin):
     mode: str = "dynamic"  # dynamic | template
     include_ctc: bool = True
     max_words: int = 400
@@ -101,7 +99,7 @@ class CoverLetterConfig:
 
 
 @dataclass
-class ResumeConfig:
+class ResumeConfig(JsonSchemaMixin):
     path: str
     sync_to_wellfound: bool = False
     sync_to_naukri: bool = True
@@ -109,7 +107,7 @@ class ResumeConfig:
 
 
 @dataclass
-class WellfoundFiltersConfig:
+class WellfoundFiltersConfig(JsonSchemaMixin):
     use_profile_filters: bool = True
     roles: list[str] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
@@ -126,7 +124,7 @@ class WellfoundFiltersConfig:
 
 
 @dataclass
-class UplersFiltersConfig:
+class UplersFiltersConfig(JsonSchemaMixin):
     keywords: str = ""
     skills: list[str] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
@@ -136,7 +134,7 @@ class UplersFiltersConfig:
 
 
 @dataclass
-class NaukriFiltersConfig:
+class NaukriFiltersConfig(JsonSchemaMixin):
     keywords: str = "backend developer"
     locations: list[str] = field(default_factory=list)  # empty = India-wide (no city in URL)
     experience_min: int | None = 3
@@ -150,7 +148,7 @@ class NaukriFiltersConfig:
 
 
 @dataclass
-class HiristFiltersConfig:
+class HiristFiltersConfig(JsonSchemaMixin):
     search_urls: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=lambda: ["python", "backend"])
     cities: list[str] = field(default_factory=list)  # empty = all India
@@ -161,7 +159,7 @@ class HiristFiltersConfig:
 
 
 @dataclass
-class InstahyreFiltersConfig:
+class InstahyreFiltersConfig(JsonSchemaMixin):
     search_urls: list[str] = field(default_factory=list)
     feeds: list[dict[str, Any]] = field(default_factory=list)
     job_functions: list[str] = field(
@@ -177,7 +175,7 @@ class InstahyreFiltersConfig:
 
 
 @dataclass
-class PlatformConfig:
+class PlatformConfig(JsonSchemaMixin):
     enabled: bool
     cookies_file: str
     filters: (
@@ -190,7 +188,7 @@ class PlatformConfig:
 
 
 @dataclass
-class LLMConfig:
+class LLMConfig(JsonSchemaMixin):
     enabled: bool = False
     base_url: str = "http://127.0.0.1:11434"
     model: str = "job-answers"
@@ -235,7 +233,7 @@ class LLMConfig:
 
 
 @dataclass
-class PlatformDelaysConfig:
+class PlatformDelaysConfig(JsonSchemaMixin):
     """Fixed UI waits per platform (ms). Lower = faster; raise if clicks miss."""
 
     instahyre_ms: int = 200
@@ -246,7 +244,7 @@ class PlatformDelaysConfig:
 
 
 @dataclass
-class ApplicationConfig:
+class ApplicationConfig(JsonSchemaMixin):
     jobs_per_platform: int = 0
     max_jobs_per_run: int = 0
     require_review: bool = False
@@ -276,7 +274,7 @@ class ApplicationConfig:
 
 
 @dataclass
-class BrowserConfig:
+class BrowserConfig(JsonSchemaMixin):
     headless: bool = False
     slow_mo_ms: int = 100
     # Reuse your installed Chrome profile (already signed into Google / Wellfound / Uplers)
@@ -287,7 +285,7 @@ class BrowserConfig:
 
 
 @dataclass
-class AuthConfig:
+class AuthConfig(JsonSchemaMixin):
     # browser = sign in with Google once in a real browser (passkey/2FA works); session is saved
     # cookies = legacy manual cookie export
     method: str = "browser"
@@ -296,7 +294,7 @@ class AuthConfig:
 
 
 @dataclass
-class WhatsAppConfig:
+class WhatsAppConfig(JsonSchemaMixin):
     """Send pending questions to WhatsApp Web and read your replies.
 
     Uses an unofficial Playwright-driven WhatsApp Web session (no server/tunnel).
@@ -323,7 +321,7 @@ class WhatsAppConfig:
 
 
 @dataclass
-class TelegramConfig:
+class TelegramConfig(JsonSchemaMixin):
     """Send pending questions to a Telegram bot and read your replies.
 
     Official, free Bot API via long polling — no server, webhook, or tunnel, and
@@ -345,7 +343,7 @@ class TelegramConfig:
 
 
 @dataclass
-class PathsConfig:
+class PathsConfig(JsonSchemaMixin):
     application_facts: str = "profile/application_facts.yaml"
     user_memory: str = "data/user_memory.json"
     pending_questions: str = "data/pending_questions.json"
@@ -353,7 +351,7 @@ class PathsConfig:
 
 
 @dataclass
-class AnswersPolicyConfig:
+class AnswersPolicyConfig(JsonSchemaMixin):
     notice_join_threshold_days: int = 15
     default_year_chip_options: list[str] = field(
         default_factory=lambda: [
@@ -366,13 +364,13 @@ class AnswersPolicyConfig:
 
 
 @dataclass
-class StateConfig:
+class StateConfig(JsonSchemaMixin):
     applied_jobs_file: str = "data/applied_jobs.json"
     log_file: str = "data/run.log"
 
 
 @dataclass
-class WorkdayAddressConfig:
+class WorkdayAddressConfig(JsonSchemaMixin):
     line1: str = ""
     city: str = "Bengaluru"
     state: str = "Karnataka"
@@ -381,7 +379,7 @@ class WorkdayAddressConfig:
 
 
 @dataclass
-class WorkdayConfig:
+class WorkdayConfig(JsonSchemaMixin):
     password: str = ""  # used for sign-in / create-account on Workday career sites
     how_did_you_hear: str = "LinkedIn"
     skip_voluntary_disclosures: bool = True
@@ -390,7 +388,7 @@ class WorkdayConfig:
 
 
 @dataclass
-class AppConfig:
+class AppConfig(JsonSchemaMixin):
     user: UserConfig
     resume: ResumeConfig
     profile: ProfileConfig
@@ -412,7 +410,10 @@ class AppConfig:
     state: StateConfig
     paths: PathsConfig
     answers: AnswersPolicyConfig
-    base_dir: Path
+
+    def __post_init__(self) -> None:
+        # base_dir is not part of the YAML config, it's derived from the config file path
+        self.base_dir: Path = Path.cwd()
 
     @property
     def resume_path(self) -> Path:
@@ -649,9 +650,7 @@ def _profile_config(data: dict[str, Any]) -> ProfileConfig:
         skip_frontend_roles=bool(data.get("skip_frontend_roles", True)),
         skip_qa_test_roles=bool(data.get("skip_qa_test_roles", True)),
         skip_role_keywords=list(data.get("skip_role_keywords", [])),
-        skip_no_experience_skills=list(
-            data.get("skip_no_experience_skills", DEFAULT_NO_EXPERIENCE_SKILLS)
-        ),
+        skip_no_experience_skills=list(data.get("skip_no_experience_skills", DEFAULT_NO_EXPERIENCE_SKILLS)),
     )
 
 
@@ -709,14 +708,10 @@ def _llm_config(data: dict[str, Any]) -> LLMConfig:
         min_confidence=float(data.get("min_confidence", 0.92)),
         min_confidence_rag_agree=float(data.get("min_confidence_rag_agree", 0.88)),
         vector_agree_score=float(data.get("vector_agree_score", 0.80)),
-        min_confidence_new_experience=float(
-            data.get("min_confidence_new_experience", 0.96)
-        ),
+        min_confidence_new_experience=float(data.get("min_confidence_new_experience", 0.96)),
         min_confidence_persist=float(data.get("min_confidence_persist", 0.98)),
         plain_text_confidence=float(data.get("plain_text_confidence", 0.35)),
-        uncorroborated_confidence_cap=float(
-            data.get("uncorroborated_confidence_cap", 0.6)
-        ),
+        uncorroborated_confidence_cap=float(data.get("uncorroborated_confidence_cap", 0.6)),
         rag_agree_input_types=list(
             data.get(
                 "rag_agree_input_types",
@@ -734,9 +729,7 @@ def _llm_config(data: dict[str, Any]) -> LLMConfig:
         use_faiss_memory=bool(data.get("use_faiss_memory", True)),
         rag_top_k=int(data.get("rag_top_k", 3)),
         vector_auto_answer_score=float(data.get("vector_auto_answer_score", 0.92)),
-        embeddings_model=str(
-            data.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")
-        ),
+        embeddings_model=str(data.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")),
         faiss_index_dir=str(data.get("faiss_index_dir", "data/faiss")),
     )
 
@@ -794,21 +787,13 @@ def load_config(path: Path) -> AppConfig:
     paths_raw = _section(raw, "paths")
     answers_raw = _section(raw, "answers")
     paths = PathsConfig(
-        application_facts=str(
-            paths_raw.get("application_facts", "profile/application_facts.yaml")
-        ),
+        application_facts=str(paths_raw.get("application_facts", "profile/application_facts.yaml")),
         user_memory=str(paths_raw.get("user_memory", "data/user_memory.json")),
-        pending_questions=str(
-            paths_raw.get("pending_questions", "data/pending_questions.json")
-        ),
-        naukri_resume_sync=str(
-            paths_raw.get("naukri_resume_sync", "data/naukri_resume_sync.json")
-        ),
+        pending_questions=str(paths_raw.get("pending_questions", "data/pending_questions.json")),
+        naukri_resume_sync=str(paths_raw.get("naukri_resume_sync", "data/naukri_resume_sync.json")),
     )
     answers_policy = AnswersPolicyConfig(
-        notice_join_threshold_days=int(
-            answers_raw.get("notice_join_threshold_days", 15)
-        ),
+        notice_join_threshold_days=int(answers_raw.get("notice_join_threshold_days", 15)),
         default_year_chip_options=list(
             answers_raw.get(
                 "default_year_chip_options",
@@ -825,18 +810,34 @@ def load_config(path: Path) -> AppConfig:
             cookies_file=legacy_cookies,
             filters=_wellfound_filters(_section(raw, "filters")),
         )
-        uplers = _platform_config(raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters, enabled_default=False)
-        naukri = _platform_config(raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters, enabled_default=False)
-        hirist = _platform_config(raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters, enabled_default=False)
-        instahyre = _platform_config(raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters, enabled_default=False)
+        uplers = _platform_config(
+            raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters, enabled_default=False
+        )
+        naukri = _platform_config(
+            raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters, enabled_default=False
+        )
+        hirist = _platform_config(
+            raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters, enabled_default=False
+        )
+        instahyre = _platform_config(
+            raw,
+            "instahyre",
+            default_cookies="cookies.instahyre.json",
+            filter_fn=_instahyre_filters,
+            enabled_default=False,
+        )
     else:
-        wellfound = _platform_config(raw, "wellfound", default_cookies="cookies.wellfound.json", filter_fn=_wellfound_filters)
+        wellfound = _platform_config(
+            raw, "wellfound", default_cookies="cookies.wellfound.json", filter_fn=_wellfound_filters
+        )
         uplers = _platform_config(raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters)
         naukri = _platform_config(raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters)
         hirist = _platform_config(raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters)
-        instahyre = _platform_config(raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters)
+        instahyre = _platform_config(
+            raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters
+        )
 
-    return AppConfig(
+    config = AppConfig(
         user=UserConfig(
             name=str(user.get("name", "Abhay Jain")),
             email=str(user.get("email", "")),
@@ -849,9 +850,7 @@ def load_config(path: Path) -> AppConfig:
             path=str(resume.get("path", "resume.pdf")),
             sync_to_wellfound=bool(resume.get("sync_to_wellfound", False)),
             sync_to_naukri=bool(resume.get("sync_to_naukri", True)),
-            naukri_sync_interval_minutes=int(
-                resume.get("naukri_sync_interval_minutes", 30)
-            ),
+            naukri_sync_interval_minutes=int(resume.get("naukri_sync_interval_minutes", 30)),
         ),
         profile=profile,
         compensation=compensation,
@@ -913,5 +912,7 @@ def load_config(path: Path) -> AppConfig:
         ),
         paths=paths,
         answers=answers_policy,
-        base_dir=base_dir,
     )
+    # Set base_dir explicitly
+    config.base_dir = base_dir
+    return config

@@ -31,9 +31,7 @@ def _is_location_value_question(label: str) -> bool:
     return False
 
 
-def _location_like_answer_fits(
-    label: str, answer: str, field: dict[str, Any] | None = None
-) -> bool:
+def _location_like_answer_fits(label: str, answer: str, field: dict[str, Any] | None = None) -> bool:
     """Reject years counts, Yes/No, and employer prose on city/location fields."""
     text = answer.strip()
     if not text:
@@ -50,11 +48,7 @@ def _location_like_answer_fits(
         return bool(re.match(r"^(yes|no)\b", lower)) or lower in ("yes", "no")
     if re.match(r"^(yes|no)\b", lower):
         if field:
-            options = [
-                str(o).strip().lower()
-                for o in field.get("options", [])
-                if str(o).strip()
-            ]
+            options = [str(o).strip().lower() for o in field.get("options", []) if str(o).strip()]
             if lower in options:
                 return True
         return False

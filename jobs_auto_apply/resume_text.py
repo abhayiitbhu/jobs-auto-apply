@@ -45,12 +45,7 @@ def load_resume_text(config: AppConfig, *, force_refresh: bool = False) -> str:
     pdf_path = config.resume_path
     cache = _cache_path(config.base_dir)
 
-    if (
-        not force_refresh
-        and cache.exists()
-        and pdf_path.exists()
-        and cache.stat().st_mtime >= pdf_path.stat().st_mtime
-    ):
+    if not force_refresh and cache.exists() and pdf_path.exists() and cache.stat().st_mtime >= pdf_path.stat().st_mtime:
         return cache.read_text(encoding="utf-8").strip()
 
     text = _extract_pdf_text(pdf_path)
@@ -73,8 +68,22 @@ def _paragraphs(text: str) -> list[str]:
 
 def _tokens(text: str) -> set[str]:
     stop = {
-        "the", "and", "for", "with", "from", "that", "this", "your", "have", "years",
-        "experience", "using", "worked", "role", "team", "project",
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "your",
+        "have",
+        "years",
+        "experience",
+        "using",
+        "worked",
+        "role",
+        "team",
+        "project",
     }
     return {w for w in re.findall(r"[a-z0-9+#./-]+", text.lower()) if len(w) > 2 and w not in stop}
 

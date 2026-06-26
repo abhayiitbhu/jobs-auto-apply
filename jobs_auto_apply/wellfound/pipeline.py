@@ -2,19 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 
 from playwright.async_api import BrowserContext, Page
 
 from ..config import AppConfig
 from ..job_selection import load_applied_companies
 from ..limits import apply_cap, scrape_limit
-from ..role_filter import filter_skipped_roles, should_skip_role
+from ..role_filter import filter_skipped_roles
 from ..salary import is_job_salary_eligible, parse_salary_ranges
 from ..utils import JobListing, company_key, filter_skipped_companies, job_key
 from .apply import process_wellfound_job
 from .guard import (
-    WellfoundAccessRestricted,
+    WellfoundAccessRestrictedError,
     WellfoundApplicationLimitReached,
     is_access_restricted,
     pause_between_jobs,
@@ -140,8 +139,8 @@ async def run_wellfound_pipeline(
                     blocked.set()
                     logger.error(
                         "Wellfound blocked this session (Access is temporarily restricted). "
-                        "Stop the run, wait 30–60 min, reduce apply_workers to 2–3, "
-                        "and set delay_seconds_min/max to 2–5."
+                        "Stop the run, wait 30-60 min, reduce apply_workers to 2-3, "
+                        "and set delay_seconds_min/max to 2-5."
                     )
                     break
                 if not await budget.can_apply():
@@ -176,7 +175,7 @@ async def run_wellfound_pipeline(
                     try:
                         if await is_access_restricted(tab):
                             blocked.set()
-                            raise WellfoundAccessRestricted("session blocked")
+                            raise WellfoundAccessRestrictedError("session blocked")
                         result = await process_wellfound_job(
                             tab,
                             context,
@@ -185,11 +184,9 @@ async def run_wellfound_pipeline(
                             company_gate=company_gate,
                             label=label,
                         )
-                    except WellfoundAccessRestricted:
+                    except WellfoundAccessRestrictedError:
                         blocked.set()
-                        logger.error(
-                            "%s Wellfound access restricted — stopping workers.", label
-                        )
+                        logger.error("%s Wellfound access restricted — stopping workers.", label)
                         break
                     except WellfoundApplicationLimitReached:
                         blocked.set()
@@ -256,8 +253,7 @@ async def run_wellfound_pipeline(
     await asyncio.gather(*worker_tasks)
 
     logger.info(
-        "Pipeline finished: %d applied, %d skipped, %d failed "
-        "(%d queued from feed, %d filtered before queue)",
+        "Pipeline finished: %d applied, %d skipped, %d failed (%d queued from feed, %d filtered before queue)",
         stats["applied"],
         stats["skipped"],
         stats["failed"],

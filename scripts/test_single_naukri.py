@@ -16,6 +16,8 @@ from pathlib import Path
 # package import below fails. Add the repo root explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import contextlib
+
 from jobs_auto_apply.browser import naukri_session
 from jobs_auto_apply.config import load_config
 from jobs_auto_apply.naukri.apply import apply_to_job
@@ -95,13 +97,11 @@ async def main() -> None:
             try:
                 result = await apply_to_job(page, context, job, config)
                 print(f"\n==== APPLY RESULT [{job.job_id}]: {result!r} ====")
-            except Exception as exc:  # noqa: BLE001 - diagnostic harness
+            except Exception as exc:
                 print(f"\n==== ERROR [{job.job_id}]: {type(exc).__name__}: {exc} ====")
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     await page.close()
-                except Exception:
-                    pass
 
 
 if __name__ == "__main__":

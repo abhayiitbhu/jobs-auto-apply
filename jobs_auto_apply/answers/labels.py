@@ -112,6 +112,4 @@ def is_plausible_application_question(label: str) -> bool:
         return True
     if _FIELD_TOPIC.search(text) and len(text) < 100:
         return True
-    if _PROFILE_FIELD_LABEL.search(text) and len(text) < 120:
-        return True
-    return False
+    return bool(_PROFILE_FIELD_LABEL.search(text) and len(text) < 120)

@@ -10,6 +10,7 @@ their button hides), reopening the feed in a fresh tab keeps the listing stable.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 
@@ -32,7 +33,7 @@ from .feeds import (
     activate_feed,
     feeds_from_config,
 )
-from .search import EMPLOYER_ROW, _EXTRACT_JS, job_id_from_card
+from .search import _EXTRACT_JS, EMPLOYER_ROW, job_id_from_card
 
 logger = logging.getLogger("job_apply")
 
@@ -274,10 +275,8 @@ async def run_instahyre_pipeline(
                     else:
                         stats["failed"] += 1
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 await tab.close()
-            except Exception:
-                pass
 
     logger.info(
         "Instahyre pipeline: %d workers — scroll feeds and apply in parallel",

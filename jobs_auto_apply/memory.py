@@ -55,9 +55,7 @@ def load_memory(base_dir: Path, config: AppConfig | None = None) -> dict[str, An
     return data
 
 
-def save_memory(
-    base_dir: Path, data: dict[str, Any], config: AppConfig | None = None
-) -> None:
+def save_memory(base_dir: Path, data: dict[str, Any], config: AppConfig | None = None) -> None:
     path = memory_path(base_dir, config)
     with _memory_lock:
         _write_memory_to_disk(path, data)

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from playwright.async_api import Page
 
@@ -157,9 +156,7 @@ def _adapt_reference_cover_letter(
     skills = _match_skills(jd, config.profile.core_skills)
     skill_phrase = ", ".join(skills[:3]) if skills else "backend systems and cloud infrastructure"
 
-    text = reference.replace("{{title}}", title).replace("{{company}}", org).replace(
-        "{{skills}}", skill_phrase
-    )
+    text = reference.replace("{{title}}", title).replace("{{company}}", org).replace("{{skills}}", skill_phrase)
 
     # Legacy plain-text reference (pre-placeholder)
     text = text.replace(
@@ -196,9 +193,7 @@ def generate_cover_letter_dynamic(config: AppConfig, *, job: JobListing, jd: str
     facts = load_resume_facts(config.base_dir)
     reference = _load_cover_letter_reference(config)
     if reference:
-        return _adapt_reference_cover_letter(
-            config, job=job, jd=jd, facts=facts, reference=reference
-        )
+        return _adapt_reference_cover_letter(config, job=job, jd=jd, facts=facts, reference=reference)
 
     org = job.company or "your organisation"
     title = job.title or "this role"
@@ -222,9 +217,7 @@ def generate_cover_letter_dynamic(config: AppConfig, *, job: JobListing, jd: str
         paragraphs.append(_role_paragraph(role))
         paragraphs.append("")
 
-    paragraphs.append(
-        f"My foundation includes {facts.education}."
-    )
+    paragraphs.append(f"My foundation includes {facts.education}.")
     paragraphs.append("")
 
     if skills:

@@ -8,10 +8,9 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from playwright.async_api import Page
 
-from ..page_load import goto_settled, scroll_lazy_page, wait_for_page_settled
-
 from ..config import HiristFiltersConfig
 from ..cookies import slugify
+from ..page_load import goto_settled, scroll_lazy_page, wait_for_page_settled
 from ..utils import JobListing
 from .auth import HIRIST_ORIGIN
 

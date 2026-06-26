@@ -59,10 +59,6 @@ def is_new_experience_question(config: AppConfig, question: str) -> bool:
         return True
     if re.search(r"\b(how much|how many)\b", norm) and re.search(r"\bexperience\b", norm):
         return True
-    if re.search(r"\bdo you have experience\b", norm) and not re.search(
-        r"\bhow many\b", norm
-    ):
+    if re.search(r"\bdo you have experience\b", norm) and not re.search(r"\bhow many\b", norm):
         return True
-    if re.search(r"^experience in\b", norm):
-        return True
-    return False
+    return bool(re.search(r"^experience in\b", norm))

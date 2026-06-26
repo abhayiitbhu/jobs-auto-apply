@@ -7,7 +7,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import WellfoundFiltersConfig
 from ..page_load import goto_settled
@@ -41,9 +42,7 @@ async def _click_filter_button(page: Page, label: str) -> None:
     await page.wait_for_timeout(800)
 
 
-NAV_JOB_SLUGS = frozenset(
-    {"home", "applications", "messages", "profile", "discover", "search", "saved", "settings"}
-)
+NAV_JOB_SLUGS = frozenset({"home", "applications", "messages", "profile", "discover", "search", "saved", "settings"})
 
 
 def _slugify(text: str) -> str:
@@ -434,7 +433,7 @@ async def collect_job_listings(page: Page, limit: int) -> list[JobListing]:
     for round_num in range(max_scroll_rounds):
         if len(jobs) >= limit:
             break
-        before = len(jobs)
+        len(jobs)
         await page.mouse.wheel(0, 3000)
         await page.wait_for_timeout(700)
         if round_num % 4 == 3:

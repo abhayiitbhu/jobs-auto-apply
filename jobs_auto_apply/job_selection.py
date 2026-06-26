@@ -107,9 +107,7 @@ def score_job(config: AppConfig, job: T, *, facts: ResumeFacts | None = None) ->
     min_lpa = config.application.min_inr_salary_lpa
 
     if not is_job_salary_eligible(jd=text, meta=meta, min_inr_lpa=min_lpa):
-        reason = meta.get("salary_reason") or job_eligibility(jd=text, meta=meta, min_inr_lpa=min_lpa)[
-            "salary_reason"
-        ]
+        reason = meta.get("salary_reason") or job_eligibility(jd=text, meta=meta, min_inr_lpa=min_lpa)["salary_reason"]
         return JobFitScore(
             total=0.0,
             salary=0.0,

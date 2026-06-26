@@ -23,11 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -49,17 +48,18 @@ class SchedulerState:
     is_running: bool = False
     run_count: int = 0
     error_count: int = 0
-    last_started_at: Optional[str] = None
-    last_finished_at: Optional[str] = None
-    last_duration_seconds: Optional[float] = None
-    last_error: Optional[str] = None
-    next_run_at: Optional[str] = None
+    last_started_at: str | None = None
+    last_finished_at: str | None = None
+    last_duration_seconds: float | None = None
+    last_error: str | None = None
+    next_run_at: str | None = None
     listener_active: bool = False
     # created once the event loop is running (avoids binding to no loop on 3.9)
-    apply_lock: Optional[asyncio.Lock] = None
-    stop_event: Optional[asyncio.Event] = None
-    loop_task: Optional[asyncio.Task] = None
-    listener_task: Optional[asyncio.Task] = None
+    apply_lock: asyncio.Lock | None = None
+    stop_event: asyncio.Event | None = None
+    loop_task: asyncio.Task | None = None
+    listener_task: asyncio.Task | None = None
+    one_off_run_task: asyncio.Task | None = None
 
     def snapshot(self) -> dict:
         from .cli import server_listener_channel
@@ -107,7 +107,7 @@ async def _run_one_cycle(state: SchedulerState) -> None:
         state.error_count += 1
         state.last_error = f"aborted (prerequisite/exit): {exc}"
         logger.error("Scheduler: apply cycle aborted: %s", exc)
-    except Exception as exc:  # noqa: BLE001 - keep the scheduler alive across failures
+    except Exception as exc:
         state.error_count += 1
         state.last_error = f"{type(exc).__name__}: {exc}"
         logger.exception("Scheduler: apply cycle failed")
@@ -129,14 +129,30 @@ async def _scheduler_loop(state: SchedulerState) -> None:
     if state.run_on_start:
         await _run_one_cycle(state)
     while True:
-        state.next_run_at = (
-            datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
-        ).isoformat()
+        state.next_run_at = (datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)).isoformat()
         try:
             await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             break
         await _run_one_cycle(state)
+
+
+def create_app_from_env() -> FastAPI:
+    import os
+    from pathlib import Path
+
+    config_path = Path(os.environ["JAA_CONFIG_PATH"])
+    platform = os.environ["JAA_PLATFORM"]
+    interval_minutes = int(os.environ["JAA_INTERVAL_MINUTES"])
+    verbose = os.environ["JAA_VERBOSE"] == "1"
+    run_on_start = os.environ["JAA_RUN_ON_START"] == "1"
+    return create_app(
+        config_path=config_path,
+        platform=platform,
+        interval_minutes=interval_minutes,
+        verbose=verbose,
+        run_on_start=run_on_start,
+    )
 
 
 def create_app(
@@ -186,8 +202,7 @@ def create_app(
             logger.info("%s listener started: will ask + apply replies until done.", channel)
         elif channel:
             logger.info(
-                "%s mode=%s (not 'listener') — questions handled inline per cycle; "
-                "no continuous listener.",
+                "%s mode=%s (not 'listener') — questions handled inline per cycle; no continuous listener.",
                 channel,
                 _messenger_mode(config, channel),
             )
@@ -204,14 +219,12 @@ def create_app(
             set_server_listener_channel(None)
             if state.stop_event:
                 state.stop_event.set()
-            tasks = [t for t in (state.loop_task, state.listener_task) if t]
+            tasks = [t for t in (state.loop_task, state.listener_task, state.one_off_run_task) if t]
             for task in tasks:
                 task.cancel()
             for task in tasks:
-                try:
+                with suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
             logger.info("Jobs auto-apply server stopped.")
 
     app = FastAPI(title="Jobs Auto-Apply Scheduler", lifespan=lifespan)
@@ -233,9 +246,7 @@ def create_app(
                 status_code=409,
                 content={"started": False, "reason": "an apply cycle is already running"},
             )
-        asyncio.create_task(_run_one_cycle(state))
-        return JSONResponse(
-            content={"started": True, "platform": state.platform, "at": _now_iso()}
-        )
+        state.one_off_run_task = asyncio.create_task(_run_one_cycle(state))
+        return JSONResponse(content={"started": True, "platform": state.platform, "at": _now_iso()})
 
     return app

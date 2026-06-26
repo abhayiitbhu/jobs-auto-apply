@@ -124,18 +124,11 @@ def llm_decision_acceptable(
 
     new_exp = is_new_experience_question(config, question)
 
-    rag_agreed = bool(
-        rag_hint
-        and answers_equivalent_for_agreement(
-            question, field, rag_hint, decision.answer, config
-        )
-    )
+    rag_agreed = bool(rag_hint and answers_equivalent_for_agreement(question, field, rag_hint, decision.answer, config))
     vector_agreed = bool(
         vector_hint
         and vector_score >= config.llm.vector_agree_score
-        and answers_equivalent_for_agreement(
-            question, field, vector_hint, decision.answer, config
-        )
+        and answers_equivalent_for_agreement(question, field, vector_hint, decision.answer, config)
     ) or _vector_consensus_agrees(
         config,
         question=question,

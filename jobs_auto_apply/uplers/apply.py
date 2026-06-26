@@ -4,7 +4,8 @@ import logging
 import random
 import re
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..ats.apply import apply_on_company_site
 from ..config import AppConfig

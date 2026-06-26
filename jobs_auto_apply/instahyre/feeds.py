@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from .auth import INSTAHYRE_OPPORTUNITIES
 
@@ -19,9 +21,7 @@ SKILLS_SELECTIZE_INPUT = f"{SKILLS_FILTER} .selectize-input input"
 SKILLS_SELECTIZE_ITEMS = f"{SKILLS_FILTER} .selectize-input .item"
 SKILLS_SELECTIZE_REMOVE = f"{SKILLS_FILTER} .selectize-input .remove"
 SKILLS_SELECTIZE_CONTROL = f"{SKILLS_FILTER} .selectize-control"
-SKILLS_DROPDOWN_ITEMS = (
-    f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
-)
+SKILLS_DROPDOWN_ITEMS = f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
 ROW_WAIT_MS = 35000
 ROW_POLL_MS = 250
 PAGE_SETTLE_MS = 800
@@ -35,9 +35,7 @@ DEFAULT_JOB_FUNCTIONS = [
 JOB_FUNCTIONS_FILTER = '#job-search-section div.filter:has(label:text-is("Job Functions"))'
 JOB_FUNCTIONS_SELECTIZE_INPUT = f"{JOB_FUNCTIONS_FILTER} .selectize-input input"
 JOB_FUNCTIONS_SELECTIZE_REMOVE = f"{JOB_FUNCTIONS_FILTER} .selectize-input .remove"
-JOB_FUNCTION_DROPDOWN_OPTIONS = (
-    f"{JOB_FUNCTIONS_FILTER} .selectize-dropdown .option.selectize-option[data-selectable]"
-)
+JOB_FUNCTION_DROPDOWN_OPTIONS = f"{JOB_FUNCTIONS_FILTER} .selectize-dropdown .option.selectize-option[data-selectable]"
 
 JOB_FUNCTION_ALIASES: dict[str, str] = {
     "backend development": "/api/v1/job_function/10",
@@ -67,10 +65,7 @@ def normalize_job_functions(values: str | list[str] | None) -> list[str]:
     if not values:
         return list(DEFAULT_JOB_FUNCTIONS)
     raw_parts: list[str] = []
-    if isinstance(values, str):
-        raw_parts = [values]
-    else:
-        raw_parts = [str(v).strip() for v in values if str(v).strip()]
+    raw_parts = [values] if isinstance(values, str) else [str(v).strip() for v in values if str(v).strip()]
     parts: list[str] = []
     for raw in raw_parts:
         for piece in raw.split(","):
@@ -247,11 +242,7 @@ _NODE_CHIP_DATA_VALUES = frozenset({"Nodejs", "Node.js", "nodejs"})
 def skill_entry_tokens(skills: str) -> list[str]:
     """Instahyre data-value strings — order: Java, Nodejs, Python."""
     order = ["java", "node", "python"]
-    requested = {
-        part.strip().lower()
-        for part in normalize_skills(skills).split(",")
-        if part.strip()
-    }
+    requested = {part.strip().lower() for part in normalize_skills(skills).split(",") if part.strip()}
     tokens: list[str] = []
     for key in order:
         if key in requested:
@@ -276,9 +267,7 @@ def _option_matches_token(option_text: str, token: str) -> bool:
     tok = token.strip().lower()
     if opt == tok:
         return True
-    if token == "Nodejs" and opt in ("node.js", "nodejs", "node"):
-        return True
-    return False
+    return bool(token == "Nodejs" and opt in ("node.js", "nodejs", "node"))
 
 
 async def _ui_ensure_search_panel(page: Page) -> None:
@@ -306,10 +295,8 @@ async def _ui_clear_skill_chips(page: Page) -> None:
             break
     field = page.locator(SKILLS_SELECTIZE_INPUT)
     if await field.count() > 0:
-        try:
+        with contextlib.suppress(PlaywrightTimeout):
             await field.first.fill("")
-        except PlaywrightTimeout:
-            pass
 
 
 _SKILLS_SELECTIZE_CTX_JS = """
@@ -555,9 +542,7 @@ async def _list_skill_dropdown_labels(page: Page) -> list[str]:
     return result if isinstance(result, list) else []
 
 
-VISIBLE_SELECTIZE_ITEMS = (
-    f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
-)
+VISIBLE_SELECTIZE_ITEMS = f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
 
 
 async def _pick_selectize_option(page: Page, data_value: str, *, log_on_fail: bool = True) -> bool:
@@ -597,9 +582,9 @@ async def _pick_selectize_option(page: Page, data_value: str, *, log_on_fail: bo
         if await _click_item(page.locator(item_sel)):
             return True
 
-        if await _click_item(page.locator(SKILLS_DROPDOWN_ITEMS).filter(
-            has=page.locator(f'[data-value="{data_value}"]')
-        )):
+        if await _click_item(
+            page.locator(SKILLS_DROPDOWN_ITEMS).filter(has=page.locator(f'[data-value="{data_value}"]'))
+        ):
             return True
 
         await page.wait_for_timeout(150 + attempt * 100)
@@ -706,10 +691,8 @@ async def _click_first_skill_dropdown_item(page: Page) -> bool:
 async def _type_skill_query(page: Page, field, data_value: str) -> None:
     query = _skill_type_query(data_value)
     await field.click(timeout=3000)
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await field.fill("")
-    except PlaywrightTimeout:
-        pass
     await field.press_sequentially(query, delay=50)
     await page.evaluate(_TRIGGER_SELECTIZE_SEARCH_JS, query)
 
@@ -727,12 +710,11 @@ async def _ui_add_one_skill_chip(page: Page, field, data_value: str) -> bool:
             return True
 
         # Node: typing "nodejs" shows a single "Node.js" option — click it.
-        if _is_node_skill(data_value):
-            if await _click_first_skill_dropdown_item(page):
-                await page.wait_for_timeout(300)
-                if await _selectize_chip_present(page, data_value):
-                    logger.info("Added skill chip: %s (via Node.js option)", data_value)
-                    return True
+        if _is_node_skill(data_value) and await _click_first_skill_dropdown_item(page):
+            await page.wait_for_timeout(300)
+            if await _selectize_chip_present(page, data_value):
+                logger.info("Added skill chip: %s (via Node.js option)", data_value)
+                return True
 
         if await _pick_selectize_option(page, data_value):
             logger.info("Added skill chip: %s", data_value)
@@ -854,9 +836,7 @@ def _url_matches_search_spec(url: str, spec: InstahyreFeedSpec) -> bool:
         return False
     if spec.years is not None and f"years={spec.years}" not in url:
         return False
-    if not _url_has_job_functions(url, spec.job_functions):
-        return False
-    return True
+    return _url_has_job_functions(url, spec.job_functions)
 
 
 async def _wait_for_search_url(page: Page, spec: InstahyreFeedSpec, *, timeout_ms: int = 15000) -> bool:
@@ -1124,9 +1104,7 @@ async def _ui_add_job_functions(page: Page, job_functions: list[str]) -> None:
                 if await _job_function_chip_present(page, data_value):
                     added.append(data_value)
                     continue
-            option = page.locator(
-                f'{JOB_FUNCTION_DROPDOWN_OPTIONS}[data-value="{data_value}"]'
-            )
+            option = page.locator(f'{JOB_FUNCTION_DROPDOWN_OPTIONS}[data-value="{data_value}"]')
             if await option.count() > 0:
                 await option.first.click(timeout=2000)
                 await page.wait_for_timeout(200)

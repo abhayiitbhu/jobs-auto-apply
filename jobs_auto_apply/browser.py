@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import AsyncIterator
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
-
-from .page_load import ensure_page_ready, goto_settled
 
 from .chrome_profile import assert_chrome_profile_available, resolve_chrome_profile_dir
 from .config import AppConfig
 from .login import wait_for_manual_login
+from .page_load import ensure_page_ready
 
 logger = logging.getLogger("job_apply")
 
@@ -24,15 +22,12 @@ PARALLEL_COOKIE_PLATFORMS = frozenset({"naukri", "hirist", "instahyre"})
 def _use_chrome_profile(config: AppConfig, platform: str) -> bool:
     if not config.browser.use_chrome_profile:
         return False
-    if config.application.parallel_platforms and platform in PARALLEL_COOKIE_PLATFORMS:
-        return False
-    return True
+    return not (config.application.parallel_platforms and platform in PARALLEL_COOKIE_PLATFORMS)
+
 
 VerifyFn = Callable[[Page, str], Awaitable[bool]]
 
-STEALTH_INIT_SCRIPT = (
-    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-)
+STEALTH_INIT_SCRIPT = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
 
 
 def _context_viewport_kwargs(config: AppConfig) -> dict:
@@ -120,11 +115,7 @@ async def _launch_chrome_profile_context(playwright, config: AppConfig) -> Brows
     if not config.browser.headless:
         launch_kwargs["args"].append("--start-maximized")
     launch_kwargs.update(
-        {
-            k: v
-            for k, v in _browser_launch_kwargs(config).items()
-            if k in ("headless", "slow_mo", "channel")
-        }
+        {k: v for k, v in _browser_launch_kwargs(config).items() if k in ("headless", "slow_mo", "channel")}
     )
 
     context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
@@ -143,10 +134,8 @@ async def _prepare_page(context: BrowserContext, origin: str) -> Page:
     pages = list(context.pages)
     page = pages[0] if pages else await context.new_page()
     for extra in pages[1:]:
-        try:
+        with suppress(Exception):
             await extra.close()
-        except Exception:
-            pass
 
     last_exc: Exception | None = None
     for attempt in range(4):
@@ -177,6 +166,27 @@ async def _close_browser_context(browser: Browser | None, context: BrowserContex
         await asyncio.sleep(1.5)
 
 
+async def _run_to_completion(coro: Awaitable[None]) -> None:
+    """Await *coro* fully even if this task is cancelled mid-way.
+
+    On ``serve --reload`` (or any shutdown) the in-flight apply cycle is
+    cancelled while a Playwright browser is still open. If that ``CancelledError``
+    interrupts the driver teardown, Python closes its end of the driver pipe
+    while the Node driver is still mid-write, crashing it with an unhandled
+    ``EPIPE``. Shielding the teardown lets the driver always shut down cleanly.
+    """
+    task = asyncio.ensure_future(coro)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Absorb cancellation aimed at us; keep waiting for cleanup to finish.
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+
+
 @asynccontextmanager
 async def browser_session(
     config: AppConfig,
@@ -193,7 +203,8 @@ async def browser_session(
     use_browser_auth = config.auth.method == "browser"
     use_chrome_profile = _use_chrome_profile(config, platform)
 
-    async with async_playwright() as playwright:
+    playwright = await async_playwright().start()
+    try:
         browser: Browser | None
         if use_chrome_profile:
             browser = None
@@ -231,11 +242,7 @@ async def browser_session(
                 import json
 
                 state = json.loads(storage_path.read_text(encoding="utf-8"))
-                cookies = [
-                    c
-                    for c in state.get("cookies", [])
-                    if "wellfound" in str(c.get("domain", ""))
-                ]
+                cookies = [c for c in state.get("cookies", []) if "wellfound" in str(c.get("domain", ""))]
                 if cookies:
                     await context.add_cookies(cookies)
                     logged_in = await verify_fn(page, config.user.expected_display_name)
@@ -313,15 +320,23 @@ async def browser_session(
                 await _save_session(context, storage_path)
             except Exception as exc:
                 logger.debug("Could not snapshot session: %s", exc)
-        try:
-            yield browser, context, page
-        finally:
+
+        async def _teardown() -> None:
             if use_browser_auth and not use_chrome_profile:
                 try:
                     await _save_session(context, storage_path)
                 except Exception as exc:
                     logger.warning("Could not save session: %s", exc)
             await _close_browser_context(browser, context)
+
+        try:
+            yield browser, context, page
+        finally:
+            await _run_to_completion(_teardown())
+    finally:
+        # Always stop the Playwright driver cleanly, even under cancellation,
+        # so the Node driver process never crashes with an unhandled EPIPE.
+        await _run_to_completion(playwright.stop())
 
 
 @asynccontextmanager

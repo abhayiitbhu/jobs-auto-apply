@@ -32,7 +32,7 @@ def _known_experience_skills(config: AppConfig) -> list[str]:
                         known.append(str(name).replace("_", " "))
                 except (TypeError, ValueError):
                     continue
-    except Exception:  # noqa: BLE001 - facts are optional; degrade to core_skills
+    except Exception:
         pass
     return known
 

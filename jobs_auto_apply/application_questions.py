@@ -13,16 +13,12 @@ Prefer direct imports from ``jobs_auto_apply.answers`` submodules:
 
 from __future__ import annotations
 
-from .question_keys import question_key
-
 # Re-export public API used by platforms and scripts
 from .answers.chips import (
-    _normalize_to_option,
     is_chip_range_label,
     parse_years_numeric_value,
 )
 from .answers.compensation import (
-    looks_like_compensation_question as _looks_like_compensation_question,
     resolve_ctc_numeric_answer,
 )
 from .answers.draft import (
@@ -33,7 +29,6 @@ from .answers.draft import (
 from .answers.experience import is_new_experience_question, is_skill_years_question
 from .answers.fields import (
     enrich_field_for_llm,
-    infer_field_for_question as _infer_field_for_question,
     infer_field_input_type,
     is_last_working_day_question,
     is_numeric_ctc_question,
@@ -45,10 +40,6 @@ from .answers.labels import (
     normalize_question_label,
 )
 from .answers.llm_policy import effective_min_confidence, llm_decision_acceptable
-from .answers.location import (
-    is_location_value_question as _is_location_value_question,
-    is_relocation_yesno_question as _is_relocation_yesno_question,
-)
 from .answers.memory_store import (
     canonicalize_stored_answer,
     flag_rejected_saved_answer,
@@ -65,6 +56,7 @@ from .answers.validation import (
     needs_review_answer,
 )
 from .answers.wellfound_dom import discover_questions, fill_questions
+from .question_keys import question_key
 
 __all__ = [
     "answer_acceptable_for_field",

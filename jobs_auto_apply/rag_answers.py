@@ -4,8 +4,9 @@ import logging
 import re
 from typing import Any
 
+from .answers.profile_links import profile_link_answer
+from .answers.text import norm_text
 from .config import AppConfig
-from .profile_data import ResumeFacts, load_resume_facts
 from .profile.application_facts import load_application_facts
 from .profile.skills import (
     has_skill,
@@ -13,10 +14,9 @@ from .profile.skills import (
     skill_years_answer,
     skill_years_override,
 )
-from .answers.profile_links import profile_link_answer
-from .answers.text import norm_text
+from .profile_data import ResumeFacts, load_resume_facts
 from .question_groups import classify_question
-from .resume_text import load_resume_text, resume_paragraphs
+from .resume_text import resume_paragraphs
 
 logger = logging.getLogger("job_apply")
 
@@ -42,9 +42,7 @@ _WANTS_ELABORATION = re.compile(
 
 
 def _looks_like_pure_yes_no(question: str) -> bool:
-    return bool(
-        _YES_NO_PHRASING.search(question) and not _WANTS_ELABORATION.search(question)
-    )
+    return bool(_YES_NO_PHRASING.search(question) and not _WANTS_ELABORATION.search(question))
 
 
 def _inline_choice_options(question: str) -> list[str]:
@@ -76,9 +74,34 @@ def _norm(text: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     stop = {
-        "what", "your", "you", "are", "the", "a", "an", "do", "have", "in", "of",
-        "for", "this", "role", "how", "many", "years", "experience", "with", "is",
-        "and", "or", "if", "yes", "can", "describe", "briefly", "please",
+        "what",
+        "your",
+        "you",
+        "are",
+        "the",
+        "a",
+        "an",
+        "do",
+        "have",
+        "in",
+        "of",
+        "for",
+        "this",
+        "role",
+        "how",
+        "many",
+        "years",
+        "experience",
+        "with",
+        "is",
+        "and",
+        "or",
+        "if",
+        "yes",
+        "can",
+        "describe",
+        "briefly",
+        "please",
     }
     return {w for w in _norm(text).split() if len(w) > 2 and w not in stop}
 
@@ -300,10 +323,7 @@ def _pick_positive_option(options: list[Any]) -> str | None:
 
 
 def _compose_text_answer(question: str, chunks: list[str], facts: ResumeFacts) -> str:
-    if chunks:
-        text = ". ".join(s.strip().rstrip(".") for s in chunks[:2]) + "."
-    else:
-        text = facts.recent_role_blurb()
+    text = ". ".join(s.strip().rstrip(".") for s in chunks[:2]) + "." if chunks else facts.recent_role_blurb()
     if len(text) > 480:
         text = text[:477].rsplit(" ", 1)[0] + "..."
     return text
@@ -322,8 +342,7 @@ def _current_ctc_answer(config: AppConfig, question: str) -> str:
     current = _fmt_lpa(comp.current_ctc_lpa)
     expected = _fmt_lpa(comp.expected_ctc_lpa)
     numeric_field = bool(
-        re.search(r"\b(lacs?|lakhs?|lpa|per\s*annum|p\.?a\.?)\b", norm)
-        or re.search(r"\bin\s+lacs?\b", norm)
+        re.search(r"\b(lacs?|lakhs?|lpa|per\s*annum|p\.?a\.?)\b", norm) or re.search(r"\bin\s+lacs?\b", norm)
     )
 
     if "expected" in norm and "current" not in norm:
@@ -376,9 +395,7 @@ def _yes_no_radio_answer(
         return "Yes" if val else "No"
     if re.search(r"join.*(immediately|within\s*15)|within\s*15\s*days|15\s*days", norm):
         days = app_facts.get("notice_period_days")
-        threshold = (
-            config.answers.notice_join_threshold_days if config is not None else 15
-        )
+        threshold = config.answers.notice_join_threshold_days if config is not None else 15
         if days is not None:
             return "Yes" if int(days) <= threshold else "No"
     if re.search(
@@ -386,7 +403,10 @@ def _yes_no_radio_answer(
         norm,
     ):
         return str(app_facts.get("f2f_interview_available", "No"))
-    if re.search(r"comfortable|willing|work from office|\bwfo\b|relocat|gurgaon|gurugram|bangalore|bengaluru|hyderabad|mumbai|pune|delhi|ncr", norm):
+    if re.search(
+        r"comfortable|willing|work from office|\bwfo\b|relocat|gurgaon|gurugram|bangalore|bengaluru|hyderabad|mumbai|pune|delhi|ncr",
+        norm,
+    ):
         return str(app_facts.get("willing_to_relocate", "Yes"))
     if re.search(r"pf|provident|insurance|employment package", norm):
         return "Yes"
@@ -467,9 +487,25 @@ def generate_rag_answer(
         if not company_hint:
             for token in re.findall(r"[a-z0-9]+", norm):
                 if len(token) >= 3 and token not in {
-                    "have", "been", "previously", "currently", "associated", "with",
-                    "employed", "worked", "you", "your", "ever", "any", "the", "our",
-                    "us", "for", "are", "was", "did",
+                    "have",
+                    "been",
+                    "previously",
+                    "currently",
+                    "associated",
+                    "with",
+                    "employed",
+                    "worked",
+                    "you",
+                    "your",
+                    "ever",
+                    "any",
+                    "the",
+                    "our",
+                    "us",
+                    "for",
+                    "are",
+                    "was",
+                    "did",
                 }:
                     company_hint = token
                     break
@@ -529,8 +565,7 @@ def generate_rag_answer(
         if group_id == "preferred_location":
             prefs = [str(p).lower() for p in app_facts.get("preferred_locations", [])]
             picked = [
-                opt for opt in options
-                if any(pref in str(opt).lower() or str(opt).lower() in pref for pref in prefs)
+                opt for opt in options if any(pref in str(opt).lower() or str(opt).lower() in pref for pref in prefs)
             ]
             if picked:
                 return ", ".join(picked)
@@ -540,10 +575,14 @@ def generate_rag_answer(
             if decision is None:
                 return None
             if decision:
-                return ", ".join(
-                    opt for opt in options
-                    if has_skill(facts, str(opt), config, app_facts) or skill in str(opt).lower()
-                ) or options[0]
+                return (
+                    ", ".join(
+                        opt
+                        for opt in options
+                        if has_skill(facts, str(opt), config, app_facts) or skill in str(opt).lower()
+                    )
+                    or options[0]
+                )
             return "No"
         if len(options) == 1:
             return options[0]
@@ -552,9 +591,7 @@ def generate_rag_answer(
     if group_id == "compensation":
         return _current_ctc_answer(config, question)
 
-    if group_id == "last_working_day" or re.search(
-        r"\b(last working day|lwd)\b", norm
-    ):
+    if group_id == "last_working_day" or re.search(r"\b(last working day|lwd)\b", norm):
         lwd = str(app_facts.get("last_working_day", "")).strip()
         if lwd:
             return lwd
@@ -613,7 +650,8 @@ def generate_rag_answer(
         if kind in ("radio", "checkbox_group") and options:
             prefs = [str(p).lower() for p in app_facts.get("preferred_locations", [])]
             picked = [
-                str(opt) for opt in options
+                str(opt)
+                for opt in options
                 if any(pref in str(opt).lower() or str(opt).lower() in pref for pref in prefs)
             ]
             if picked:

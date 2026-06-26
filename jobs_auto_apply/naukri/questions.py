@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from typing import Any
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..answers.chip_options import is_notice_chip_option, value_in_chip_range
-from ..config import AppConfig
 from ..answers.fields import is_numeric_ctc_question
 from ..application_questions import (
     enrich_field_for_llm,
@@ -19,6 +20,7 @@ from ..application_questions import (
     parse_years_numeric_value,
     resolve_fill_answer,
 )
+from ..config import AppConfig
 
 logger = logging.getLogger("job_apply")
 
@@ -73,8 +75,7 @@ _NOTICE_PERIOD_QUESTION = re.compile(
 )
 
 _F2F_AVAILABILITY_QUESTION = re.compile(
-    r"\b(face.?to.?face|f2f|interview on|available for.*interview|walk.?in|"
-    r"attend.*interview)\b",
+    r"\b(face.?to.?face|f2f|interview on|available for.*interview|walk.?in|" r"attend.*interview)\b",
     re.I,
 )
 
@@ -1045,10 +1046,8 @@ async def _clear_chatbot_composer(page: Page) -> None:
 }
 """
     )
-    try:
+    with contextlib.suppress(Exception):
         await page.evaluate(js)
-    except Exception:
-        pass
 
 
 async def wait_for_question_advance(
@@ -1187,10 +1186,7 @@ def _answer_implies_immediate(answer: str) -> bool:
     a = answer.lower().strip()
     if re.fullmatch(r"0(?:\s*days?)?", a):
         return True
-    return any(
-        w in a
-        for w in ("immediate", "immediately", "available now", "join immediately")
-    )
+    return any(w in a for w in ("immediate", "immediately", "available now", "join immediately"))
 
 
 def _pick_immediate_notice_chip(chips: list[str]) -> str | None:
@@ -1300,16 +1296,15 @@ def _pick_best_chip(answer: str, chips: list[str], question: str) -> str | None:
         if picked:
             return picked
 
-    if re.search(r"experience|years?", q):
-        if _is_plain_year_number(answer):
-            ym = re.search(r"(\d+)", answer)
-            if ym:
-                years = int(ym.group(1))
-                for chip in chips:
-                    if is_notice_chip_option(chip):
-                        continue
-                    if value_in_chip_range(years, chip):
-                        return chip
+    if re.search(r"experience|years?", q) and _is_plain_year_number(answer):
+        ym = re.search(r"(\d+)", answer)
+        if ym:
+            years = int(ym.group(1))
+            for chip in chips:
+                if is_notice_chip_option(chip):
+                    continue
+                if value_in_chip_range(years, chip):
+                    return chip
 
     if "city" in q or "select" in q:
         for chip in chips:
@@ -1320,9 +1315,7 @@ def _pick_best_chip(answer: str, chips: list[str], question: str) -> str | None:
 
 
 def _looks_like_notice_period_question(label: str) -> bool:
-    if _F2F_AVAILABILITY_QUESTION.search(label) and not re.search(
-        r"\bnotice\s*period\b", label, re.I
-    ):
+    if _F2F_AVAILABILITY_QUESTION.search(label) and not re.search(r"\bnotice\s*period\b", label, re.I):
         return False
     return bool(_NOTICE_PERIOD_QUESTION.search(label))
 
@@ -1391,9 +1384,7 @@ def _upgrade_kind_for_yes_no_options(
     return kind
 
 
-def _coerce_years_answer_to_yes_no(
-    label: str, answer: str, options: list[str]
-) -> str | None:
+def _coerce_years_answer_to_yes_no(label: str, answer: str, options: list[str]) -> str | None:
     """When a years-numeric answer meets a Yes/No re-ask for the same skill."""
     if not _is_yes_no_options(options):
         return None
@@ -1414,10 +1405,7 @@ def _looks_like_multi_chip_question(label: str, options: list[str]) -> bool:
     if _looks_like_years_range_options(opts):
         return False
     norm = label.lower()
-    return bool(
-        re.search(r"\b(tools?|technologies|skills?|frameworks?|which|select)\b", norm)
-        or "," in norm
-    )
+    return bool(re.search(r"\b(tools?|technologies|skills?|frameworks?|which|select)\b", norm) or "," in norm)
 
 
 def _dom_text_input_only(raw: dict[str, Any] | None) -> bool:
@@ -1445,9 +1433,7 @@ def _is_chatbot_terminal_message(label: str) -> bool:
 
 def _filter_meaningful_options(options: list[str]) -> list[str]:
     return [
-        o
-        for o in options
-        if str(o).strip() and not _SKIP_CHIP.search(str(o)) and not _INVALID_OPTION.search(str(o))
+        o for o in options if str(o).strip() and not _SKIP_CHIP.search(str(o)) and not _INVALID_OPTION.search(str(o))
     ]
 
 
@@ -1475,7 +1461,7 @@ def _options_plausible_for_question(label: str, options: list[str]) -> bool:
     # A location-only option set ("Other City", a single city) on a question that
     # is not about location is a mis-scraped adjacent dropdown, not this
     # question's choices (e.g. "What is your notice period?" -> ["Other City"]).
-    from ..application_questions import _is_location_value_question
+    from ..answers.location import _is_location_value_question
 
     is_location_q = _is_location_value_question(label) or _looks_like_city_select_question(label)
 
@@ -1485,9 +1471,7 @@ def _options_plausible_for_question(label: str, options: list[str]) -> bool:
     if not is_location_q and not _is_yes_no_options(opts):
         if all(re.search(r"\bother\s+city\b|^other$", o, re.I) for o in opts):
             return False
-        if _looks_like_notice_period_question(label) or re.search(
-            r"\bhow many\b.*\bexperience\b", norm
-        ):
+        if _looks_like_notice_period_question(label) or re.search(r"\bhow many\b.*\bexperience\b", norm):
             if all(_location_like(o) for o in opts):
                 return False
     # Notice-period chips (months/days/weeks) on a years-of-experience question
@@ -1512,8 +1496,7 @@ def _is_gender_options(options: list[str]) -> bool:
         return False
     return all(
         re.fullmatch(
-            r"male|female|other|others|transgender|non-?binary|"
-            r"prefer not to (say|disclose).*",
+            r"male|female|other|others|transgender|non-?binary|" r"prefer not to (say|disclose).*",
             o,
         )
         for o in opts
@@ -1527,20 +1510,14 @@ def _is_other_city_only_options(options: list[str]) -> bool:
         return False
     if not any(re.search(r"\bother\s*city\b|^other$", o, re.I) for o in opts):
         return False
-    return all(
-        re.search(r"\bother\s*city\b|^other$", o, re.I) or _looks_like_city_option(o)
-        for o in opts
-    )
+    return all(re.search(r"\bother\s*city\b|^other$", o, re.I) or _looks_like_city_option(o) for o in opts)
 
 
 def _looks_like_years_range_options(options: list[str]) -> bool:
     opts = _filter_meaningful_options(options)
     if not opts:
         return False
-    return any(
-        re.search(r"\d+\s*[-–]\s*\d+|<\s*\d+|>\s*\d+|\+\s*years?|\byears?\b", o, re.I)
-        for o in opts
-    )
+    return any(re.search(r"\d+\s*[-]\s*\d+|<\s*\d+|>\s*\d+|\+\s*years?|\byears?\b", o, re.I) for o in opts)
 
 
 def _should_use_text_input_only(
@@ -1559,7 +1536,7 @@ def _should_use_text_input_only(
         return False
     if _looks_like_years_range_options(opts):
         return False
-    from ..application_questions import _is_location_value_question
+    from ..answers.location import _is_location_value_question
 
     if _is_location_value_question(label) and not _is_yes_no_options(opts):
         return True
@@ -1726,9 +1703,7 @@ def _looks_like_yes_no_question(label: str) -> bool:
         return False
     if label.strip().endswith("?") and _YES_NO_QUESTION.search(label):
         return True
-    return bool(
-        re.search(r"\b(residing in .+\?|relocate|willing to)\b", label, re.I)
-    )
+    return bool(re.search(r"\b(residing in .+\?|relocate|willing to)\b", label, re.I))
 
 
 def _is_yes_no_options(options: list[str]) -> bool:
@@ -1750,9 +1725,7 @@ def _looks_like_skill_checkbox_question(label: str, options: list[str]) -> bool:
     if not re.search(r"\bexperience\b", norm):
         return False
     if re.search(r"\bhow many\b", norm):
-        short = sum(
-            1 for o in opts if len(o.strip()) <= 24 and not re.search(r"\d", o)
-        )
+        short = sum(1 for o in opts if len(o.strip()) <= 24 and not re.search(r"\d", o))
         return short >= 2
     return False
 
@@ -1822,9 +1795,7 @@ def _choice_only_question(label: str, options: list[str], raw: dict[str, Any] | 
         return True
     if _is_checkbox_options(raw, options):
         return True
-    if re.search(r"\bselect\b", label, re.I) and options:
-        return True
-    return False
+    return bool(re.search(r"\bselect\b", label, re.I) and options)
 
 
 def _wait_attempts_for(label: str, *, has_options: bool = False) -> int:
@@ -1865,14 +1836,14 @@ async def _fill_text_playwright(page: Page, answer: str, *, question: str = "") 
         scope = page.locator("body")
 
     footer_selectors = (
-        '.footerInputBoxWrapper div.textArea[contenteditable]',
-        '#userInput__ div.textArea[contenteditable]',
-        '.chatbot_InputContainer div.textArea[contenteditable]',
-        '.chatbot_SendMessageContainer div.textArea[contenteditable]',
+        ".footerInputBoxWrapper div.textArea[contenteditable]",
+        "#userInput__ div.textArea[contenteditable]",
+        ".chatbot_InputContainer div.textArea[contenteditable]",
+        ".chatbot_SendMessageContainer div.textArea[contenteditable]",
     )
     generic_selectors = (
         'div.textArea[contenteditable="true"]',
-        'div.textArea[contenteditable]',
+        "div.textArea[contenteditable]",
         '[contenteditable="true"]',
         "textarea:visible",
         'input[type="text"]:visible',
@@ -2004,12 +1975,7 @@ def _dedupe_options(options: list[str]) -> list[str]:
     out: list[str] = []
     for opt in options:
         text = str(opt).strip()
-        if (
-            not text
-            or text in seen
-            or _SKIP_CHIP.search(text)
-            or _INVALID_OPTION.search(text)
-        ):
+        if not text or text in seen or _SKIP_CHIP.search(text) or _INVALID_OPTION.search(text):
             continue
         seen.add(text)
         out.append(text)
@@ -2088,12 +2054,8 @@ def _infer_naukri_field_kind(
         if len(all_opts) >= 2 and not _is_yes_no_options(all_opts):
             return "checkbox_group", [o for o in all_opts if not _SKIP_CHIP.search(o)]
 
-    if checkbox_opts and (
-        len(checkbox_opts) > 1 or _looks_like_city_select_question(question)
-    ):
-        if not _is_yes_no_options(checkbox_opts) and not (
-            raw and raw.get("hasSingleSelect") and choice_opts
-        ):
+    if checkbox_opts and (len(checkbox_opts) > 1 or _looks_like_city_select_question(question)):
+        if not _is_yes_no_options(checkbox_opts) and not (raw and raw.get("hasSingleSelect") and choice_opts):
             return "checkbox_group", checkbox_opts
 
     if choice_opts:
@@ -2106,11 +2068,7 @@ def _infer_naukri_field_kind(
         return "checkbox_group", []
 
     if raw and raw.get("hasVisibleInput") and not raw.get("hasChoice"):
-        if (
-            _looks_like_yes_no_question(question)
-            and choice_opts
-            and _is_yes_no_options(choice_opts)
-        ):
+        if _looks_like_yes_no_question(question) and choice_opts and _is_yes_no_options(choice_opts):
             return "radio", choice_opts
         return "text", []
 
@@ -2160,9 +2118,7 @@ async def _fetch_answer_options(
             kind, options, _ = _analyze_chatbot_state(raw, question)
             if options:
                 return kind, options, raw
-            if kind == "checkbox_group" and (
-                raw.get("hasCheckbox") or _looks_like_city_select_question(question)
-            ):
+            if kind == "checkbox_group" and (raw.get("hasCheckbox") or _looks_like_city_select_question(question)):
                 pw_opts = await _discover_checkbox_options_playwright(page)
                 if pw_opts:
                     return kind, pw_opts, raw
@@ -2171,11 +2127,7 @@ async def _fetch_answer_options(
                 best_kind = kind
             elif kind == "text" and raw.get("hasVisibleInput"):
                 choice_opts, _, _ = _split_discovered_options(raw)
-                if (
-                    _looks_like_yes_no_question(question)
-                    and choice_opts
-                    and _is_yes_no_options(choice_opts)
-                ):
+                if _looks_like_yes_no_question(question) and choice_opts and _is_yes_no_options(choice_opts):
                     return "radio", choice_opts, raw
                 best_kind, best_options = kind, []
                 if not raw.get("hasChoice"):
@@ -2218,8 +2170,9 @@ async def _discover_checkbox_options_playwright(page: Page) -> list[str]:
             name = (await box.get_attribute("aria-label") or "").strip()
             if not name:
                 try:
-                    name = (await box.evaluate(
-                        """el => {
+                    name = (
+                        await box.evaluate(
+                            """el => {
                           const id = el.id;
                           if (id) {
                             const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
@@ -2228,7 +2181,8 @@ async def _discover_checkbox_options_playwright(page: Page) -> list[str]:
                           const wrap = el.closest('label');
                           return wrap ? (wrap.innerText || '').trim() : '';
                         }"""
-                    )).strip()
+                        )
+                    ).strip()
                 except Exception:
                     name = ""
             _add(name)
@@ -2261,20 +2215,29 @@ async def _discover_choice_options_playwright(page: Page) -> list[str]:
 
     def _add(name: str) -> None:
         text = re.sub(r"\s+", " ", (name or "").strip())
-        if (
-            not text
-            or text in seen
-            or _SKIP_CHIP.search(text)
-            or _INVALID_OPTION.search(text)
-        ):
+        if not text or text in seen or _SKIP_CHIP.search(text) or _INVALID_OPTION.search(text):
             return
         seen.add(text)
         options.append(text)
 
+    async def _label_text(loc) -> str:
+        """inner_text first, then text_content — async-rendered / off-screen chips
+        return '' from inner_text but still carry their label in text_content."""
+        try:
+            text = (await loc.inner_text()).strip()
+        except Exception:
+            text = ""
+        if not text:
+            try:
+                text = (await loc.text_content() or "").strip()
+            except Exception:
+                text = ""
+        return text
+
     try:
         chip_loc = scope.locator(".chatbot_Chip, .chipItem")
         for i in range(await chip_loc.count()):
-            _add(await chip_loc.nth(i).inner_text())
+            _add(await _label_text(chip_loc.nth(i)))
         for role in ("radio", "checkbox"):
             boxes = scope.get_by_role(role)
             for i in range(await boxes.count()):
@@ -2288,20 +2251,27 @@ async def _discover_choice_options_playwright(page: Page) -> list[str]:
                                   const id = el.id;
                                   if (id) {
                                     const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-                                    if (lbl) return (lbl.innerText || '').trim();
+                                    if (lbl) return (lbl.innerText || lbl.textContent || '').trim();
                                   }
                                   const wrap = el.closest('label');
-                                  return wrap ? (wrap.innerText || '').trim() : '';
+                                  return wrap ? (wrap.innerText || wrap.textContent || '').trim() : '';
                                 }"""
                             )
                         ).strip()
                     except Exception:
                         name = ""
+                if not name:
+                    name = (await box.get_attribute("value") or "").strip()
                 _add(name)
-        for sel in ("label.ssrc__label", ".singleselect-radiobutton label"):
+        for sel in (
+            "label.ssrc__label",
+            ".singleselect-radiobutton label",
+            ".singleselect-radiobutton .ssrc__label",
+            ".ssrc__label",
+        ):
             loc = scope.locator(sel)
             for i in range(await loc.count()):
-                _add(await loc.nth(i).inner_text())
+                _add(await _label_text(loc.nth(i)))
     except Exception as exc:
         logger.debug("Playwright choice discovery failed: %s", exc)
     return options
@@ -2319,9 +2289,7 @@ async def _click_checkbox_playwright(page: Page, targets: list[str]) -> bool:
         if tokens[-1].lower() == "noida":
             tokens.append("Noida")
         for pattern in dict.fromkeys(t for t in tokens if t):
-            box = scope.get_by_role(
-                "checkbox", name=re.compile(re.escape(pattern), re.I)
-            )
+            box = scope.get_by_role("checkbox", name=re.compile(re.escape(pattern), re.I))
             if await box.count() > 0:
                 try:
                     await box.first.click(timeout=5000)
@@ -2347,8 +2315,7 @@ async def _click_checkbox_playwright(page: Page, targets: list[str]) -> bool:
 async def _click_save_if_present(page: Page) -> bool:
     scope = page.locator(_CHATBOT_SCOPE).last
     save = scope.locator(
-        ".sendMsgbtn_container .sendMsg:not(.disabled), "
-        ".sendMsgbtn_container .send:not(.disabled) .sendMsg"
+        ".sendMsgbtn_container .sendMsg:not(.disabled), .sendMsgbtn_container .send:not(.disabled) .sendMsg"
     )
     if await save.count() > 0:
         try:
@@ -2369,13 +2336,11 @@ async def _click_option_playwright(page: Page, target: str) -> bool:
         # reported them (heavy concurrency / throttled tabs). Without this wait the
         # click fast-fails in a few ms because the elements aren't in the live DOM
         # yet — wait for them to attach before attempting to click.
-        try:
+        with contextlib.suppress(Exception):
             await scope.locator(
                 ".chatbot_Chip, .chipItem, .singleselect-radiobutton input[type='radio'], "
                 ".ssrc__radio, input[type='radio'], [role='radio']"
             ).first.wait_for(state="attached", timeout=4000)
-        except Exception:
-            pass
 
         chip_loc = scope.locator(".chatbot_Chip, .chipItem")
         count = await chip_loc.count()
@@ -2403,9 +2368,7 @@ async def _click_option_playwright(page: Page, target: str) -> bool:
         if target[:1].isupper():
             patterns.append(target.lower())
         for pattern in dict.fromkeys(p for p in patterns if p):
-            radio = scope.get_by_role(
-                "radio", name=re.compile(re.escape(pattern), re.I)
-            )
+            radio = scope.get_by_role("radio", name=re.compile(re.escape(pattern), re.I))
             radio_count = await radio.count()
             for i in range(min(radio_count, 4)):
                 el = radio.nth(i)
@@ -2436,9 +2399,7 @@ async def _click_option_playwright(page: Page, target: str) -> bool:
                 ".singleselect-radiobutton",
                 "label.ssrc__label",
             ):
-                loc = scope.locator(sel).filter(
-                    has_text=re.compile(re.escape(pattern), re.I)
-                )
+                loc = scope.locator(sel).filter(has_text=re.compile(re.escape(pattern), re.I))
                 if await loc.count() > 0:
                     try:
                         await loc.first.scroll_into_view_if_needed()
@@ -2452,9 +2413,7 @@ async def _click_option_playwright(page: Page, target: str) -> bool:
                             return True
                         except PlaywrightTimeout:
                             pass
-            label = scope.locator("label.ssrc__label, label").filter(
-                has_text=re.compile(re.escape(pattern), re.I)
-            )
+            label = scope.locator("label.ssrc__label, label").filter(has_text=re.compile(re.escape(pattern), re.I))
             if await label.count() > 0:
                 try:
                     await label.first.scroll_into_view_if_needed()
@@ -2468,9 +2427,7 @@ async def _click_option_playwright(page: Page, target: str) -> bool:
     return False
 
 
-async def _click_yes_no_playwright(
-    page: Page, want: str, options: list[str] | None = None
-) -> bool:
+async def _click_yes_no_playwright(page: Page, want: str, options: list[str] | None = None) -> bool:
     """Dedicated Yes/No chip/radio click — handles YES/NO casing."""
     want_l = want.strip().lower()
     if want_l in ("yes", "y", "true", "1"):
@@ -2491,9 +2448,7 @@ async def _click_yes_no_playwright(
     return False
 
 
-async def _fill_multi_chip_answer(
-    page: Page, answer: str, options: list[str], label: str
-) -> bool:
+async def _fill_multi_chip_answer(page: Page, answer: str, options: list[str], label: str) -> bool:
     """Click multiple chips for comma-separated tool/skill answers."""
     parts = _parse_multi_answer(answer) or [answer.strip()]
     if len(parts) <= 1 and "," not in answer:
@@ -2534,9 +2489,7 @@ async def _click_chip(page: Page, chip_label: str) -> bool:
     return False
 
 
-async def _fill_other_city_location(
-    page: Page, city: str, options: list[str], label: str
-) -> bool:
+async def _fill_other_city_location(page: Page, city: str, options: list[str], label: str) -> bool:
     """Naukri location prompts that only offer an 'Other City' radio: select it, then
     type the real city into the text input it reveals. Reuses the tested choice + text
     fill paths so it degrades to a normal text fill if no input appears."""
@@ -2551,9 +2504,7 @@ async def _fill_other_city_location(
         {"answer": other, "answers": [other], "allowText": False, "mode": "choice"},
     )
     if not (isinstance(selected, dict) and selected.get("filled")):
-        if not (
-            await _click_chip(page, other) or await _click_option_playwright(page, other)
-        ):
+        if not (await _click_chip(page, other) or await _click_option_playwright(page, other)):
             return False
     await page.wait_for_timeout(400)
     typed = await page.evaluate(
@@ -2618,9 +2569,7 @@ _RADIO_SELECTED_JS = """
 """
 
 
-async def _desired_option_already_selected(
-    page: Page, targets: list[str]
-) -> bool:
+async def _desired_option_already_selected(page: Page, targets: list[str]) -> bool:
     """True when the chatbot already shows one of the desired options as selected.
 
     Handles the case where the bot re-asks a question we already answered — we
@@ -2666,7 +2615,18 @@ def _coerce_chip_answer(question: dict[str, Any], answer: str) -> str:
         if a in ("no", "n", "false", "0"):
             return "No"
         if any(city in label for city in ("bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "chennai", "delhi")):
-            if a in ("bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "delhi", "ncr", "gurgaon", "noida", "yes"):
+            if a in (
+                "bengaluru",
+                "bangalore",
+                "hyderabad",
+                "pune",
+                "mumbai",
+                "delhi",
+                "ncr",
+                "gurgaon",
+                "noida",
+                "yes",
+            ):
                 return "Yes"
             if a in ("no", "not"):
                 return "No"
@@ -2679,9 +2639,7 @@ def _coerce_chip_answer(question: dict[str, Any], answer: str) -> str:
             return next((o for o in options if o.lower() == "no"), answer)
         if a in ("yes", "y", "true", "1"):
             for opt in options:
-                if re.search(r"\bmilitary spouse\b", str(opt), re.I) and not re.search(
-                    r"\bnot\b", str(opt), re.I
-                ):
+                if re.search(r"\bmilitary spouse\b", str(opt), re.I) and not re.search(r"\bnot\b", str(opt), re.I):
                     return str(opt)
 
     if re.search(r"\b(associated with|previously employed|employee of)\b", label):
@@ -2694,12 +2652,7 @@ def _coerce_chip_answer(question: dict[str, Any], answer: str) -> str:
                 return picked
         if a in ("yes", "y", "true", "1"):
             picked = next(
-                (
-                    o
-                    for o in options
-                    if re.search(r"\byes\b", o, re.I)
-                    and not re.search(r"\b(not|never)\b", o, re.I)
-                ),
+                (o for o in options if re.search(r"\byes\b", o, re.I) and not re.search(r"\b(not|never)\b", o, re.I)),
                 None,
             )
             if picked:
@@ -2718,9 +2671,7 @@ def _coerce_chip_answer(question: dict[str, Any], answer: str) -> str:
             return _yes_no_option_label(options, "no")
         if _PAN_VALUE.match(answer.strip()) and re.search(r"\bpan\b", label_l):
             return _yes_no_option_label(options, "yes")
-        if _looks_like_yes_no_question(label_l) and re.search(
-            r"\b(residing|relocate|living in|willing to)\b", label_l
-        ):
+        if _looks_like_yes_no_question(label_l) and re.search(r"\b(residing|relocate|living in|willing to)\b", label_l):
             if re.search(r"\b(no|not willing|cannot relocate|won't)\b", a):
                 return next((o for o in options if o.lower() == "no"), "No")
             if re.search(r"\b(current|native)\b", a):
@@ -2744,26 +2695,22 @@ def _coerce_chip_answer(question: dict[str, Any], answer: str) -> str:
                 return next((o for o in options if o.lower() == "yes"), "Yes")
             if re.search(r"\bno\b", a):
                 return next((o for o in options if o.lower() == "no"), "No")
-        if any(
-            city in label_l
-            for city in ("bengaluru", "bangalore", "hyderabad", "pune", "mumbai")
+        if any(city in label_l for city in ("bengaluru", "bangalore", "hyderabad", "pune", "mumbai")) and any(
+            city in a
+            for city in (
+                "bengaluru",
+                "bangalore",
+                "hyderabad",
+                "pune",
+                "mumbai",
+                "delhi",
+                "ncr",
+                "gurgaon",
+                "gurugram",
+                "noida",
+            )
         ):
-            if any(
-                city in a
-                for city in (
-                    "bengaluru",
-                    "bangalore",
-                    "hyderabad",
-                    "pune",
-                    "mumbai",
-                    "delhi",
-                    "ncr",
-                    "gurgaon",
-                    "gurugram",
-                    "noida",
-                )
-            ):
-                return next((o for o in options if o.lower() == "yes"), answer)
+            return next((o for o in options if o.lower() == "yes"), answer)
     return answer.strip()
 
 
@@ -2824,8 +2771,7 @@ async def discover_naukri_chatbot_questions(
             logger.debug("Skipping non-question chatbot text: %s", question[:80])
             return []
         logger.info(
-            "Naukri chatbot: statement with %d selectable option(s) — treating as "
-            "answerable: %s",
+            "Naukri chatbot: statement with %d selectable option(s) — treating as answerable: %s",
             len(meaningful),
             question[:60],
         )
@@ -2835,9 +2781,7 @@ async def discover_naukri_chatbot_questions(
         poll_ms = config.application.platform_delays.naukri_chip_poll_ms
 
     wait_attempts = _wait_attempts_for(question)
-    kind, options, raw = await _fetch_answer_options(
-        page, question=question, attempts=wait_attempts, poll_ms=poll_ms
-    )
+    kind, options, raw = await _fetch_answer_options(page, question=question, attempts=wait_attempts, poll_ms=poll_ms)
     if not options:
         kind, options, _ = _analyze_chatbot_state(raw, question)
 
@@ -2912,22 +2856,17 @@ def _should_skip_text_answer(label: str, answer: str) -> bool:
         return False
     if _is_optional_text_field(label) and a in ("yes", "no"):
         return True
-    if _is_optional_text_field(label) and re.fullmatch(r"\d+", a or ""):
-        return True
-    return False
+    return bool(_is_optional_text_field(label) and re.fullmatch(r"\d+", a or ""))
 
 
-async def fill_naukri_chatbot_question(
-    page: Page,
-    question: dict[str, Any],
-    answer: str,
-    *,
-    config: AppConfig | None = None,
-) -> bool:
-    label = normalize_question_label(str(question.get("label", "")))
-    if _is_chatbot_terminal_message(label):
-        logger.info("Naukri chatbot: flow complete (%s)", label[:50])
-        return True
+async def _setup_naukri_chatbot_fill(
+    page: Page, label: str, config: AppConfig | None
+) -> tuple[
+    int,
+    int,
+    int,
+    callable,
+]:
     await _clear_chatbot_composer(page)
     bot_msgs_before = await _chatbot_bot_message_count(page)
     user_msgs_before = await _chatbot_user_message_count(page)
@@ -2945,10 +2884,17 @@ async def fill_naukri_chatbot_question(
     if config is not None:
         poll_ms = config.application.platform_delays.naukri_chip_poll_ms
 
+    return bot_msgs_before, user_msgs_before, poll_ms, _advanced
+
+
+async def _fetch_naukri_answer_options(
+    page: Page,
+    label: str,
+    question: dict[str, Any],
+    poll_ms: int,
+) -> tuple[str, list[str], dict[str, Any] | None]:
     pre_opts = [
-        str(c).strip()
-        for c in (question.get("options") or [])
-        if str(c).strip() and not _SKIP_CHIP.search(str(c))
+        str(c).strip() for c in (question.get("options") or []) if str(c).strip() and not _SKIP_CHIP.search(str(c))
     ]
     kind = str(question.get("kind") or "text")
     raw = question.get("discover_raw")
@@ -2966,11 +2912,217 @@ async def fill_naukri_chatbot_question(
             answer_options = pre_opts
     if not kind or kind == "text":
         kind = str(question.get("kind", kind or "text"))
+    return kind, answer_options, raw
 
-    if _should_skip_text_answer(label, answer):
-        if await _click_skip_question(page):
-            logger.info("Naukri chatbot: skipped optional field %s", label[:60])
+
+async def _handle_desynced_naukri_question(
+    page: Page,
+    label: str,
+    answer: str,
+    answer_options: list[str],
+    config: AppConfig | None,
+    _advanced: callable,
+) -> bool | None:
+    """Handle cases where label doesn't match options (gender, location)."""
+    if _is_gender_options(answer_options):
+        from ..answers.config_answers import gender_answer
+
+        gender = gender_answer(config) if config else None
+        if gender:
+            gtargets = _targets_for_answer(gender, answer_options, "gender")
+            gtarget = gtargets[0] if gtargets else gender
+            gres = await page.evaluate(
+                _FILL_JS,
+                {
+                    "answer": gtarget,
+                    "answers": gtargets or [gtarget],
+                    "allowText": False,
+                    "mode": "choice",
+                },
+            )
+            if (isinstance(gres, dict) and gres.get("filled")) or (await _click_option_playwright(page, gtarget)):
+                logger.info(
+                    "Naukri chatbot: answered desynced gender question with %r (stale label was %r)",
+                    gtarget[:20],
+                    label[:40],
+                )
+                return await _advanced()
+        raise CannotAnswerTruthfully(label, reason="gender picker present but gender not configured/clickable")
+    if _is_other_city_only_options(answer_options):
+        from ..answers.config_answers import location_answer as _location_answer_from_config
+
+        city = _location_answer_from_config(config, "current location") if config else None
+        if city and await _fill_other_city_location(page, city, answer_options, label):
+            logger.info(
+                "Naukri chatbot: answered desynced location question (Other City + %r; stale label was %r)",
+                city[:30],
+                label[:40],
+            )
             return await _advanced()
+        raise CannotAnswerTruthfully(label, reason="Other City location picker but no city configured")
+    return None
+
+
+def _apply_zero_experience_guard(
+    label: str,
+    answer: str,
+    meaningful_opts: list[str],
+    text_input_only: bool,
+) -> None:
+    """Apply zero-experience guard to prevent overstating experience."""
+    from ..answers.location import _is_location_value_question as _is_loc_value_q
+
+    zero_guard_applies = (
+        bool(meaningful_opts)
+        and not text_input_only
+        and not _looks_like_notice_period_question(label)
+        and not is_numeric_ctc_question(label)
+        and not is_pincode_field(label)
+        and not _is_date_field(label)
+        and not _is_loc_value_q(label)
+    )
+    if zero_guard_applies:
+        from ..llm_answers import _numeric_answer_value, _option_represents_zero
+
+        if (
+            _numeric_answer_value(answer) == 0
+            and not any(_option_represents_zero(o) for o in meaningful_opts)
+            and not any(_chip_matches(o, answer) for o in meaningful_opts)
+        ):
+            logger.info(
+                "Naukri chatbot: answer '0' (no experience) has no truthful option "
+                "for %s (options: %s) — honest skip, not a technical failure",
+                label[:50],
+                ", ".join(meaningful_opts[:5]),
+            )
+            raise CannotAnswerTruthfully(label, reason="no zero-experience option (would overstate)")
+
+
+async def _fill_naukri_checkbox_mode(
+    page: Page,
+    label: str,
+    answer: str,
+    answer_options: list[str],
+    config: AppConfig | None,
+    _advanced: callable,
+    raw: dict[str, Any] | None,
+) -> bool | None:
+    if not answer_options:
+        answer_options = await _discover_checkbox_options_playwright(page)
+    if not answer_options:
+        answer_options = _filter_meaningful_options(await _discover_choice_options_playwright(page))
+    targets = _targets_for_answer(answer, answer_options, label)
+    if not targets and _looks_like_city_select_question(label) and answer_options:
+        targets = _city_checkbox_targets("Yes", answer_options)
+    logger.info(
+        "Naukri chatbot city targets for %s: %s",
+        label[:50],
+        ", ".join(targets) if targets else "(none)",
+    )
+    result = await page.evaluate(
+        _FILL_JS,
+        {"answer": answer, "answers": targets, "allowText": False, "mode": "checkbox"},
+    )
+    if isinstance(result, dict) and result.get("filled"):
+        logger.info(
+            "Naukri chatbot: clicked %s %r",
+            result.get("method", "checkbox"),
+            str(result.get("label", answer))[:40],
+        )
+        return await _advanced()
+    if await _click_checkbox_playwright(page, targets):
+        logger.info("Naukri chatbot: clicked checkbox(es) %r", ", ".join(targets)[:60])
+        return await _advanced()
+    return None
+
+
+async def _recover_unfound_choice(
+    page: Page,
+    label: str,
+    answer: str,
+    config: AppConfig | None,
+    _advanced: callable,
+    raw: dict[str, Any] | None,
+) -> bool | None:
+    """Recover a choice question whose options never scraped (or was misread as a choice).
+
+    JS discovery sometimes flags a choice control (``hasChoice``/``hasSingleSelect``/
+    ``hasCheckbox``) whose option labels never materialize in the snapshot — async
+    render, a throttled background tab, or a free-text step misclassified as a
+    choice. Before hard-failing and queueing the question, read the live DOM one
+    more time: click a real option if one now appears, otherwise type into the
+    composer when the panel actually exposes one. Returns the advance result on
+    success, or ``None`` when nothing was recoverable.
+    """
+    live_opts = _filter_meaningful_options(await _discover_choice_options_playwright(page))
+    if live_opts:
+        target = answer.strip()
+        if (
+            config is not None
+            and getattr(config.llm, "enabled", False)
+            and not any(_chip_matches(o, answer) for o in live_opts)
+        ):
+            from ..llm_answers import map_answer_to_option
+
+            mapped = map_answer_to_option(config, question=label, options=live_opts, answer=answer)
+            if mapped:
+                target = mapped
+        targets = _targets_for_answer(target, live_opts, label) or [target]
+        target = targets[0]
+        logger.info(
+            "Naukri chatbot: recovered live options for %s [%s] -> %r",
+            label[:50],
+            ", ".join(live_opts[:5]),
+            target[:40],
+        )
+        res = await page.evaluate(
+            _FILL_JS,
+            {"answer": target, "answers": targets, "allowText": False, "mode": "choice"},
+        )
+        if (
+            (isinstance(res, dict) and res.get("filled"))
+            or await _click_option_playwright(page, target)
+            or await _click_chip(page, target)
+        ):
+            logger.info("Naukri chatbot: clicked recovered option %r for %s", target[:40], label[:50])
+            return await _advanced()
+
+    # No clickable options on the live page. If the panel exposes a text composer,
+    # this was a free-text step misread as a choice — type the answer rather than
+    # queueing a question the page would actually accept. Open-ended prompts stay
+    # queued (we won't fabricate a personal answer just to satisfy the form).
+    from ..answers.validation import is_open_ended_describe_question
+
+    if (
+        raw
+        and raw.get("hasVisibleInput")
+        and answer.strip()
+        and not is_open_ended_describe_question(label)
+        and await _fill_text_playwright(page, answer, question=label)
+    ):
+        logger.info("Naukri chatbot: filled via text after no options for %s", label[:50])
+        return await _advanced()
+    return None
+
+
+async def fill_naukri_chatbot_question(
+    page: Page,
+    question: dict[str, Any],
+    answer: str,
+    *,
+    config: AppConfig | None = None,
+) -> bool:
+    label = normalize_question_label(str(question.get("label", "")))
+    if _is_chatbot_terminal_message(label):
+        logger.info("Naukri chatbot: flow complete (%s)", label[:50])
+        return True
+
+    _bot_msgs_before, _user_msgs_before, poll_ms, _advanced = await _setup_naukri_chatbot_fill(page, label, config)
+    kind, answer_options, raw = await _fetch_naukri_answer_options(page, label, question, poll_ms)
+
+    if _should_skip_text_answer(label, answer) and await _click_skip_question(page):
+        logger.info("Naukri chatbot: skipped optional field %s", label[:60])
+        return await _advanced()
 
     if _is_date_field(label):
         if await _fill_date_field(page, label, answer):
@@ -3022,7 +3174,7 @@ async def fill_naukri_chatbot_question(
 
     kind = _upgrade_kind_for_yes_no_options(kind, label, answer_options, raw)
 
-    from ..application_questions import _infer_field_for_question
+    from ..answers.fields import infer_field_for_question
 
     # Live DOM shows a real choice control (radio/checkbox/chips), not just the
     # generic "Type message here…" composer that is always present.
@@ -3049,7 +3201,7 @@ async def fill_naukri_chatbot_question(
     if is_open_ended_describe_question(label) and bool(raw and raw.get("hasVisibleInput")):
         dom_is_free_text = True
         dom_has_choice = False
-    inferred = _infer_field_for_question(label)
+    inferred = infer_field_for_question(label)
     if inferred.get("kind") == "radio" and not dom_is_free_text:
         inferred_opts = [str(o) for o in inferred.get("options", []) if str(o).strip()]
         if _is_yes_no_options(inferred_opts):
@@ -3057,7 +3209,11 @@ async def fill_naukri_chatbot_question(
             if not answer_options:
                 answer_options = inferred_opts
 
-    if _is_optional_text_field(label) or _is_date_field(label) or (raw and raw.get("hasVisibleInput") and raw.get("hasSkipOnly")):
+    if (
+        _is_optional_text_field(label)
+        or _is_date_field(label)
+        or (raw and raw.get("hasVisibleInput") and raw.get("hasSkipOnly"))
+    ):
         result = await page.evaluate(
             _FILL_JS,
             {"answer": answer, "answers": [answer], "allowText": True, "mode": "text", "question": label},
@@ -3077,15 +3233,11 @@ async def fill_naukri_chatbot_question(
         },
         config=config,
     )
-    input_type = infer_field_input_type(
-        label, {**question, "platform": "naukri", "kind": kind}
-    )
-    from ..application_questions import _is_location_value_question
+    input_type = infer_field_input_type(label, {**question, "platform": "naukri", "kind": kind})
     from ..answers.config_answers import location_answer as _location_answer_from_config
+    from ..answers.location import _is_location_value_question
 
-    if _is_location_value_question(label) and (
-        not answer.strip() or re.fullmatch(r"\d+(?:\.\d+)?", answer.strip())
-    ):
+    if _is_location_value_question(label) and (not answer.strip() or re.fullmatch(r"\d+(?:\.\d+)?", answer.strip())):
         if config:
             fallback = _location_answer_from_config(config, label, question)
             if fallback:
@@ -3105,59 +3257,16 @@ async def fill_naukri_chatbot_question(
     answer = _coerce_chip_answer({**question, "kind": kind, "options": answer_options}, answer)
     options_were_implausible = False
     if answer_options and not _options_plausible_for_question(label, answer_options):
-        # Label/options desync: the live options describe a DIFFERENT question than
-        # the (stale) scraped label — e.g. a gender radio (Male/Female) under a
-        # "Total IT Experience?" label, or an "Other City" location picker under a
-        # notice-period label. Identify the real question from the options and
-        # answer THAT, instead of failing on a phantom radio.
-        if _is_gender_options(answer_options):
-            from ..answers.config_answers import gender_answer
-
-            gender = gender_answer(config) if config else None
-            if gender:
-                gtargets = _targets_for_answer(gender, answer_options, "gender")
-                gtarget = gtargets[0] if gtargets else gender
-                gres = await page.evaluate(
-                    _FILL_JS,
-                    {
-                        "answer": gtarget,
-                        "answers": gtargets or [gtarget],
-                        "allowText": False,
-                        "mode": "choice",
-                    },
-                )
-                if (isinstance(gres, dict) and gres.get("filled")) or (
-                    await _click_option_playwright(page, gtarget)
-                ):
-                    logger.info(
-                        "Naukri chatbot: answered desynced gender question with %r "
-                        "(stale label was %r)",
-                        gtarget[:20],
-                        label[:40],
-                    )
-                    return await _advanced()
-            raise CannotAnswerTruthfully(
-                label, reason="gender picker present but gender not configured/clickable"
-            )
-        if _is_other_city_only_options(answer_options):
-            city = (
-                _location_answer_from_config(config, "current location")
-                if config
-                else None
-            )
-            if city and await _fill_other_city_location(
-                page, city, answer_options, label
-            ):
-                logger.info(
-                    "Naukri chatbot: answered desynced location question "
-                    "(Other City + %r; stale label was %r)",
-                    city[:30],
-                    label[:40],
-                )
-                return await _advanced()
-            raise CannotAnswerTruthfully(
-                label, reason="Other City location picker but no city configured"
-            )
+        desync_result = await _handle_desynced_naukri_question(
+            page,
+            label,
+            answer,
+            answer_options,
+            config,
+            _advanced,
+        )
+        if desync_result is not None:
+            return desync_result
         logger.debug(
             "Naukri chatbot: discarding implausible options for %s: %s",
             label[:40],
@@ -3165,9 +3274,7 @@ async def fill_naukri_chatbot_question(
         )
         answer_options = []
         options_were_implausible = True
-    text_input_only = _should_use_text_input_only(
-        kind, label, answer_options, raw, input_type
-    )
+    text_input_only = _should_use_text_input_only(kind, label, answer_options, raw, input_type)
     answer_options = _effective_options(answer_options, label, raw)
     choice_only = _choice_only_question(label, answer_options, raw)
     meaningful_opts = _filter_meaningful_options(answer_options)
@@ -3202,9 +3309,7 @@ async def fill_naukri_chatbot_question(
     ):
         from ..llm_answers import map_answer_to_option
 
-        mapped = map_answer_to_option(
-            config, question=label, options=meaningful_opts, answer=answer
-        )
+        mapped = map_answer_to_option(config, question=label, options=meaningful_opts, answer=answer)
         if mapped:
             logger.info(
                 "Naukri chatbot: LLM mapped %r -> option %r (saved answer unchanged)",
@@ -3214,41 +3319,8 @@ async def fill_naukri_chatbot_question(
             answer = mapped
 
     # Zero-experience guard: when the answer is "0" (no experience) and none of the
-    # real options represent zero, refuse to fill this choice question. The in-browser
-    # fuzzy matcher (_FILL_JS) would otherwise click a positive band — e.g. "0" ->
-    # "7 10 years" because the normalized chip contains the "0" from "10" — which
-    # falsely claims experience. Skipping (could-not-fill) is the honest outcome.
-    # Only applies where "0" means "no experience / none". For notice period
-    # (0 = immediate), CTC, pincode, date and location, "0"/numbers are legitimate
-    # values, so the overstating guard must not fire.
-    from ..application_questions import _is_location_value_question as _is_loc_value_q
-
-    zero_guard_applies = (
-        bool(meaningful_opts)
-        and not text_input_only
-        and not _looks_like_notice_period_question(label)
-        and not is_numeric_ctc_question(label)
-        and not is_pincode_field(label)
-        and not _is_date_field(label)
-        and not _is_loc_value_q(label)
-    )
-    if zero_guard_applies:
-        from ..llm_answers import _numeric_answer_value, _option_represents_zero
-
-        if (
-            _numeric_answer_value(answer) == 0
-            and not any(_option_represents_zero(o) for o in meaningful_opts)
-            and not any(_chip_matches(o, answer) for o in meaningful_opts)
-        ):
-            logger.info(
-                "Naukri chatbot: answer '0' (no experience) has no truthful option "
-                "for %s (options: %s) — honest skip, not a technical failure",
-                label[:50],
-                ", ".join(meaningful_opts[:5]),
-            )
-            raise CannotAnswerTruthfully(
-                label, reason="no zero-experience option (would overstate)"
-            )
+    # real options represent zero, refuse to fill this choice question.
+    _apply_zero_experience_guard(label, answer, meaningful_opts, text_input_only)
 
     checkbox_mode = (
         not text_input_only
@@ -3266,18 +3338,12 @@ async def fill_naukri_chatbot_question(
                     or _looks_like_skill_checkbox_question(label, answer_options)
                 )
             )
-            or (
-                _looks_like_city_select_question(label)
-                and (answer_options or (raw and raw.get("hasCheckbox")))
-            )
+            or (_looks_like_city_select_question(label) and (answer_options or (raw and raw.get("hasCheckbox"))))
             # Answer names 2+ distinct options (e.g. "Flask, FastAPI") — multi-select
             # regardless of how the question is worded. Requires positive checkbox
             # evidence so a comma-style answer never multi-clicks a single-select
             # control; single-select still picks just targets[0] in radio_mode.
-            or (
-                _is_checkbox_options(raw, answer_options)
-                and len(_multi_option_targets(answer, meaningful_opts)) >= 2
-            )
+            or (_is_checkbox_options(raw, answer_options) and len(_multi_option_targets(answer, meaningful_opts)) >= 2)
         )
     )
     radio_mode = (
@@ -3285,9 +3351,7 @@ async def fill_naukri_chatbot_question(
         and not dom_is_free_text
         and input_type != "ctc_numeric"
         and not is_numeric_ctc_question(label)
-        and not (
-            is_numeric_ctc_question(label) and raw and raw.get("hasVisibleInput")
-        )
+        and not (is_numeric_ctc_question(label) and raw and raw.get("hasVisibleInput"))
         and (
             kind == "radio"
             or (
@@ -3296,10 +3360,7 @@ async def fill_naukri_chatbot_question(
                 and (
                     _looks_like_yes_no_question(label)
                     or _looks_like_notice_period_question(label)
-                    or (
-                        bool(meaningful_opts)
-                        and not _is_yes_no_options(meaningful_opts)
-                    )
+                    or (bool(meaningful_opts) and not _is_yes_no_options(meaningful_opts))
                     or bool(raw and raw.get("hasSingleSelect"))
                 )
             )
@@ -3308,41 +3369,22 @@ async def fill_naukri_chatbot_question(
     targets = _targets_for_answer(answer, answer_options, label)
 
     if checkbox_mode:
-        if not answer_options:
-            answer_options = await _discover_checkbox_options_playwright(page)
-        if not answer_options:
-            answer_options = _filter_meaningful_options(
-                await _discover_choice_options_playwright(page)
-            )
-            if answer_options:
-                meaningful_opts = answer_options
-        targets = _targets_for_answer(answer, answer_options, label)
-        if not targets and _looks_like_city_select_question(label) and answer_options:
-            targets = _city_checkbox_targets("Yes", answer_options)
-        logger.info(
-            "Naukri chatbot city targets for %s: %s",
-            label[:50],
-            ", ".join(targets) if targets else "(none)",
+        checkbox_result = await _fill_naukri_checkbox_mode(
+            page,
+            label,
+            answer,
+            answer_options,
+            config,
+            _advanced,
+            raw,
         )
-        result = await page.evaluate(
-            _FILL_JS,
-            {"answer": answer, "answers": targets, "allowText": False, "mode": "checkbox"},
-        )
-        if isinstance(result, dict) and result.get("filled"):
-            logger.info(
-                "Naukri chatbot: clicked %s %r",
-                result.get("method", "checkbox"),
-                str(result.get("label", answer))[:40],
-            )
-            return await _advanced()
-        if await _click_checkbox_playwright(page, targets):
-            logger.info("Naukri chatbot: clicked checkbox(es) %r", ", ".join(targets)[:60])
-            return await _advanced()
+        if checkbox_result is not None:
+            return checkbox_result
         if choice_only:
+            recovered = await _recover_unfound_choice(page, label, answer, config, _advanced, raw)
+            if recovered is not None:
+                return recovered
             if not answer_options:
-                # Resolved as a multi-select but the live DOM exposes no options to
-                # tick — clicking a fabricated target only yields a false technical
-                # failure, so skip honestly instead.
                 raise CannotAnswerTruthfully(
                     label,
                     reason="checkbox group detected but no selectable options on page",
@@ -3357,9 +3399,7 @@ async def fill_naukri_chatbot_question(
         # Resolved as a single-select but the discovery snapshot captured no
         # option labels. Re-scrape (JS first, then a direct Playwright read of the
         # live chips/radios) before doing anything else.
-        _, fresh_opts, fresh_raw = await _fetch_answer_options(
-            page, question=label, attempts=6, poll_ms=poll_ms
-        )
+        _, fresh_opts, fresh_raw = await _fetch_answer_options(page, question=label, attempts=6, poll_ms=poll_ms)
         if fresh_raw:
             raw = fresh_raw
         if fresh_opts:
@@ -3378,8 +3418,7 @@ async def fill_naukri_chatbot_question(
             # panel exposes one; otherwise skip honestly (not a tech failure).
             if raw and raw.get("hasVisibleInput") and not choice_only:
                 logger.info(
-                    "Naukri chatbot: single-select resolved but no DOM options for "
-                    "%s — falling back to text input",
+                    "Naukri chatbot: single-select resolved but no DOM options for %s — falling back to text input",
                     label[:60],
                 )
                 radio_mode = False
@@ -3409,9 +3448,7 @@ async def fill_naukri_chatbot_question(
             and not answer_is_exact_option
             and (_looks_like_notice_period_question(label) or _looks_like_yes_no_question(label))
         ):
-            coerced = _coerce_chip_answer(
-                {**question, "kind": kind, "options": answer_options}, answer
-            )
+            coerced = _coerce_chip_answer({**question, "kind": kind, "options": answer_options}, answer)
             if coerced.strip().lower() != answer.strip().lower():
                 targets = _targets_for_answer(coerced, answer_options, label)
         target = targets[0] if targets else answer.strip()
@@ -3435,9 +3472,7 @@ async def fill_naukri_chatbot_question(
         if await _click_option_playwright(page, target):
             logger.info("Naukri chatbot: clicked radio %r", target[:40])
             return await _advanced()
-        if _is_yes_no_options(answer_options) and await _click_yes_no_playwright(
-            page, target, answer_options
-        ):
+        if _is_yes_no_options(answer_options) and await _click_yes_no_playwright(page, target, answer_options):
             logger.info("Naukri chatbot: clicked yes/no %r", target[:40])
             return await _advanced()
         if await _desired_option_already_selected(page, [target, *targets]):
@@ -3451,9 +3486,7 @@ async def fill_naukri_chatbot_question(
         # Yes/No (phantom) rather than the real on-screen choices. Re-scrape the
         # live DOM for the actual options and, when they differ, hand THEM to the
         # LLM and retry — "identify real options -> ask LLM -> click".
-        live_opts = _filter_meaningful_options(
-            await _discover_choice_options_playwright(page)
-        )
+        live_opts = _filter_meaningful_options(await _discover_choice_options_playwright(page))
         tried = {o.strip().lower() for o in answer_options}
         if live_opts and {o.strip().lower() for o in live_opts} != tried:
             retry_answer = answer
@@ -3464,9 +3497,7 @@ async def fill_naukri_chatbot_question(
             ):
                 from ..llm_answers import map_answer_to_option
 
-                mapped = map_answer_to_option(
-                    config, question=label, options=live_opts, answer=answer
-                )
+                mapped = map_answer_to_option(config, question=label, options=live_opts, answer=answer)
                 if mapped:
                     logger.info(
                         "Naukri chatbot: LLM mapped %r -> live option %r",
@@ -3491,9 +3522,7 @@ async def fill_naukri_chatbot_question(
                     "mode": "choice",
                 },
             )
-            if (
-                isinstance(res2, dict) and res2.get("filled")
-            ) or await _click_option_playwright(page, retry_target):
+            if (isinstance(res2, dict) and res2.get("filled")) or await _click_option_playwright(page, retry_target):
                 logger.info(
                     "Naukri chatbot: clicked radio via live re-scrape %r",
                     retry_target[:40],
@@ -3524,9 +3553,7 @@ async def fill_naukri_chatbot_question(
     elif answer_options:
         target = targets[0]
         if _is_yes_no_options(answer_options):
-            coerced = _coerce_chip_answer(
-                {**question, "kind": "radio", "options": answer_options}, answer
-            )
+            coerced = _coerce_chip_answer({**question, "kind": "radio", "options": answer_options}, answer)
             if await _click_yes_no_playwright(page, coerced, answer_options):
                 logger.info("Naukri chatbot: clicked yes/no %r", coerced[:40])
                 return await _advanced()
@@ -3548,29 +3575,26 @@ async def fill_naukri_chatbot_question(
         if await _click_chip(page, target) or await _click_option_playwright(page, target):
             logger.info("Naukri chatbot: clicked option %r", target[:40])
             return await _advanced()
-        from ..application_questions import _is_location_value_question
+        from ..answers.location import _is_location_value_question
 
-        if any(
-            re.search(r"\bother\s*city\b|^other$", o.strip(), re.I) for o in answer_options
-        ) and (
-            _is_location_value_question(label) or _looks_like_city_select_question(label)
+        if (
+            any(re.search(r"\bother\s*city\b|^other$", o.strip(), re.I) for o in answer_options)
+            and (_is_location_value_question(label) or _looks_like_city_select_question(label))
+            and await _fill_other_city_location(page, answer, answer_options, label)
         ):
-            if await _fill_other_city_location(page, answer, answer_options, label):
-                logger.info(
-                    "Naukri chatbot: selected 'Other City' and typed %r for %s",
-                    answer[:40],
-                    label[:50],
-                )
-                return await _advanced()
+            logger.info(
+                "Naukri chatbot: selected 'Other City' and typed %r for %s",
+                answer[:40],
+                label[:50],
+            )
+            return await _advanced()
         logger.warning(
             "Naukri chatbot: no matching option for %r (options: %s)",
             answer[:40],
             ", ".join(answer_options[:6]),
         )
         if _is_yes_no_options(answer_options) and _looks_like_yes_no_question(label):
-            coerced = _coerce_chip_answer(
-                {**question, "kind": kind, "options": answer_options}, answer
-            )
+            coerced = _coerce_chip_answer({**question, "kind": kind, "options": answer_options}, answer)
             if await _click_yes_no_playwright(page, coerced, answer_options):
                 logger.info("Naukri chatbot: clicked yes/no fallback %r", coerced[:40])
                 return await _advanced()
@@ -3585,9 +3609,7 @@ async def fill_naukri_chatbot_question(
 
     if choice_only:
         if _is_yes_no_options(meaningful_opts):
-            coerced = _coerce_chip_answer(
-                {**question, "kind": "radio", "options": meaningful_opts}, answer
-            )
+            coerced = _coerce_chip_answer({**question, "kind": "radio", "options": meaningful_opts}, answer)
             if await _click_yes_no_playwright(page, coerced, meaningful_opts):
                 logger.info("Naukri chatbot: clicked yes/no (choice_only) %r", coerced[:40])
                 return await _advanced()
@@ -3595,6 +3617,9 @@ async def fill_naukri_chatbot_question(
             if await _fill_multi_chip_answer(page, answer, meaningful_opts, label):
                 logger.info("Naukri chatbot: clicked multi-chip (choice_only) %r", answer[:40])
                 return await _advanced()
+        recovered = await _recover_unfound_choice(page, label, answer, config, _advanced, raw)
+        if recovered is not None:
+            return recovered
         logger.warning(
             "Naukri chatbot: expected chips/radio/checkbox for %s but found no options",
             label[:60],
@@ -3628,9 +3653,7 @@ async def fill_naukri_chatbot_question(
         and not allow_text_despite_choices
         and not _is_yes_no_options(meaningful_opts)
     ):
-        if await _desired_option_already_selected(
-            page, [answer, *_targets_for_answer(answer, answer_options, label)]
-        ):
+        if await _desired_option_already_selected(page, [answer, *_targets_for_answer(answer, answer_options, label)]):
             logger.info(
                 "Naukri chatbot: choice already selected for %s — advancing",
                 label[:50],

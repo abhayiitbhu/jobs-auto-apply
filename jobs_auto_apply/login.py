@@ -50,8 +50,8 @@ async def wait_for_manual_login(
     try_google_button: bool = True,
 ) -> bool:
     """
-    Open the login page and wait for the user to finish Google OAuth (passkey, 2FA, etc.)
-  in the visible browser window.
+      Open the login page and wait for the user to finish Google OAuth (passkey, 2FA, etc.)
+    in the visible browser window.
     """
     await page.goto(login_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(2000)

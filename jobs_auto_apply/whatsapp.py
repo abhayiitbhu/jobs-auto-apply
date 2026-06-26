@@ -12,24 +12,26 @@ personal number you accept that risk on.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
+
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    async_playwright,
+)
+from playwright.async_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
+
 from .pending_questions import (
     PENDING_REPLY_DROP,
     PENDING_REPLY_IGNORE,
     PENDING_REPLY_SKIP,
     parse_pending_reply,
-)
-
-import asyncio
-import logging
-from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import AsyncIterator
-
-from playwright.async_api import (
-    BrowserContext,
-    Page,
-    TimeoutError as PlaywrightTimeoutError,
-    async_playwright,
 )
 
 logger = logging.getLogger("job_apply")
@@ -96,9 +98,7 @@ class WhatsAppClient:
         if self._context is not None:
             return
         if not self.phone:
-            raise WhatsAppError(
-                "whatsapp.phone is not set — add your number (with country code) to config.yaml"
-            )
+            raise WhatsAppError("whatsapp.phone is not set — add your number (with country code) to config.yaml")
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._pw = await async_playwright().start()
         self._context = await self._pw.chromium.launch_persistent_context(
@@ -120,10 +120,8 @@ class WhatsAppClient:
             self._context = None
             self._page = None
             if self._pw is not None:
-                try:
+                with suppress(Exception):
                     await self._pw.stop()
-                except Exception:
-                    pass
                 self._pw = None
 
     @property
@@ -149,10 +147,8 @@ class WhatsAppClient:
     async def ensure_logged_in(self, *, interactive: bool = True) -> bool:
         """Open WhatsApp Web; if not linked, prompt to scan the QR and wait."""
         page = self.page
-        try:
+        with suppress(PlaywrightTimeoutError):
             await page.goto(WHATSAPP_URL, wait_until="domcontentloaded", timeout=60000)
-        except PlaywrightTimeoutError:
-            pass
 
         deadline = asyncio.get_event_loop().time() + self.login_timeout_seconds
         announced_qr = False
@@ -199,9 +195,7 @@ class WhatsAppClient:
                     continue
             # "Phone number shared via url is invalid" / "Starting chat" overlays
             await asyncio.sleep(1)
-        raise WhatsAppError(
-            f"Could not open WhatsApp chat for {self.phone} (composer not found)."
-        )
+        raise WhatsAppError(f"Could not open WhatsApp chat for {self.phone} (composer not found).")
 
     async def _composer(self):
         for sel in _COMPOSER_SELECTORS:
@@ -326,9 +320,7 @@ async def whatsapp_client(config) -> AsyncIterator[WhatsAppClient]:
     await client.start()
     try:
         if not await client.ensure_logged_in():
-            raise WhatsAppError(
-                "WhatsApp Web is not linked. Run: python main.py whatsapp-login"
-            )
+            raise WhatsAppError("WhatsApp Web is not linked. Run: python main.py whatsapp-login")
         await client.open_chat()
         yield client
     finally:

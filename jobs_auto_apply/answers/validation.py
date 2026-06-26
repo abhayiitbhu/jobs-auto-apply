@@ -6,7 +6,8 @@ from typing import Any
 
 from ..answer_suggest import is_employer_check_question, is_prior_application_screening
 from ..config import AppConfig
-from .profile_links import is_github_profile_question
+from .chips import _value_in_answer_range as value_in_answer_range_legacy
+from .chips import is_chip_range_label, parse_years_numeric_value
 from .compensation import (
     compensation_answer_compatible,
     looks_like_compensation_question,
@@ -22,8 +23,8 @@ from .fields import (
     is_numeric_ctc_question,
     is_pincode_field,
 )
-from .chips import is_chip_range_label, parse_years_numeric_value, _value_in_answer_range as value_in_answer_range_legacy
 from .location import is_location_value_question, location_like_answer_fits
+from .profile_links import is_github_profile_question
 
 logger = logging.getLogger("job_apply")
 
@@ -34,6 +35,7 @@ _LLM_META_ANSWER = re.compile(
     r"interview_available\s*:|langchain_years|skill_years\s*:",
     re.I,
 )
+
 
 def is_placeholder_answer(answer: str) -> bool:
     """Detect answers that are tips/placeholders rather than real responses."""
@@ -52,11 +54,9 @@ _LLM_META_ANSWER = re.compile(
 )
 
 
-
 def is_llm_meta_answer(answer: str) -> bool:
     """LLM echoed prompt context or RAG commentary instead of a field value."""
     return bool(_LLM_META_ANSWER.search(answer.strip()))
-
 
 
 def needs_review_answer(question: str, answer: str) -> bool:
@@ -73,9 +73,7 @@ def needs_review_answer(question: str, answer: str) -> bool:
     if is_llm_meta_answer(a):
         return True
     input_type = infer_field_input_type(q)
-    if re.search(r"^no verified\b", a, re.I) and (
-        is_skill_years_question(q) or input_type == "years_numeric"
-    ):
+    if re.search(r"^no verified\b", a, re.I) and (is_skill_years_question(q) or input_type == "years_numeric"):
         return True
     if len(a) > 150 and any(
         token in q
@@ -101,30 +99,22 @@ def needs_review_answer(question: str, answer: str) -> bool:
         return True
     if "linkedin" in q and "linkedin.com" not in a.lower():
         return True
-    if "github" in q and "github.com" not in a.lower():
-        if is_github_profile_question(q):
-            return True
+    if "github" in q and "github.com" not in a.lower() and is_github_profile_question(q):
+        return True
     if a.lower().startswith("results-driven"):
         return True
     if re.search(r"\boffers?\b", q) and len(a) > 20:
         return True
-    if is_employer_check_question(q) and (
-        len(a) > 40 or not re.match(r"^(yes|no)\b", a, re.I)
-    ):
+    if is_employer_check_question(q) and (len(a) > 40 or not re.match(r"^(yes|no)\b", a, re.I)):
         return True
-    if is_prior_application_screening(q) and (
-        len(a) > 8 or not re.match(r"^(yes|no)\b", a, re.I)
-    ):
+    if is_prior_application_screening(q) and (len(a) > 8 or not re.match(r"^(yes|no)\b", a, re.I)):
         return True
     if looks_like_compensation_question(q):
         if re.fullmatch(r"\d+(?:\.\d+)?(?:\s*lpa)?", a, re.I):
             return False
         if re.fullmatch(r"\d+(?:\.\d+)?/\d+(?:\.\d+)?", a):
             return False
-        if (
-            re.search(r"\bcurrent\b", a, re.I)
-            and re.search(r"\bexpected\b", a, re.I)
-        ):
+        if re.search(r"\bcurrent\b", a, re.I) and re.search(r"\bexpected\b", a, re.I):
             return False
     if (
         input_type == "short_text"
@@ -136,29 +126,20 @@ def needs_review_answer(question: str, answer: str) -> bool:
     ):
         return True
     if input_type == "years_numeric" and parse_years_numeric_value(a) is None:
-        if re.fullmatch(r"yes|no", a, re.I):
-            return False
-        return True
+        return not re.fullmatch(r"yes|no", a, re.I)
     if is_numeric_ctc_question(q):
         parsed = resolve_ctc_numeric_answer(q, a, None)
         if parsed and re.fullmatch(r"\d+(?:\.\d+)?/\d+(?:\.\d+)?", parsed):
             return False
         if not parsed or not re.fullmatch(r"\d+(?:\.\d+)?", parsed):
-            if (
-                re.search(r"\bcurrent\b", a, re.I)
-                and re.search(r"\bexpected\b", a, re.I)
-            ):
+            if re.search(r"\bcurrent\b", a, re.I) and re.search(r"\bexpected\b", a, re.I):
                 return False
             if re.search(r"\b(current|expected)\b", a, re.I) and len(a) > 12:
                 return True
         want = ctc_want_kind(q)
-        if want == "expected" and re.search(r"\bcurrent\b", a, re.I) and not re.search(
-            r"\bexpected\b", a, re.I
-        ):
+        if want == "expected" and re.search(r"\bcurrent\b", a, re.I) and not re.search(r"\bexpected\b", a, re.I):
             return True
-        if want == "current" and re.search(r"\bexpected\b", a, re.I) and not re.search(
-            r"\bcurrent\b", a, re.I
-        ):
+        if want == "current" and re.search(r"\bexpected\b", a, re.I) and not re.search(r"\bcurrent\b", a, re.I):
             return True
     if not compensation_answer_compatible(q, a):
         return True
@@ -173,9 +154,7 @@ def needs_review_answer(question: str, answer: str) -> bool:
     if is_location_value_question(q) and not location_like_answer_fits(q, a):
         return True
     if is_last_working_day_question(q):
-        if re.search(r"\b\d+\s*days?\b", a, re.I) and not re.search(
-            r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", a
-        ):
+        if re.search(r"\b\d+\s*days?\b", a, re.I) and not re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", a):
             return True
         if re.search(r"serving_notice\s*:|last_working_day\s*:", a, re.I):
             return True
@@ -204,7 +183,6 @@ def normalize_employer_radio_answer(question: str, answer: str) -> str:
     return text
 
 
-
 def answer_acceptable_for_field(
     question: str,
     answer: str,
@@ -221,9 +199,7 @@ def answer_acceptable_for_field(
         return True
     if needs_review_answer(question, answer):
         return False
-    if not saved_answer_fits_field(answer, field):
-        return False
-    return True
+    return saved_answer_fits_field(answer, field)
 
 
 def _answer_is_exact_option(answer: str, field: dict[str, Any]) -> bool:
@@ -233,13 +209,7 @@ def _answer_is_exact_option(answer: str, field: dict[str, Any]) -> bool:
     want = re.sub(r"\s+", " ", str(answer).strip().lower())
     if not want:
         return False
-    for opt in options:
-        if re.sub(r"\s+", " ", str(opt).strip().lower()) == want:
-            return True
-    return False
-
-
-
+    return any(re.sub(r"\s+", " ", str(opt).strip().lower()) == want for opt in options)
 
 
 def saved_answer_fits_field(
@@ -258,13 +228,9 @@ def saved_answer_fits_field(
         return bool(re.fullmatch(r"\d{4,8}", answer.strip()))
     from ..question_groups import classify_question
 
-    if classify_question(label) == "current_location" and not location_like_answer_fits(
-        label, answer, field
-    ):
+    if classify_question(label) == "current_location" and not location_like_answer_fits(label, answer, field):
         return False
-    if classify_question(label) == "preferred_location" and not location_like_answer_fits(
-        label, answer, field
-    ):
+    if classify_question(label) == "preferred_location" and not location_like_answer_fits(label, answer, field):
         return False
     if is_employer_check_question(label):
         normalized = normalize_employer_radio_answer(label, answer)
@@ -278,20 +244,20 @@ def saved_answer_fits_field(
         want = ctc_want_kind(label)
         parsed = resolve_ctc_numeric_answer(label, answer, config)
         if want == "both":
-            if parsed and re.fullmatch(r"\d+(?:\.\d+)?/\d+(?:\.\d+)?", parsed):
-                return True
-            return False
+            return bool(parsed and re.fullmatch(r"\d+(?:\.\d+)?/\d+(?:\.\d+)?", parsed))
         if not parsed or not re.fullmatch(r"\d+(?:\.\d+)?", parsed):
             return False
-        if want == "expected" and re.search(r"\bcurrent\b", answer, re.I) and not re.search(
-            r"\bexpected\b", answer, re.I
+        if (
+            want == "expected"
+            and re.search(r"\bcurrent\b", answer, re.I)
+            and not re.search(r"\bexpected\b", answer, re.I)
         ):
             return False
-        if want == "current" and re.search(r"\bexpected\b", answer, re.I) and not re.search(
-            r"\bcurrent\b", answer, re.I
-        ):
-            return False
-        return True
+        return not (
+            want == "current"
+            and re.search(r"\bexpected\b", answer, re.I)
+            and not re.search(r"\bcurrent\b", answer, re.I)
+        )
     input_type = infer_field_input_type(label, field)
     if input_type == "years_numeric" or is_skill_years_question(label):
         years = parse_years_numeric_value(answer)
@@ -301,9 +267,7 @@ def saved_answer_fits_field(
             if len(answer.strip()) > 12:
                 return False
     if is_last_working_day_question(label):
-        if re.search(r"\b\d+\s*days?\b", answer, re.I) and not re.search(
-            r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", answer
-        ):
+        if re.search(r"\b\d+\s*days?\b", answer, re.I) and not re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", answer):
             return False
         if re.search(r"serving_notice\s*:|last_working_day\s*:", answer, re.I):
             return False
@@ -332,15 +296,13 @@ def saved_answer_fits_field(
                 return True
     if kind not in ("radio", "checkbox"):
         input_type = infer_field_input_type(label, field)
-        if (
+        return not (
             input_type == "short_text"
             and re.fullmatch(r"\d+(?:\.\d+)?", answer.strip())
             and not is_skill_years_question(label)
             and not is_numeric_ctc_question(label)
             and not is_pincode_field(label)
-        ):
-            return False
-        return True
+        )
     if kind == "radio" and options:
         opts = [o.lower() for o in options]
         if set(opts).issubset({"yes", "no"}) and len(opts) >= 2:
@@ -351,19 +313,17 @@ def saved_answer_fits_field(
             return len(a) <= 8 and a in ("yes", "no")
         if any(a == o for o in opts):
             return True
-        if len(a) <= 24:
-            if any(a in o or o in a for o in opts):
-                return True
+        if len(a) <= 24 and any(a in o or o in a for o in opts):
+            return True
         num = re.search(r"(\d+)", a)
         if num:
             value = int(num.group(1))
             if any(value_in_answer_range_legacy(value, o) for o in options):
                 return True
-        if any(w in a for w in ("immediate", "lwd", "serving")) and any(
-            re.search(r"immediate|serving", o, re.I) for o in options
-        ):
-            return True
-        return False
+        return bool(
+            any(w in a for w in ("immediate", "lwd", "serving"))
+            and any(re.search(r"immediate|serving", o, re.I) for o in options)
+        )
     if kind == "checkbox":
         return a in ("yes", "no", "true", "false", "1", "0", "checked", "agree", "accept")
     if kind == "checkbox_group" and options:
@@ -390,10 +350,7 @@ def saved_answer_fits_field(
     return True
 
 
-
-_YESNO_ONLY = frozenset(
-    {"yes", "no", "y", "n", "true", "false", "yeah", "yep", "nope", "na", "n/a"}
-)
+_YESNO_ONLY = frozenset({"yes", "no", "y", "n", "true", "false", "yeah", "yep", "nope", "na", "n/a"})
 
 
 def requires_personal_artifact(question: str) -> bool:
@@ -422,9 +379,7 @@ def requires_personal_artifact(question: str) -> bool:
     ):
         return True
     # "give/share/show an example of ..."
-    if re.search(r"\b(give|share|show)\b[^?]{0,30}\bexamples?\b", q):
-        return True
-    return False
+    return bool(re.search(r"\b(give|share|show)\b[^?]{0,30}\bexamples?\b", q))
 
 
 def is_open_ended_describe_question(question: str) -> bool:
@@ -436,16 +391,13 @@ def is_open_ended_describe_question(question: str) -> bool:
     """
     q = str(question or "").lower()
     if re.search(
-        r"\b(describe|elaborate|walk (us|me) through|please (specify|elaborate)|"
-        r"tell us about)\b",
+        r"\b(describe|elaborate|walk (us|me) through|please (specify|elaborate)|" r"tell us about)\b",
         q,
     ):
         return True
     if re.search(r"\bwhat\b.*\bexperience\b.*\band which\b", q):
         return True
-    if requires_personal_artifact(q):
-        return True
-    return False
+    return bool(requires_personal_artifact(q))
 
 
 def is_hard_type_mismatch(
@@ -484,10 +436,7 @@ def answer_usable(
 ) -> bool:
     if needs_review_answer(question, answer):
         return False
-    if field and not saved_answer_fits_field(answer, field, config):
-        return False
-    return True
-
+    return not (field and not saved_answer_fits_field(answer, field, config))
 
 
 def _yes_no_equivalent(a: str, b: str) -> bool:
@@ -499,7 +448,6 @@ def _yes_no_equivalent(a: str, b: str) -> bool:
     if al in yes and bl in yes:
         return True
     return al in no and bl in no
-
 
 
 def answers_equivalent_for_agreement(
@@ -532,6 +480,3 @@ def answers_equivalent_for_agreement(
     if num_a is not None and num_b is not None:
         return num_a == num_b
     return False
-
-
-

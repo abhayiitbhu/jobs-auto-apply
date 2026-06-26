@@ -4,12 +4,13 @@ import logging
 import re
 from pathlib import Path
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..cover_letter import build_cover_letter
-from ..page_load import ensure_page_ready, goto_settled
 from ..config import AppConfig, UserConfig
 from ..cookies import split_name
+from ..cover_letter import build_cover_letter
+from ..page_load import ensure_page_ready, goto_settled
 from ..utils import JobListing
 from .detector import detect_ats
 from .workday import apply_workday

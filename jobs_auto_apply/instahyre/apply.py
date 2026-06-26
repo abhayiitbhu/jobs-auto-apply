@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import re
 
-from playwright.async_api import BrowserContext, Error as PlaywrightError
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..apply_runner import run_apply_batch
 from ..config import AppConfig
@@ -13,19 +14,19 @@ from ..utils import JobListing, job_key, save_applied_job
 from .auth import INSTAHYRE_OPPORTUNITIES
 from .feeds import (
     InstahyreFeedSpec,
-    activate_feed,
-    feeds_from_config,
     _dismiss_apply_modal,
     _wait_for_opportunities,
+    activate_feed,
+    feeds_from_config,
 )
 from .search import (
     EMPLOYER_ROW,
+    _scroll_load_more,
     click_view_at,
     employer_rows,
     job_id_from_card,
     parse_company_title,
     view_buttons,
-    _scroll_load_more,
 )
 
 logger = logging.getLogger("job_apply")
@@ -57,9 +58,7 @@ async def _read_job_panel(page: Page) -> tuple[str, str]:
     if await modal.count() == 0 and await employer_rows(page).count() == 0:
         scope = page.locator("body")
 
-    name_el = scope.locator(
-        ".employer-job-name .company-name, .employer-details .company-name, .modal-title, h1, h2"
-    )
+    name_el = scope.locator(".employer-job-name .company-name, .employer-details .company-name, .modal-title, h1, h2")
     if await name_el.count() > 0:
         full = (await name_el.first.inner_text()).strip()
         if full:
@@ -148,9 +147,7 @@ async def _click_apply(page: Page) -> bool:
                     return True
             except PlaywrightTimeout:
                 continue
-    fallback = scope.locator("button.btn-success, button.btn-primary").filter(
-        has_text=re.compile(r"apply", re.I)
-    )
+    fallback = scope.locator("button.btn-success, button.btn-primary").filter(has_text=re.compile(r"apply", re.I))
     if await fallback.count() > 0:
         try:
             await fallback.first.click(timeout=5000)
@@ -279,9 +276,7 @@ async def apply_feed(page: Page, spec: InstahyreFeedSpec, config: AppConfig, app
             continue
 
         await page.wait_for_timeout(_instahyre_delay_ms(config))
-        segment = await _apply_chain_from_view(
-            page, config, feed_key, cap=cap, already_applied=applied
-        )
+        segment = await _apply_chain_from_view(page, config, feed_key, cap=cap, already_applied=applied)
         applied += segment
 
         if cap is not None and applied >= cap:

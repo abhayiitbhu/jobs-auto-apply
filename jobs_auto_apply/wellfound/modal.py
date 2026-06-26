@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
 
 from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..page_load import prepare_interactive_page
 from ..jd import clean_jd_text, is_noisy_jd
+from ..page_load import prepare_interactive_page
 from ..salary import combined_salary_text, eligibility_summary
 
 logger = logging.getLogger("job_apply")
@@ -96,7 +98,7 @@ async def click_apply(page: Page) -> bool:
 
 async def close_apply_modal(page: Page) -> None:
     for sel in (
-        page.get_by_role("button", name=re.compile(r"close|cancel|dismiss|×", re.I)),
+        page.get_by_role("button", name=re.compile(r"close|cancel|dismiss|x", re.I)),
         page.locator('[aria-label*="close" i]'),
     ):
         if await sel.count() > 0:
@@ -124,7 +126,7 @@ async def _modal_container(page: Page):
 
 
 async def _scroll_container(container) -> None:
-    try:
+    with contextlib.suppress(PlaywrightError):
         await container.evaluate(
             """el => {
                 const nodes = [el, ...el.querySelectorAll('*')];
@@ -141,8 +143,6 @@ async def _scroll_container(container) -> None:
                 }
             }"""
         )
-    except PlaywrightError:
-        pass
 
 
 def is_apply_metadata_only(text: str) -> bool:
@@ -155,9 +155,7 @@ def is_apply_metadata_only(text: str) -> bool:
     body = JD_START.search(t)
     if body and body.start() > 80:
         return False
-    if len(t) > 1800 and t.count("\n\n") >= 2:
-        return False
-    return True
+    return not (len(t) > 1800 and t.count("\n\n") >= 2)
 
 
 def _strip_page_chrome(text: str) -> str:
@@ -171,7 +169,7 @@ def _strip_page_chrome(text: str) -> str:
 
 
 async def _scroll_job_page(page: Page) -> None:
-    try:
+    with contextlib.suppress(PlaywrightError):
         await page.evaluate(
             """async () => {
                 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -185,8 +183,6 @@ async def _scroll_job_page(page: Page) -> None:
                 window.scrollTo(0, 0);
             }"""
         )
-    except PlaywrightError:
-        pass
     await page.wait_for_timeout(600)
 
 
@@ -196,9 +192,7 @@ def _is_jd_paragraph(text: str) -> bool:
         return False
     if len(t) < 30 and _PARA_NOISE.match(t):
         return False
-    if len(t) < 20 and re.match(r"^(experience|skills|relocation|visa)$", t, re.I):
-        return False
-    return True
+    return not (len(t) < 20 and re.match(r"^(experience|skills|relocation|visa)$", t, re.I))
 
 
 def _join_jd_paragraphs(parts: list[str]) -> str:
@@ -261,7 +255,9 @@ async def _extract_page_listing_meta(page: Page) -> str:
                 const main = document.querySelector('[class*="styles_body"], [class*="JobHeader"], #root');
                 if (main) {
                     const head = main.cloneNode(true);
-                    head.querySelectorAll('[class*="styles_description"], p, li, [role="dialog"]').forEach(n => n.remove());
+                    head.querySelectorAll(
+                        '[class*="styles_description"], p, li, [role="dialog"]'
+                    ).forEach(n => n.remove());
                     const t = head.innerText.trim();
                     if (t && t.length < 3500) parts.push(t);
                 }
@@ -323,7 +319,12 @@ async def _extract_paragraph_jd(page: Page) -> str:
                 const skip = (t) => {
                     if (!t || t.length < 15) return true;
                     if (/^apply to/i.test(t)) return true;
-                    if (/^(remote only|in office|full time|visa sponsorship|not available|company location|job type|hires remotely)$/i.test(t.trim())) return true;
+                    const skipPattern = new RegExp(
+                        '^(remote only|in office|full time|visa sponsorship|not available|' +
+                        'company location|job type|hires remotely)$',
+                        'i'
+                    );
+                    if (skipPattern.test(t.trim())) return true;
                     return false;
                 };
                 const roots = [];
@@ -395,7 +396,12 @@ async def _extract_via_dom(page: Page) -> str:
             """() => {
                 const dialog = document.querySelector('[role="dialog"]');
                 const inDialog = (el) => dialog && (el === dialog || dialog.contains(el));
-                const markers = ['Core Responsibilities', 'Required Experience', 'engineering team is solving', 'The role is'];
+                const markers = [
+                    'Core Responsibilities',
+                    'Required Experience',
+                    'engineering team is solving',
+                    'The role is',
+                ];
                 let best = '';
                 const score = (t) => {
                     if (!t || t.length < 150) return 0;

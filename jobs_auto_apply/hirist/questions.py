@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from typing import Any
 
-from playwright.async_api import Error as PlaywrightError, Page
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Page
 
 from ..answers.chip_options import (
     is_lpa_chip_option,
@@ -14,13 +16,13 @@ from ..answers.chip_options import (
 )
 from ..answers.chips import pick_notice_period_option
 from ..answers.compensation import resolve_ctc_numeric_answer
-from ..config import AppConfig
 from ..application_questions import (
     enrich_field_for_llm,
     infer_field_input_type,
     is_generic_question_label,
     resolve_fill_answer,
 )
+from ..config import AppConfig
 from ..page_load import prepare_interactive_page
 
 logger = logging.getLogger("job_apply")
@@ -78,9 +80,7 @@ def _is_notice_chip(opt: str) -> bool:
 
 
 def _looks_like_np_question(label: str) -> bool:
-    return bool(_NOTICE_LABEL.search(label)) or bool(
-        re.search(r"\bnp\b.*\b(days?|week|month)\b", label, re.I)
-    )
+    return bool(_NOTICE_LABEL.search(label)) or bool(re.search(r"\bnp\b.*\b(days?|week|month)\b", label, re.I))
 
 
 def _field_dedupe_score(field: dict[str, Any]) -> tuple[int, int]:
@@ -187,6 +187,7 @@ def _coerce_hirist_chip_answer(
             return picked
 
     return text
+
 
 # Shared DOM helpers for Hirist screening — native radios are display:none; labels are clicked.
 _HIRIST_DOM_HELPERS = """
@@ -1024,10 +1025,7 @@ def _normalize_hirist_field(field: dict[str, Any]) -> dict[str, Any]:
             out["options"] = lpa_opts
             return out
         if any(re.search(r"\d+\.?\d*\s*years?", o, re.I) for o in opts):
-            year_only = [
-                o for o in opts
-                if re.search(r"\d", o) and not _LPA_CHIP.search(o) and not _is_notice_chip(o)
-            ]
+            year_only = [o for o in opts if re.search(r"\d", o) and not _LPA_CHIP.search(o) and not _is_notice_chip(o)]
             if year_only:
                 out["kind"] = "radio"
                 out["options"] = year_only
@@ -1079,9 +1077,7 @@ def _coerce_hirist_radio_answer(
         if _YES_NO_QUESTION.search(label) or re.search(r"\bcontractual\b", label, re.I):
             if re.search(r"\b(no|not willing|cannot|won't|not ok)\b", a):
                 return next((o for o in options if o.lower() == "no"), "No")
-            if re.search(
-                r"\b(yes|willing|ok|agree|current|native|available)\b", a
-            ):
+            if re.search(r"\b(yes|willing|ok|agree|current|native|available)\b", a):
                 return next((o for o in options if o.lower() == "yes"), "Yes")
         if len(answer.strip()) > 20 and _YES_NO_QUESTION.search(label):
             if re.search(r"\b(no|not willing|cannot relocate)\b", a):
@@ -1101,9 +1097,7 @@ def _coerce_hirist_radio_answer(
     return answer.strip()
 
 
-def _field_for_dom_label(
-    questions: list[dict[str, Any]], dom_label: str
-) -> dict[str, Any] | None:
+def _field_for_dom_label(questions: list[dict[str, Any]], dom_label: str) -> dict[str, Any] | None:
     for field in questions:
         label = str(field.get("label", "")).strip()
         if label and _labels_match_hirist(label, dom_label):
@@ -1111,19 +1105,15 @@ def _field_for_dom_label(
     return None
 
 
-async def _evaluate_fill_js(
-    page: Page, pair: dict[str, Any]
-) -> list[dict[str, Any]] | None:
+async def _evaluate_fill_js(page: Page, pair: dict[str, Any]) -> list[dict[str, Any]] | None:
     try:
         return await page.evaluate(_FILL_JS, [pair])
     except PlaywrightError as exc:
         if "Execution context was destroyed" not in str(exc):
             raise
         logger.debug("Hirist fill retried after navigation: %s", exc)
-        try:
+        with contextlib.suppress(Exception):
             await page.wait_for_load_state("domcontentloaded", timeout=2000)
-        except Exception:
-            pass
         await page.wait_for_timeout(250)
         return await page.evaluate(_FILL_JS, [pair])
 
@@ -1227,9 +1217,7 @@ async def _playwright_fill_hirist_field(
         ).filter(has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet))
         if await container.count() == 0:
             container = page.locator(".screening-question-container").filter(
-                has=page.locator(".mandatory-question, .question-text").filter(
-                    has_text=snippet
-                )
+                has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet)
             )
         if await container.count() == 0:
             return False
@@ -1245,12 +1233,7 @@ async def _playwright_fill_hirist_field(
     # because its label reads "…Are you currently serving…".
     has_radios = await box.locator("input[type=radio]").count() > 0
     has_checks = await box.locator("input[type=checkbox]").count() > 0
-    has_text_input = (
-        await box.locator(
-            "textarea, input[type=text], input[type=number], input:not([type])"
-        ).count()
-        > 0
-    )
+    has_text_input = await box.locator("textarea, input[type=text], input[type=number], input:not([type])").count() > 0
     choice_in_dom = has_radios or has_checks
     if kind in ("radio", "checkbox", "checkbox_group") and not choice_in_dom and has_text_input:
         # Free-text control: keep a clean Yes/No-ish value, then text-fill below.
@@ -1271,9 +1254,7 @@ async def _playwright_fill_hirist_field(
 
         async def _click_radio_option(radio) -> bool:
             try:
-                container = radio.locator(
-                    "xpath=ancestor::*[contains(@class,'radio-container')][1]"
-                )
+                container = radio.locator("xpath=ancestor::*[contains(@class,'radio-container')][1]")
                 if await container.count() > 0:
                     await container.first.click()
                     await page.wait_for_timeout(100)
@@ -1387,11 +1368,7 @@ async def _playwright_fill_hirist_field(
 
     if kind in ("checkbox", "checkbox_group") and has_checks:
         want = answer.strip().lower()
-        is_single_select = (
-            _CCTC_LABEL.search(label)
-            or _ECTC_LABEL.search(label)
-            or _looks_like_np_question(label)
-        )
+        is_single_select = _CCTC_LABEL.search(label) or _ECTC_LABEL.search(label) or _looks_like_np_question(label)
 
         async def _checkbox_checked() -> bool:
             try:
@@ -1409,13 +1386,10 @@ async def _playwright_fill_hirist_field(
                 num_m = re.search(r"(\d+(?:\.\d+)?)", answer)
                 if num_m and pick_lpa_chip_option(float(num_m.group(1)), [opt]):
                     return True
-            if _is_notice_chip(opt):
-                if pick_notice_period_option(answer, [opt]):
-                    return True
-            ym = re.search(r"(\d+)", want)
-            if ym and value_in_chip_range(int(ym.group(1)), opt):
+            if _is_notice_chip(opt) and pick_notice_period_option(answer, [opt]):
                 return True
-            return False
+            ym = re.search(r"(\d+)", want)
+            return bool(ym and value_in_chip_range(int(ym.group(1)), opt))
 
         if kind == "checkbox_group" and options:
             targets = [opt for opt in options if _option_matches(opt)]
@@ -1423,9 +1397,7 @@ async def _playwright_fill_hirist_field(
                 targets = targets[:1]
             for opt in targets:
                 opt_pat = re.escape(opt[:40])
-                label_loc = box.locator("label").filter(
-                    has_text=re.compile(opt_pat, re.I)
-                )
+                label_loc = box.locator("label").filter(has_text=re.compile(opt_pat, re.I))
                 # Idempotent: if this option's checkbox is already ticked, do not
                 # click again — a second click toggles a Hirist checkbox back OFF.
                 try:
@@ -1439,9 +1411,9 @@ async def _playwright_fill_hirist_field(
                     pass
                 for loc in (
                     label_loc,
-                    box.locator(
-                        ".checkbox, .checkbox-container-hirist, .checkbox-container"
-                    ).filter(has_text=re.compile(opt_pat, re.I)),
+                    box.locator(".checkbox, .checkbox-container-hirist, .checkbox-container").filter(
+                        has_text=re.compile(opt_pat, re.I)
+                    ),
                 ):
                     if await loc.count() > 0:
                         await loc.first.click()
@@ -1460,9 +1432,7 @@ async def _playwright_fill_hirist_field(
                         return True
         return await _checkbox_checked()
 
-    inp = box.locator(
-        "textarea, input[type=text], input[type=number], input:not([type])"
-    ).first
+    inp = box.locator("textarea, input[type=text], input[type=number], input:not([type])").first
     if await inp.count() == 0:
         return False
     await inp.scroll_into_view_if_needed()
@@ -1476,19 +1446,13 @@ async def _playwright_fill_hirist_field(
             numeric_answer = resolve_ctc_numeric_answer(label, answer, config) or answer
         # Normalize a combined "current/expected" value (e.g. "38/45" or "38,45") to a
         # readable "38, 45"; only strip to a bare number for single-value numeric fields.
-        combined = re.fullmatch(
-            r"(\d+(?:\.\d+)?)\s*[/,]\s*(\d+(?:\.\d+)?)", (numeric_answer or "").strip()
-        )
+        combined = re.fullmatch(r"(\d+(?:\.\d+)?)\s*[/,]\s*(\d+(?:\.\d+)?)", (numeric_answer or "").strip())
         if combined:
             numeric_answer = f"{combined.group(1)}, {combined.group(2)}"
         else:
             numeric_answer = re.sub(r"[^\d.]", "", numeric_answer.split()[0] if numeric_answer else "")
     await inp.fill("")
-    use_slow = (
-        slow
-        or kind == "number"
-        or infer_field_input_type(label, field) in ("years_numeric", "ctc_numeric")
-    )
+    use_slow = slow or kind == "number" or infer_field_input_type(label, field) in ("years_numeric", "ctc_numeric")
     if use_slow:
         await inp.press_sequentially(numeric_answer, delay=25)
     else:
@@ -1523,19 +1487,15 @@ async def _playwright_fill_hirist_field(
     return bool(current)
 
 
-async def discover_hirist_questions(
-    page: Page, *, prepped: bool = False
-) -> list[dict[str, Any]]:
+async def discover_hirist_questions(page: Page, *, prepped: bool = False) -> list[dict[str, Any]]:
     """Extract recruiter questions from Hirist apply forms (not input placeholders)."""
     if not prepped:
         await prepare_interactive_page(page, fast=True)
-    try:
+    with contextlib.suppress(Exception):
         await page.wait_for_selector(
             "text=/Mandatory Question|tell the recruiter more about yourself/i",
             timeout=8000,
         )
-    except Exception:
-        pass
 
     await page.evaluate(_SCROLL_SCREENING_JS)
     try:
@@ -1545,10 +1505,8 @@ async def discover_hirist_questions(
         if "Execution context was destroyed" not in str(exc):
             raise
         logger.debug("Hirist discovery retried after navigation: %s", exc)
-        try:
+        with contextlib.suppress(Exception):
             await page.wait_for_load_state("domcontentloaded", timeout=2000)
-        except Exception:
-            pass
         await page.wait_for_timeout(250)
     raw = await page.evaluate(_DISCOVER_JS)
     fields: list[dict[str, Any]] = []
@@ -1574,10 +1532,7 @@ async def discover_hirist_questions(
         input_mode = str(item.get("input_mode") or "").strip()
         if input_mode:
             field["input_mode"] = input_mode
-        if kind == "radio":
-            field["name"] = str(item.get("name", ""))
-            field["options"] = list(item.get("options") or [])
-        elif kind in ("checkbox_group",):
+        if kind == "radio" or kind in ("checkbox_group",):
             field["name"] = str(item.get("name", ""))
             field["options"] = list(item.get("options") or [])
         fields.append(field)
@@ -1615,9 +1570,7 @@ def default_checkbox_answer(label: str, kind: str) -> str | None:
     return _default_checkbox_answer(label, kind)
 
 
-async def _merge_discovered_fields(
-    page: Page, questions: list[dict[str, Any]]
-) -> None:
+async def _merge_discovered_fields(page: Page, questions: list[dict[str, Any]]) -> None:
     """Second discovery pass — catches CCTC/ECTC in per-container scan missed on first pass."""
     extra = await discover_hirist_questions(page, prepped=False)
     known = {str(q.get("label", "")).strip() for q in questions}
@@ -1659,9 +1612,7 @@ async def _sync_react_form_state(
     state = await page.evaluate(_FORM_STATE_JS) or {}
     still_empty = state.get("empty") or []
     if still_empty:
-        await _retry_empty_hirist_fields(
-            page, questions, answers, still_empty, config=config
-        )
+        await _retry_empty_hirist_fields(page, questions, answers, still_empty, config=config)
 
     await _scroll_submission_into_view(page)
     await page.evaluate(_TRIGGER_VALIDATION_JS)
@@ -1714,9 +1665,7 @@ async def _retry_empty_hirist_fields(
             dl = dom_label.lower()
             if re.search(r"\bcctc\b", dl):
                 for q_label, q_answer in answers.items():
-                    if q_answer.strip() and re.search(
-                        r"\b(cctc|current ctc|current)\b", q_label, re.I
-                    ):
+                    if q_answer.strip() and re.search(r"\b(cctc|current ctc|current)\b", q_label, re.I):
                         answer = q_answer.strip()
                         break
             elif re.search(r"\bectc\b", dl):
@@ -1781,15 +1730,11 @@ async def fill_hirist_questions(
             opts = [str(o) for o in (field.get("options") or []) if str(o).strip()]
             answer = _coerce_hirist_radio_answer(label, answer, opts or ["Yes", "No"], config)
         elif kind in ("checkbox", "checkbox_group") and (
-            _CCTC_LABEL.search(label)
-            or _ECTC_LABEL.search(label)
-            or _looks_like_np_question(label)
+            _CCTC_LABEL.search(label) or _ECTC_LABEL.search(label) or _looks_like_np_question(label)
         ):
             opts = [str(o) for o in (field.get("options") or []) if str(o).strip()]
             answer = _coerce_hirist_chip_answer(label, answer, opts, config)
-        elif kind == "number" or (
-            _CCTC_LABEL.search(label) or _ECTC_LABEL.search(label)
-        ):
+        elif kind == "number" or (_CCTC_LABEL.search(label) or _ECTC_LABEL.search(label)):
             answer = resolve_ctc_numeric_answer(label, answer, config) or answer
         pair: dict[str, Any] = {"label": label, "answer": answer, "kind": kind}
         if field.get("name"):
@@ -1807,15 +1752,11 @@ async def fill_hirist_questions(
             row = await _evaluate_fill_js(page, pair)
             ok = bool(row and row[0].get("filled"))
         if not ok:
-            ok = await _playwright_fill_hirist_field(
-                page, field, str(pair["answer"]), slow=True, config=config
-            )
+            ok = await _playwright_fill_hirist_field(page, field, str(pair["answer"]), slow=True, config=config)
         if not ok:
             opts = [str(o).strip() for o in (field.get("options") or []) if str(o).strip()]
             kindf = str(field.get("kind", ""))
-            is_choice = kindf in (
-                "radio", "checkbox", "checkbox_group", "single_choice", "multi_choice"
-            )
+            is_choice = kindf in ("radio", "checkbox", "checkbox_group", "single_choice", "multi_choice")
             if config is not None and getattr(config.llm, "enabled", False) and opts and is_choice:
                 from ..llm_answers import map_answer_to_option, select_options_for_question
 
@@ -1825,15 +1766,11 @@ async def fill_hirist_questions(
                 # straight from the candidate profile (e.g. descriptive
                 # "what best describes your last 2 years?" multi-selects).
                 chosen: list[str] = []
-                mapped = map_answer_to_option(
-                    config, question=label, options=opts, answer=str(pair["answer"])
-                )
+                mapped = map_answer_to_option(config, question=label, options=opts, answer=str(pair["answer"]))
                 if mapped:
                     chosen = [mapped]
                 else:
-                    chosen = select_options_for_question(
-                        config, question=label, options=opts, multi=is_multi
-                    )
+                    chosen = select_options_for_question(config, question=label, options=opts, multi=is_multi)
                 if chosen:
                     logger.info(
                         "Hirist: LLM chose option(s) %s (saved answer unchanged): %s",
@@ -1843,9 +1780,7 @@ async def fill_hirist_questions(
                     filled_any = False
                     for choice in chosen:
                         pair["answer"] = choice
-                        if await _playwright_fill_hirist_field(
-                            page, field, choice, slow=True, config=config
-                        ):
+                        if await _playwright_fill_hirist_field(page, field, choice, slow=True, config=config):
                             filled_any = True
                         else:
                             row = await _evaluate_fill_js(page, pair)
@@ -1870,9 +1805,7 @@ async def fill_hirist_questions(
             lbl = str(pair["label"])
             if still_empty and not _label_in_empty(lbl, still_empty):
                 continue
-            await _playwright_fill_hirist_field(
-                page, field, str(pair["answer"]), slow=True, config=config
-            )
+            await _playwright_fill_hirist_field(page, field, str(pair["answer"]), slow=True, config=config)
         await _scroll_submission_into_view(page)
         await page.evaluate(_TRIGGER_VALIDATION_JS)
         await wait_for_hirist_next_enabled(page, timeout_ms=6000)
@@ -1905,10 +1838,7 @@ async def fill_hirist_questions(
                     failed.append(q)
         else:
             diag = state.get("fields") or []
-            preview = "; ".join(
-                f"{f.get('label', '')[:35]}={str(f.get('domValue', ''))[:12]}"
-                for f in diag[:6]
-            )
+            preview = "; ".join(f"{f.get('label', '')[:35]}={str(f.get('domValue', ''))[:12]}" for f in diag[:6])
             logger.warning(
                 "Hirist Next disabled but DOM shows values (React state?): %s",
                 preview,

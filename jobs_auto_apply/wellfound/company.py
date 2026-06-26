@@ -20,7 +20,7 @@ def looks_like_location_not_company(text: str) -> bool:
         return True
     if re.search(r"[$₹£€]", text):
         return True
-    if re.search(r"\d+\s*[kK]|\d+L|LPA|%\s*–|•\s*\d", text):
+    if re.search(r"\d+\s*[kK]|\d+L|LPA|%\s*-|•\s*\d", text):
         return True
     lower = text.lower()
     if any(
@@ -36,9 +36,7 @@ def looks_like_location_not_company(text: str) -> bool:
         )
     ):
         return True
-    if re.match(r"in\s*office", lower):
-        return True
-    return False
+    return bool(re.match(r"in\s*office", lower))
 
 
 def parse_company_from_jd(title: str, jd: str) -> str:

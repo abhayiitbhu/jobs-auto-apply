@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from .questions import (
-    click_hirist_advance,
-    discover_hirist_questions,
-    fill_hirist_questions,
-    default_checkbox_answer,
-    is_hirist_next_enabled,
-    hirist_empty_mandatory_fields,
-)
-from ..page_load import prepare_interactive_page, reveal_footer_actions
 from ..application_questions import resolve_question_answers
 from ..apply_runner import run_apply_batch
 from ..config import AppConfig
+from ..page_load import prepare_interactive_page, reveal_footer_actions
 from ..pending_questions import queue_unanswered
 from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
+from .questions import (
+    click_hirist_advance,
+    default_checkbox_answer,
+    discover_hirist_questions,
+    fill_hirist_questions,
+    hirist_empty_mandatory_fields,
+    is_hirist_next_enabled,
+)
 
 logger = logging.getLogger("job_apply")
 
@@ -133,15 +135,10 @@ async def _application_success(page: Page) -> bool:
         except Exception:
             pass
     # Submitted forms usually leave /screening and show Applied on the job page.
-    if "/screening" not in url and "mandatory question" not in body:
-        if await _already_applied(page):
-            return True
-    return False
+    return bool("/screening" not in url and "mandatory question" not in body and await _already_applied(page))
 
 
-async def _click_advance_button(
-    page: Page, *, prep: bool = True, require_enabled: bool = False
-) -> str | None:
+async def _click_advance_button(page: Page, *, prep: bool = True, require_enabled: bool = False) -> str | None:
     """Click Hirist Next / Submit / Confirm."""
     if prep:
         await prepare_interactive_page(page, fast=True)
@@ -240,19 +237,11 @@ def _queue_missing(
         # Queue every supplied question even if it has a (non-working) answer —
         # the caller already narrowed this to fields that failed to fill, so the
         # stored answer clearly doesn't fit the form and the user must answer it.
-        missing = [
-            str(f.get("label", "")).strip()
-            for f in questions
-            if str(f.get("label", "")).strip()
-        ]
+        missing = [str(f.get("label", "")).strip() for f in questions if str(f.get("label", "")).strip()]
     else:
         missing = _unanswered_labels(questions, answers)
     if missing:
-        fields_by_label = {
-            str(f.get("label", "")).strip(): f
-            for f in questions
-            if str(f.get("label", "")).strip()
-        }
+        fields_by_label = {str(f.get("label", "")).strip(): f for f in questions if str(f.get("label", "")).strip()}
         queue_unanswered(
             config.base_dir,
             source="hirist",
@@ -260,6 +249,7 @@ def _queue_missing(
             company=job.company,
             job_url=job.url,
             labels=missing,
+            job_id=job.job_id,
             fields_by_label=fields_by_label,
             config=config,
         )
@@ -270,10 +260,8 @@ def _queue_missing(
 async def goto_hirist_job_detail(page: Page, url: str) -> None:
     """Light navigation — job pages are SPAs; skip full goto_settled."""
     await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector("main, article, [class*='job']", timeout=10_000)
-    except PlaywrightTimeout:
-        pass
     await page.wait_for_timeout(300)
 
 
@@ -306,13 +294,11 @@ async def apply_to_job(
         logger.warning("Could not click Apply on Hirist: %s", job.url)
         return False
 
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector(
             "text=/Mandatory Question|tell the recruiter more about yourself/i",
             timeout=10_000,
         )
-    except PlaywrightTimeout:
-        pass
     await prepare_interactive_page(page, fast=True)
 
     max_steps = 6
@@ -353,33 +339,24 @@ async def apply_to_job(
                     len(missing),
                 )
                 return None
-            unfilled = await fill_hirist_questions(
-                page, questions, answers, prep=False, config=config
-            )
+            unfilled = await fill_hirist_questions(page, questions, answers, prep=False, config=config)
             if unfilled:
                 # Classify: a field we HAD a usable answer for but still couldn't
                 # fill is a DOM/automation problem (technical failure). A field with
                 # no usable answer is a content gap → queue for manual answer.
-                answered_unfilled = [
-                    u for u in unfilled if str(answers.get(u, "")).strip()
-                ]
+                answered_unfilled = [u for u in unfilled if str(answers.get(u, "")).strip()]
                 no_answer = [u for u in unfilled if not str(answers.get(u, "")).strip()]
                 if no_answer:
                     # Include labels that aren't in the discovered question list
                     # (undiscovered empty mandatory fields). Without this they'd be
                     # filtered out and silently lost — neither queued nor recorded.
-                    q_by_label = {
-                        str(q.get("label", "")).strip(): q for q in questions
-                    }
+                    q_by_label = {str(q.get("label", "")).strip(): q for q in questions}
                     queue_fields = [
-                        q_by_label.get(lbl)
-                        or {"label": lbl, "kind": "text", "platform": "hirist"}
-                        for lbl in no_answer
+                        q_by_label.get(lbl) or {"label": lbl, "kind": "text", "platform": "hirist"} for lbl in no_answer
                     ]
                     _queue_missing(config, job, queue_fields, answers, force=True)
                     logger.warning(
-                        "Hirist: %d field(s) queued for manual answer for %s "
-                        "(answer once, then re-run)",
+                        "Hirist: %d field(s) queued for manual answer for %s (answer once, then re-run)",
                         len(no_answer),
                         job.title,
                     )
@@ -394,8 +371,7 @@ async def apply_to_job(
                         company=job.company,
                         url=job.url,
                         reason=f"could not fill {len(answered_unfilled)} answered "
-                        "field(s) (selection/DOM failed): "
-                        + "; ".join(str(u)[:40] for u in answered_unfilled[:3]),
+                        "field(s) (selection/DOM failed): " + "; ".join(str(u)[:40] for u in answered_unfilled[:3]),
                     )
                     logger.warning(
                         "Skipped apply (could not fill %d answered field(s)): %s",
@@ -412,26 +388,14 @@ async def apply_to_job(
                         job.title,
                         "; ".join(e[:40] for e in empty[:3]),
                     )
-                    overlapping = [
-                        q for q in questions if _labels_overlap(q["label"], empty)
-                    ]
+                    overlapping = [q for q in questions if _labels_overlap(q["label"], empty)]
                     # Empty mandatory fields matching no discovered question are a
                     # discovery/automation gap — they can't be queued or answered.
-                    undiscovered = [
-                        e
-                        for e in empty
-                        if not any(_labels_overlap(q["label"], [e]) for q in questions)
-                    ]
+                    undiscovered = [e for e in empty if not any(_labels_overlap(q["label"], [e]) for q in questions)]
                     # Discovered blockers we had an answer for but stayed empty =
                     # a selection/fill failure (technical); the rest = need answers.
-                    answered_empty = [
-                        q for q in overlapping
-                        if str(answers.get(q["label"], "")).strip()
-                    ]
-                    no_answer_q = [
-                        q for q in overlapping
-                        if not str(answers.get(q["label"], "")).strip()
-                    ]
+                    answered_empty = [q for q in overlapping if str(answers.get(q["label"], "")).strip()]
+                    no_answer_q = [q for q in overlapping if not str(answers.get(q["label"], "")).strip()]
                     if no_answer_q:
                         _queue_missing(config, job, no_answer_q, answers, force=True)
                         logger.warning(
@@ -443,9 +407,7 @@ async def apply_to_job(
                     if undiscovered or answered_empty:
                         from ..technical_failures import record_technical_failure
 
-                        blockers = [
-                            str(q["label"]) for q in answered_empty
-                        ] + undiscovered
+                        blockers = [str(q["label"]) for q in answered_empty] + undiscovered
                         record_technical_failure(
                             config.base_dir,
                             job_key=job_key(job.source, job.job_id),
@@ -476,9 +438,7 @@ async def apply_to_job(
             )
             break
 
-        action = await _click_advance_button(
-            page, prep=not questions, require_enabled=bool(questions)
-        )
+        action = await _click_advance_button(page, prep=not questions, require_enabled=bool(questions))
         if not action:
             await page.wait_for_timeout(1500)
             if await _application_success(page):

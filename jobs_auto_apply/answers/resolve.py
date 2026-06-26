@@ -7,11 +7,13 @@ from typing import Any
 import click
 
 from ..config import AppConfig
+from .chips import is_chip_range_label
 from .config_answers import authoritative_config_answer
 from .draft import DraftResult, draft_answers_for_fields
 from .experience import is_new_experience_question
-from .fields import enrich_field_for_llm, infer_field_input_type, is_numeric_ctc_question
-from .interactive import interactive_prompt_lock, prompt_confirm_new_answer
+from .fields import enrich_field_for_llm
+from .interactive import prompt_confirm_new_answer
+from .labels import interactive_prompt_lock
 from .memory_store import (
     build_answer_group_index,
     canonicalize_stored_answer,
@@ -26,7 +28,6 @@ from .persist_policy import (
     effective_persist_threshold,
     rag_rule_persist_confidence,
 )
-from .chips import is_chip_range_label
 from .validation import answer_acceptable_for_field, is_placeholder_answer
 
 logger = logging.getLogger("job_apply")
@@ -38,9 +39,7 @@ def _fill_from_draft(
     draft: DraftResult,
     config: AppConfig,
 ) -> str:
-    stored = draft.canonical or canonicalize_stored_answer(
-        label, draft.fill or "", field, config
-    )
+    stored = draft.canonical or canonicalize_stored_answer(label, draft.fill or "", field, config)
     return resolve_fill_answer(stored, field, config)
 
 
@@ -53,9 +52,7 @@ def _try_persist_draft(
     company: str,
     job_title: str,
 ) -> bool:
-    stored = draft.canonical or canonicalize_stored_answer(
-        label, draft.fill or "", field, config
-    )
+    stored = draft.canonical or canonicalize_stored_answer(label, draft.fill or "", field, config)
     if not draft_should_persist_to_memory(
         config,
         question=label,
@@ -121,15 +118,8 @@ def _draft_is_fillable(
         return True
     threshold = effective_persist_threshold(config, label)
     if src == "RAG":
-        stored = draft.canonical or canonicalize_stored_answer(
-            label, draft.fill or "", field, config
-        )
-        return (
-            rag_rule_persist_confidence(
-                config, question=label, field=field, answer=stored
-            )
-            >= threshold
-        )
+        stored = draft.canonical or canonicalize_stored_answer(label, draft.fill or "", field, config)
+        return rag_rule_persist_confidence(config, question=label, field=field, answer=stored) >= threshold
     return draft.confidence >= threshold
 
 
@@ -145,12 +135,8 @@ async def resolve_question_answers(
 ) -> dict[str, str]:
     """Saved answers → RAG rules → LLM → confirm / defer / interactive prompt."""
     answers: dict[str, str] = {}
-    use_interactive = (
-        config.application.interactive_questions if interactive is None else interactive
-    )
-    use_confirm_new = (
-        config.application.confirm_new_answers if confirm_new is None else confirm_new
-    )
+    use_interactive = config.application.interactive_questions if interactive is None else interactive
+    use_confirm_new = config.application.confirm_new_answers if confirm_new is None else confirm_new
     job_title = getattr(job, "title", "") or ""
     company = getattr(job, "company", "") or ""
 
@@ -254,10 +240,7 @@ async def resolve_question_answers(
                     )
             else:
                 config_answer = authoritative_config_answer(config, label, field)
-                if (
-                    config_answer
-                    and answer_acceptable_for_field(label, config_answer, field)
-                ):
+                if config_answer and answer_acceptable_for_field(label, config_answer, field):
                     stored, fill_value, saved = persist_answer(
                         config.base_dir,
                         label,
@@ -279,9 +262,7 @@ async def resolve_question_answers(
                         label[:60],
                     )
                 else:
-                    logger.info(
-                        "Deferred question (will queue): %s", label[:60]
-                    )
+                    logger.info("Deferred question (will queue): %s", label[:60])
             continue
 
         if use_confirm_new:
@@ -353,7 +334,7 @@ async def resolve_question_answers(
         if not entered:
             continue
 
-        stored, fill_value, saved = persist_answer(
+        _stored, fill_value, saved = persist_answer(
             config.base_dir,
             label,
             entered,

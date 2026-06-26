@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 logger = logging.getLogger("job_apply")
 
@@ -212,10 +214,8 @@ async def wait_for_page_settled(
     except PlaywrightTimeout:
         logger.debug("Page load event not received within %dms", load_timeout_ms)
     if not skip_network_idle and network_idle_ms > 0:
-        try:
+        with contextlib.suppress(PlaywrightTimeout):
             await page.wait_for_load_state("networkidle", timeout=network_idle_ms)
-        except PlaywrightTimeout:
-            pass
     if extra_ms > 0:
         await page.wait_for_timeout(extra_ms)
 
@@ -285,10 +285,8 @@ async def ensure_page_ready(
     SPAs often stop rendering after domcontentloaded; this waits for layout stability,
     expands lazy sections, scrolls form containers, and reveals footer actions.
     """
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_load_state("domcontentloaded", timeout=15_000)
-    except PlaywrightTimeout:
-        pass
 
     dom_ms = 4_000 if quick else (6_000 if for_form else 10_000)
     await wait_for_dom_stable(page, max_wait_ms=dom_ms)

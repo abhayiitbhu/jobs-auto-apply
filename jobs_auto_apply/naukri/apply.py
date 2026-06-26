@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..apply_runner import run_apply_batch
 from ..application_questions import resolve_question_answers
-from ..page_load import prepare_interactive_page
+from ..apply_runner import run_apply_batch
 from ..config import AppConfig
 from ..cover_letter import build_cover_letter
+from ..page_load import prepare_interactive_page
 from ..pending_questions import queue_unanswered
 from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
 from .questions import (
     CannotAnswerTruthfully,
+    _chatbot_flow_complete,
     chatbot_is_open,
     discover_naukri_chatbot_questions,
     fill_naukri_chatbot_question,
     wait_for_chatbot,
-    _chatbot_flow_complete,
 )
 
 logger = logging.getLogger("job_apply")
@@ -95,10 +97,8 @@ async def _stabilize_after_naukri_apply(page: Page) -> None:
                 await page.wait_for_timeout(300)
             except PlaywrightTimeout:
                 pass
-    try:
+    with contextlib.suppress(Exception):
         await page.goto("about:blank", wait_until="domcontentloaded", timeout=8000)
-    except Exception:
-        pass
 
 
 def _job_detail_url(url: str) -> str:
@@ -109,14 +109,10 @@ def _job_detail_url(url: str) -> str:
 
 
 async def _wait_for_job_detail(page: Page) -> None:
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector(_AURUS_JD_SELECTOR, timeout=12000)
-    except PlaywrightTimeout:
-        pass
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector("#jobs-desc button", timeout=8000)
-    except PlaywrightTimeout:
-        pass
     await _wait_for_apply_ready(page, timeout_ms=15000)
 
 
@@ -209,9 +205,7 @@ async def _naukri_detail_is_non_quick_apply(page: Page) -> bool:
         except PlaywrightTimeout:
             pass
     state = await _aurus_apply_state(page)
-    if state == "missing" and "quick apply" not in text:
-        return True
-    return False
+    return bool(state == "missing" and "quick apply" not in text)
 
 
 async def _aurus_apply_state(page: Page) -> str:
@@ -280,9 +274,7 @@ async def _confirm_already_applied_on_site(page: Page) -> bool:
     return False
 
 
-def _log_already_applied(
-    job: JobListing, *, reason: str = "", config: AppConfig | None = None
-) -> None:
+def _log_already_applied(job: JobListing, *, reason: str = "", config: AppConfig | None = None) -> None:
     if reason:
         logger.info("Already applied on Naukri (%s): %s", reason, job.title)
     else:
@@ -293,7 +285,7 @@ def _log_already_applied(
             from ..technical_failures import clear_technical_failure
 
             clear_technical_failure(config.base_dir, job_key(job.source, job.job_id))
-        except Exception:  # noqa: BLE001 - best-effort cleanup, never block apply flow
+        except Exception:
             pass
 
 
@@ -429,20 +421,12 @@ def _queue_missing(
     force: bool = False,
 ) -> tuple[list[str], int]:
     if force:
-        missing = [
-            str(f.get("label", "")).strip()
-            for f in questions
-            if str(f.get("label", "")).strip()
-        ]
+        missing = [str(f.get("label", "")).strip() for f in questions if str(f.get("label", "")).strip()]
     else:
         missing = _unanswered_labels(questions, answers)
     if not missing:
         return [], 0
-    fields_by_label = {
-        str(f.get("label", "")).strip(): f
-        for f in questions
-        if str(f.get("label", "")).strip()
-    }
+    fields_by_label = {str(f.get("label", "")).strip(): f for f in questions if str(f.get("label", "")).strip()}
     queued = queue_unanswered(
         config.base_dir,
         source="naukri",
@@ -450,6 +434,7 @@ def _queue_missing(
         company=job.company,
         job_url=job.url,
         labels=missing,
+        job_id=job.job_id,
         fields_by_label=fields_by_label,
         config=config,
     )
@@ -584,13 +569,9 @@ async def _handle_chatbot_questions(
                         if await _aurus_already_applied(page):
                             return True
                         fresh = await discover_naukri_chatbot_questions(page, config=config)
-                        refreshed = next(
-                            (f for f in fresh if f.get("label", "").strip() == label), None
-                        )
+                        refreshed = next((f for f in fresh if f.get("label", "").strip() == label), None)
                         target_field = refreshed or field
-                        if await fill_naukri_chatbot_question(
-                            page, target_field, answer, config=config
-                        ):
+                        if await fill_naukri_chatbot_question(page, target_field, answer, config=config):
                             filled = True
                             break
             except CannotAnswerTruthfully as exc:
@@ -688,7 +669,7 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
         logger.warning("Quick apply click timed out for: %s", job.title)
         return False
 
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_function(
             """() => {
               const btn = document.querySelector('#jobs-desc button');
@@ -712,8 +693,6 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
             timeout=8000,
             polling=200,
         )
-    except PlaywrightTimeout:
-        pass
 
     await _fill_cover_letter_if_present(page, note)
 
@@ -749,10 +728,8 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
 async def goto_naukri_job_detail(page: Page, url: str) -> None:
     """Light navigation — skip full goto_settled for Naukri SPA job detail."""
     await page.goto(_job_detail_url(url), wait_until="domcontentloaded", timeout=45_000)
-    try:
+    with contextlib.suppress(PlaywrightTimeout):
         await page.wait_for_selector(_AURUS_JD_SELECTOR, timeout=10_000)
-    except PlaywrightTimeout:
-        pass
     await page.wait_for_timeout(100)
 
 
@@ -773,9 +750,7 @@ async def apply_to_job(
 
     if await _naukri_post_apply_redirected(page):
         reason = (
-            "similar opportunities page"
-            if await _naukri_similar_opportunities_page(page)
-            else "post-apply redirect"
+            "similar opportunities page" if await _naukri_similar_opportunities_page(page) else "post-apply redirect"
         )
         _log_already_applied(job, reason=reason, config=config)
         await _stabilize_after_naukri_apply(page)

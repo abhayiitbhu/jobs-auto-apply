@@ -6,10 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import AppConfig
-from ..llm_answers import SimilarAnswer
 from ..question_keys import question_key
 from .fields import enrich_field_for_llm
-from .format_finalize import finalize_answer_for_field
 from .free_tier import FreeTierContext, collect_free_tier_context
 from .llm_policy import llm_decision_acceptable
 from .persist_policy import rag_rule_persist_confidence
@@ -71,9 +69,7 @@ def _try_rule_rag_from_context(
     if not ctx.rag_auto:
         return None
     fill, stored = ctx.rag_auto
-    confidence = rag_rule_persist_confidence(
-        config, question=question, field=field, answer=stored
-    )
+    confidence = rag_rule_persist_confidence(config, question=question, field=field, answer=stored)
     logger.info("Rule RAG answer: %s", question[:60])
     return DraftResult(fill=fill, canonical=stored, source="RAG", confidence=confidence)
 
@@ -166,12 +162,8 @@ def _llm_select_choice(
     # An option pick must also be backed by an independent second source — a
     # rule/RAG/prior-answer hint that resolves to the same option, or the verifier
     # approving it against profile + databank. Otherwise queue for manual input.
-    if not _option_pick_has_backing(
-        config, question=question, field=field, value=value, free_tier=free_tier
-    ):
-        logger.info(
-            "LLM option pick lacks a second source — queuing: %s", question[:50]
-        )
+    if not _option_pick_has_backing(config, question=question, field=field, value=value, free_tier=free_tier):
+        logger.info("LLM option pick lacks a second source — queuing: %s", question[:50])
         return DraftResult()
 
     logger.info(
@@ -248,9 +240,7 @@ def _llm_draft_for_field(
     # Options-based questions: feed the options into the decision and return the
     # best option directly (no free-form generation + later conversion).
     if _is_choice_field(field):
-        choice = _llm_select_choice(
-            config, question=question, field=field, free_tier=free_tier
-        )
+        choice = _llm_select_choice(config, question=question, field=field, free_tier=free_tier)
         if choice.has_answer:
             return choice
         # fall through to free-form only if direct selection produced nothing
@@ -278,9 +268,7 @@ def _llm_draft_for_field(
         field=field,
         rag_hint=rag_hint,
         vector_hint=getattr(vector_best, "answer", None) if vector_best else None,
-        vector_score=float(getattr(vector_best, "score", 0.0) or 0.0)
-        if vector_best
-        else 0.0,
+        vector_score=float(getattr(vector_best, "score", 0.0) or 0.0) if vector_best else 0.0,
         similar_answers=free_tier.similar_answers,
     )
     if accepted:
@@ -317,15 +305,11 @@ def _draft_one_field(
         jd=jd,
     )
 
-    rule = _try_rule_rag_from_context(
-        config, free_tier, question=question, field=field
-    )
+    rule = _try_rule_rag_from_context(config, free_tier, question=question, field=field)
     if rule:
         return rule
 
-    vector = try_vector_auto_answer(
-        config, question, field, vector_best=free_tier.vector_best
-    )
+    vector = try_vector_auto_answer(config, question, field, vector_best=free_tier.vector_best)
     if vector:
         fill, stored, source, confidence = vector
         return DraftResult(fill=fill, canonical=stored, source=source, confidence=confidence)

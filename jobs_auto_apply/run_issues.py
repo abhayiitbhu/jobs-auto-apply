@@ -1,8 +1,8 @@
 """Track skipped jobs and unanswered questions during a run for end-of-run prompts."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass

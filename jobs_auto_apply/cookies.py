@@ -12,8 +12,7 @@ from playwright.async_api import BrowserContext
 def load_cookies(path: Path, *, default_domain: str, required_names: list[str] | None = None) -> list[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(
-            f"Cookie file not found: {path}\n"
-            "Export cookies from your browser while logged in. See README."
+            f"Cookie file not found: {path}\nExport cookies from your browser while logged in. See README."
         )
 
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -38,9 +37,9 @@ def load_cookies(path: Path, *, default_domain: str, required_names: list[str] |
             entry["secure"] = bool(cookie["secure"])
         if "httpOnly" in cookie:
             entry["httpOnly"] = bool(cookie["httpOnly"])
-        if "sameSite" in cookie and cookie["sameSite"]:
+        if cookie.get("sameSite"):
             entry["sameSite"] = cookie["sameSite"]
-        if "expires" in cookie and cookie["expires"]:
+        if cookie.get("expires"):
             entry["expires"] = cookie["expires"]
         normalized.append(entry)
 
@@ -48,10 +47,7 @@ def load_cookies(path: Path, *, default_domain: str, required_names: list[str] |
         present = {c["name"] for c in normalized}
         missing = [name for name in required_names if name not in present]
         if missing and not any(name in present for name in required_names):
-            raise ValueError(
-                f"Missing session cookies in {path.name}. "
-                f"Expected one of: {', '.join(required_names)}"
-            )
+            raise ValueError(f"Missing session cookies in {path.name}. Expected one of: {', '.join(required_names)}")
     return normalized
 
 

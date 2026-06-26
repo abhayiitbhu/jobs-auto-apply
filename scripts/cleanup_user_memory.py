@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from jobs_auto_apply.answers.config_answers import (  # noqa: E402
-    authoritative_config_answer,
     compensation_answer,
     location_answer,
     skill_years_config_answer,
@@ -37,8 +36,7 @@ MEMORY_PATH = ROOT / "data" / "user_memory.json"
 _HUMAN_SOURCES = {"manual", "confirmed", "interactive", "pending", "reviewed"}
 
 _RESUME_DUMP = re.compile(
-    r"results-driven|profile\b|@itbhu|senior backend developer /envel|"
-    r"implemented ci/cd pipelines|founder\|",
+    r"results-driven|profile\b|@itbhu|senior backend developer /envel|" r"implemented ci/cd pipelines|founder\|",
     re.I,
 )
 
@@ -96,11 +94,7 @@ def _canonical_answer(config, question: str, field: dict) -> tuple[str | None, s
             return val, "config_loc"
 
     if gid.startswith("skill:") and is_skill_years_question(question):
-        if question in _MANUAL:
-            pass
-        elif _is_yesno_question(question) and not re.search(
-            r"\bhow many\b", question, re.I
-        ):
+        if question in _MANUAL or (_is_yesno_question(question) and not re.search(r"\bhow many\b", question, re.I)):
             pass
         else:
             val = skill_years_config_answer(config, question)
@@ -112,9 +106,7 @@ def _canonical_answer(config, question: str, field: dict) -> tuple[str | None, s
         if val:
             return val, "rag"
 
-    if gid.startswith("skill_yesno:") or (
-        gid.startswith("unique:") and _is_yesno_question(question)
-    ):
+    if gid.startswith("skill_yesno:") or (gid.startswith("unique:") and _is_yesno_question(question)):
         val = _rag_short_answer(config, question, field)
         if val and re.match(r"^(yes|no)\b", val, re.I):
             return _normalize_yesno(val) or val, "rag"
@@ -140,9 +132,7 @@ def _should_overwrite(question: str, old: str, new: str, gid: str) -> bool:
         return True
     if gid in ("notice_period", "f2f_interview", "compensation"):
         return True
-    if gid.startswith("skill_yesno:"):
-        return True
-    return False
+    return bool(gid.startswith("skill_yesno:"))
 
 
 # Manual corrections for entries the classifier mishandles.
@@ -170,9 +160,7 @@ def _is_known_good(question: str, answer: str, gid: str) -> bool:
         return True
     if _is_yesno_question(question) and a in ("Yes", "No"):
         return True
-    if question in _MANUAL and a == _MANUAL[question]:
-        return True
-    return False
+    return bool(question in _MANUAL and a == _MANUAL[question])
 
 
 def main() -> None:
@@ -242,8 +230,7 @@ def main() -> None:
         # was already filtered above, so such an answer is kept (and its review
         # restored) instead of being re-flagged every run.
         if (
-            entry.get("reviewed")
-            or str(entry.get("source", "")).lower() in _HUMAN_SOURCES
+            entry.get("reviewed") or str(entry.get("source", "")).lower() in _HUMAN_SOURCES
         ) and not is_placeholder_answer(old):
             entry["reviewed"] = True
             entry.pop("needs_review", None)
@@ -299,11 +286,7 @@ def main() -> None:
         for gid, q, a in remaining_issues[:20]:
             print(f"  [{gid}] {q} = {a!r}")
 
-    needs = sum(
-        1
-        for e in answers.values()
-        if needs_review_answer(e.get("question", ""), e.get("answer", ""))
-    )
+    needs = sum(1 for e in answers.values() if needs_review_answer(e.get("question", ""), e.get("answer", "")))
     bad = sum(
         1
         for e in answers.values()
@@ -313,15 +296,8 @@ def main() -> None:
             enrich_field_for_llm({"kind": "text", "label": e.get("question", "")}),
         )
     )
-    prose = sum(
-        1
-        for e in answers.values()
-        if _RESUME_DUMP.search(str(e.get("answer", "")))
-    )
-    print(
-        f"\nPost-cleanup: needs_review={needs}, unacceptable={bad}, "
-        f"resume_prose={prose}, entries={len(answers)}"
-    )
+    prose = sum(1 for e in answers.values() if _RESUME_DUMP.search(str(e.get("answer", ""))))
+    print(f"\nPost-cleanup: needs_review={needs}, unacceptable={bad}, resume_prose={prose}, entries={len(answers)}")
 
 
 if __name__ == "__main__":
