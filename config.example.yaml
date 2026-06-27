@@ -100,7 +100,7 @@ answers:
     - "8+ years"
 
 resume:
-  path: "resumeAbhay_repaired.pdf"
+  path: "abhay_resume_2026.pdf"
   # Upload resume to Wellfound profile/edit before each run (first-time setup only)
   sync_to_wellfound: false
   # Upload resume to Naukri profile before each Naukri run (keeps profile fresh for recruiters)
@@ -235,9 +235,9 @@ application:
   delay_seconds_min: 2
   delay_seconds_max: 5
   apply_workers: 3
-  naukri_apply_workers: 10
-  hirist_apply_workers: 10
-  instahyre_apply_workers: 10
+  naukri_apply_workers: 5
+  hirist_apply_workers: 5
+  instahyre_apply_workers: 3
   parallel_platforms: false    # one platform at a time on 16GB unified memory
   pipeline_apply: true         # Naukri + Wellfound: scroll while workers apply
   platform_delays:
@@ -258,7 +258,7 @@ application:
                                 # Naukri/Hirist: queue new questions and prompt grouped at end of run
   rag_answer_questions: true   # RAG suggestions feed LLM; still requires llm.min_confidence or question is queued
   one_job_per_company: true
-  enrich_workers: 4
+  enrich_workers: 1
   dry_run: true
 
 # Ollama local models — run: ./scripts/setup_ollama_models.sh
@@ -296,6 +296,9 @@ llm:
     - date
   use_faiss_memory: true
   rag_top_k: 3
+  # Minimum composite similarity score (0..1) a retrieved prior answer must reach.
+  # 0.0 disables the cutoff and returns all top-k matches.
+  rag_min_score: 0.0
   vector_auto_answer_score: 0.92
   embeddings_model: sentence-transformers/all-MiniLM-L6-v2
   faiss_index_dir: data/faiss

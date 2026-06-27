@@ -17,7 +17,6 @@ from .format_finalize import finalize_answer_for_field
 class FreeTierContext:
     """Outputs from cheap tiers — fed to LLM when auto-fill did not succeed."""
 
-    rag_raw: str | None = None
     rag_auto: tuple[str, str] | None = None  # (fill, stored) when rule RAG passes format check
     config_hint: str | None = None
     similar_answers: list[SimilarAnswer] | None = None
@@ -52,8 +51,6 @@ def collect_free_tier_context(
     *,
     question: str,
     field: dict[str, Any],
-    job_title: str = "",
-    jd: str = "",
 ) -> FreeTierContext:
     """Run config + rule RAG + vector search once; reuse for auto-fill and LLM hints."""
     field = enrich_field_for_llm(field)
@@ -68,11 +65,12 @@ def collect_free_tier_context(
             config,
             question=question,
             field=field,
-            jd=jd,
-            job_title=job_title,
         )
         if rag:
-            ctx.rag_raw = rag
+            # Only a rule-RAG answer that passes the field format check (rag_auto)
+            # is used — as a direct fill or an LLM hint/corroboration source. The
+            # raw value is intentionally dropped when finalize fails so an
+            # unvalidated answer can't bias or circularly confirm the LLM.
             finalized = finalize_answer_for_field(question, field, config, raw_answer=rag)
             if finalized:
                 ctx.rag_auto = finalized

@@ -51,7 +51,7 @@ def _sanitize_cover_letter(text: str) -> str:
 # Floor on how many top vector matches are surfaced to the LLM for answer
 # generation. Even when rag_top_k is configured lower, the LLM should see at
 # least this many similar prior Q/A pairs so it has enough context to adapt.
-_MIN_RAG_FOR_LLM = 10
+_MIN_RAG_FOR_LLM = 5
 _FAISS_STORE_NAME = "user_memory_qa"
 _FAISS_CACHE: dict[str, tuple[float, Any]] = {}
 _OLLAMA_LOCK = threading.Lock()  # legacy single-flight (kept for any direct users)
@@ -289,6 +289,10 @@ def _build_application_context(config: AppConfig) -> str:
     for key, value in app_facts.items():
         if value in (None, "", []):
             continue
+        if isinstance(value, dict):
+            # Skip dict-valued facts (e.g. skill_years, education); dumping the
+            # raw repr is noise here and they're surfaced via dedicated answers.
+            continue
         if isinstance(value, list):
             lines.append(f"- {key}: {', '.join(str(v) for v in value)}")
         else:
@@ -395,10 +399,16 @@ def retrieve_similar_answers(
     question: str,
     *,
     k: int | None = None,
+    min_score: float | None = None,
 ) -> list[SimilarAnswer]:
-    """Top-k prior Q/A pairs from user_memory via FAISS similarity_search_with_score."""
+    """Top-k prior Q/A pairs from user_memory via FAISS similarity_search_with_score.
+
+    Results below ``min_score`` (composite similarity) are dropped. When ``min_score``
+    is None, ``config.llm.rag_min_score`` is used; a value of 0.0 disables the cutoff.
+    """
     limit = k if k is not None else max(config.llm.rag_top_k, _MIN_RAG_FOR_LLM)
     limit = max(1, limit)
+    cutoff = config.llm.rag_min_score if min_score is None else min_score
 
     store = _get_faiss_store(config)
     if store is not None:
@@ -425,12 +435,14 @@ def retrieve_similar_answers(
                 )
             if picked:
                 picked.sort(key=lambda x: x.score, reverse=True)
+                picked = [item for item in picked if item.score >= cutoff]
                 return picked[:limit]
         except Exception as exc:
             logger.debug("FAISS similarity_search failed, fallback to lexical: %s", exc)
 
     lexical = _lexical_similar_answers(config, question, limit=limit)
     lexical.sort(key=lambda x: x.score, reverse=True)
+    lexical = [item for item in lexical if item.score >= cutoff]
     return lexical[:limit]
 
 
@@ -518,17 +530,8 @@ def _format_free_tier_hints(ctx: Any) -> str:
     lines: list[str] = []
     if ctx.config_hint and str(ctx.config_hint).strip():
         lines.append(f"Config/rules answer: {ctx.config_hint.strip()}")
-    if ctx.rag_raw and str(ctx.rag_raw).strip():
-        raw = str(ctx.rag_raw).strip()
-        fill = str(ctx.rag_fill).strip() if ctx.rag_fill else ""
-        if fill and fill != raw:
-            lines.append(f"Rule RAG answer (field-formatted): {fill}")
-        lines.append(f"Rule RAG answer: {raw}")
-    elif ctx.rag_fill and str(ctx.rag_fill).strip():
+    if ctx.rag_fill and str(ctx.rag_fill).strip():
         lines.append(f"Rule RAG answer: {ctx.rag_fill.strip()}")
-    if ctx.vector_best is not None:
-        v = ctx.vector_best
-        lines.append(f"Vector match (score={v.score:.3f}, same question group): Q: {v.question} → A: {v.answer}")
     if not lines:
         return ""
     return (

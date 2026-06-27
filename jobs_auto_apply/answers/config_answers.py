@@ -36,6 +36,37 @@ def compensation_answer(config: AppConfig, question: str, field: dict[str, Any] 
     return format_lpa(comp.current_ctc_lpa)
 
 
+# Contact-info questions ("what is your primary email ID?", "mobile number?").
+# Deterministic answers from config.user so they never fall through to the RAG/LLM
+# draft path, which has no real contact data and emits garbage (resume dumps,
+# arbitrary numbers like "45").
+_EMAIL_Q = re.compile(r"\be-?mail\b", re.I)
+_PHONE_Q = re.compile(
+    r"\b(?:mobile|phone|whats\s*app|whatsapp|cell|contact|alternate|alternative)\b"
+    r".{0,16}\b(?:number|no\.?|num|id)\b|\bmobile\b",
+    re.I,
+)
+# A skill/experience question that merely mentions email/phone (rare) must not be
+# answered with the user's contact value.
+_NOT_CONTACT_VALUE = re.compile(r"\b(?:how many|years?|experience|do you have|have you)\b", re.I)
+
+
+def contact_info_answer(config: AppConfig, question: str) -> str | None:
+    """Return the user's email / phone for contact-detail questions."""
+    q = question or ""
+    if _NOT_CONTACT_VALUE.search(q):
+        return None
+    if _EMAIL_Q.search(q):
+        email = (config.user.email or "").strip()
+        if email:
+            return email
+    if _PHONE_Q.search(q):
+        phone = (config.user.phone or "").strip()
+        if phone:
+            return phone
+    return None
+
+
 def location_answer(config: AppConfig, question: str) -> str | None:
     if not is_location_value_question(question):
         return None
@@ -467,8 +498,9 @@ def authoritative_config_answer(
     question: str,
     field: dict[str, Any] | None = None,
 ) -> str | None:
-    """Compound → compensation → location → profile links → skill years → prior association → education."""
+    """Contact → compound → compensation → location → profile links → skill years → prior association → education."""
     for answer in (
+        contact_info_answer(config, question),
         compound_config_answer(config, question, field),
         compensation_answer(config, question, field),
         location_answer(config, question),

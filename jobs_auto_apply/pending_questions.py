@@ -835,7 +835,6 @@ def answer_pending_groups_interactive(
                 config,
                 question=primary,
                 field=field,
-                job_title=job_title,
                 company=company,
             )
             draft = draft_result.fill
@@ -1008,7 +1007,6 @@ def _prepare_group_question(
                 config,
                 question=primary,
                 field=field,
-                job_title=job_title,
                 company=company,
             )
             draft = draft_result.fill
@@ -1384,7 +1382,6 @@ def review_saved_answers_interactive(
             suggested = suggest_answer(
                 config,
                 question=entry["question"],
-                job_title=entry.get("job_title", ""),
                 company=entry.get("company", ""),
             )
 

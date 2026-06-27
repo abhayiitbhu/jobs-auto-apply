@@ -231,8 +231,6 @@ async def resolve_question_answers(
         draft_answers_for_fields,
         config,
         needs_draft,
-        jd=jd,
-        job_title=job_title,
         company=company,
     )
 

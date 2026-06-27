@@ -16,7 +16,6 @@ from .profile.skills import (
 )
 from .profile_data import ResumeFacts, load_resume_facts
 from .question_groups import classify_question
-from .resume_text import resume_paragraphs
 
 logger = logging.getLogger("job_apply")
 
@@ -25,137 +24,9 @@ _CONSENT_LABEL = re.compile(
     re.I,
 )
 
-# Yes/No-style phrasing. Naukri sometimes renders these as a free-text composer on
-# the first discovery pass; without this guard the resume-blob fallback dumps an
-# unrelated paragraph as the "answer" instead of deferring to a real Yes/No.
-_YES_NO_PHRASING = re.compile(
-    r"^\s*(are|do|did|does|have|has|had|will|would|can|could|is|was|were|should)\s+you\b",
-    re.I,
-)
-# Prompts that explicitly ask for free-text elaboration — these are NOT pure yes/no
-# even when they open with "Have you …", so they should still get a text answer.
-_WANTS_ELABORATION = re.compile(
-    r"\b(describe|explain|elaborate|detail|details|specify|share|tell us|"
-    r"walk (?:me|us) through|give (?:an )?examples?|list|which|what|how|why)\b",
-    re.I,
-)
-
-
-def _looks_like_pure_yes_no(question: str) -> bool:
-    return bool(_YES_NO_PHRASING.search(question) and not _WANTS_ELABORATION.search(question))
-
-
-def _inline_choice_options(question: str) -> list[str]:
-    """Options written inline in the label, e.g. "(Beginner/Intermediate/Advanced)".
-
-    Naukri/Hirist sometimes render these rating/scale questions as a plain text box
-    (no real choice control), so discovery never captures the options. Without this
-    the resume-blob fallback answers a "How strong are you …?" scale question with an
-    unrelated paragraph. We parse the parenthetical slash-list so the caller can defer
-    to the LLM (which sees the options and picks one) instead.
-    """
-    for group in re.findall(r"\(([^)]+)\)", question):
-        if "/" not in group:
-            continue
-        parts = [p.strip() for p in group.split("/") if p.strip()]
-        if len(parts) < 2:
-            continue
-        # Reject numeric/example parentheticals like "(in LPA, e.g., 45)".
-        if any(re.search(r"\d", p) or len(p) > 24 for p in parts):
-            continue
-        if all(re.search(r"[A-Za-z]", p) for p in parts):
-            return parts
-    return []
-
 
 def _norm(text: str) -> str:
     return norm_text(text)
-
-
-def _tokens(text: str) -> set[str]:
-    stop = {
-        "what",
-        "your",
-        "you",
-        "are",
-        "the",
-        "a",
-        "an",
-        "do",
-        "have",
-        "in",
-        "of",
-        "for",
-        "this",
-        "role",
-        "how",
-        "many",
-        "years",
-        "experience",
-        "with",
-        "is",
-        "and",
-        "or",
-        "if",
-        "yes",
-        "can",
-        "describe",
-        "briefly",
-        "please",
-    }
-    return {w for w in _norm(text).split() if len(w) > 2 and w not in stop}
-
-
-def _retrieve_chunks(
-    question: str,
-    jd: str,
-    facts: ResumeFacts,
-    config: AppConfig | None = None,
-) -> list[str]:
-    """Score resume/JD snippets by token overlap with the question."""
-    query = _tokens(question) | _tokens(jd[:2000])
-    if not query:
-        return []
-
-    candidates: list[tuple[float, str]] = []
-    candidates.append((0.2, facts.profile_summary.strip()))
-
-    for role in facts.experience:
-        company = str(role.get("company", ""))
-        title = str(role.get("title", ""))
-        header = f"{title} at {company}"
-        candidates.append((0.15, header))
-        for highlight in role.get("highlights", []):
-            candidates.append((0.0, str(highlight)))
-
-    for skill_group in facts.technical_skills.values():
-        candidates.append((0.1, ", ".join(skill_group)))
-
-    if config is not None:
-        for para in resume_paragraphs(config):
-            candidates.append((0.05, para))
-
-    scored: list[tuple[float, str]] = []
-    for base, text in candidates:
-        if not text:
-            continue
-        text_tokens = _tokens(text)
-        if not text_tokens:
-            continue
-        overlap = len(query & text_tokens) / max(len(query), 1)
-        scored.append((base + overlap, text))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    seen: set[str] = set()
-    chunks: list[str] = []
-    for score, text in scored:
-        if score < 0.12 or text in seen:
-            continue
-        seen.add(text)
-        chunks.append(text)
-        if len(chunks) >= 4:
-            break
-    return chunks
 
 
 def _resume_blob(facts: ResumeFacts, config: AppConfig | None = None) -> str:
@@ -185,14 +56,6 @@ _COMPOUND_TECH_CHECKS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (re.compile(r"computer vision"), ("computer vision", "opencv")),
     (re.compile(r"pytorch|tensorflow"), ("pytorch", "tensorflow")),
 )
-
-
-def _mentioned_technologies(norm: str) -> list[str]:
-    found: list[str] = []
-    for pattern, _keywords in _COMPOUND_TECH_CHECKS:
-        if pattern.search(norm):
-            found.append(pattern.pattern)
-    return found
 
 
 def _has_named_technologies(norm: str, blob: str) -> bool:
@@ -322,13 +185,6 @@ def _pick_positive_option(options: list[Any]) -> str | None:
     return None
 
 
-def _compose_text_answer(question: str, chunks: list[str], facts: ResumeFacts) -> str:
-    text = ". ".join(s.strip().rstrip(".") for s in chunks[:2]) + "." if chunks else facts.recent_role_blurb()
-    if len(text) > 480:
-        text = text[:477].rsplit(" ", 1)[0] + "..."
-    return text
-
-
 def _current_ctc_answer(config: AppConfig, question: str) -> str:
     comp = config.compensation
     norm = _norm(question)
@@ -429,8 +285,6 @@ def generate_rag_answer(
     *,
     question: str,
     field: dict[str, Any],
-    jd: str = "",
-    job_title: str = "",
 ) -> str | None:
     """
     Retrieval-augmented answer from profile/application_facts + resume + compensation.
@@ -759,27 +613,8 @@ def generate_rag_answer(
         if text:
             return text[:500]
 
-    if kind in ("radio", "checkbox"):
-        return None
-
-    from .application_questions import is_new_experience_question
-
-    if is_new_experience_question(config, question):
-        return None
-
-    # A pure Yes/No question (e.g. "Have you independently created HLD/LLD docs?")
-    # must never be answered with a resume blob. Defer so the LLM / manual path can
-    # give an actual Yes/No instead of dumping an unrelated paragraph.
-    if _looks_like_pure_yes_no(question):
-        return None
-
-    # Scale/rating questions with options inline in the label (e.g. "How strong are
-    # you in DSA? (Beginner/Intermediate/Advanced)") are constrained choices, not
-    # free text — defer so the LLM picks a listed option instead of a resume blob.
-    if _inline_choice_options(question):
-        return None
-
-    chunks = _retrieve_chunks(question, jd, facts, config)
-    if chunks or facts.experience:
-        return _compose_text_answer(question, chunks, facts)
+    # No deterministic rule matched. We deliberately do NOT fall back to a
+    # token-overlap resume blob here: that blob was low quality, biased the LLM
+    # when fed as a hint, and circularly "corroborated" the answer it had biased.
+    # Defer to the LLM / manual path instead.
     return None

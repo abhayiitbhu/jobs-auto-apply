@@ -227,6 +227,9 @@ class LLMConfig(JsonSchemaMixin):
     )
     use_faiss_memory: bool = True
     rag_top_k: int = 3
+    # Minimum composite similarity score a retrieved prior answer must reach to be
+    # returned by retrieve_similar_answers. 0.0 disables the cutoff (return all top-k).
+    rag_min_score: float = 0.5
     vector_auto_answer_score: float = 0.92
     embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     faiss_index_dir: str = "data/faiss"
@@ -735,6 +738,7 @@ def _llm_config(data: dict[str, Any]) -> LLMConfig:
         ),
         use_faiss_memory=bool(data.get("use_faiss_memory", True)),
         rag_top_k=int(data.get("rag_top_k", 3)),
+        rag_min_score=float(data.get("rag_min_score", 0.0)),
         vector_auto_answer_score=float(data.get("vector_auto_answer_score", 0.92)),
         embeddings_model=str(data.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2")),
         faiss_index_dir=str(data.get("faiss_index_dir", "data/faiss")),

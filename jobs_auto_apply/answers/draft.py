@@ -75,7 +75,7 @@ def _try_rule_rag_from_context(
 
 
 def _rag_hint_from_context(ctx: FreeTierContext) -> str | None:
-    return ctx.rag_fill or ctx.rag_raw
+    return ctx.rag_fill
 
 
 _CHOICE_KINDS = {
@@ -124,7 +124,7 @@ def _is_choice_field(field: dict[str, Any]) -> bool:
 def _selection_context(free_tier: FreeTierContext) -> str | None:
     """Compact RAG/rule + prior-answer hints to inform option selection."""
     parts: list[str] = []
-    hint = free_tier.rag_fill or free_tier.rag_raw or free_tier.config_hint
+    hint = free_tier.rag_fill or free_tier.config_hint
     if hint:
         parts.append(f"Suggested answer from rules/RAG: {hint}")
     for sa in (free_tier.similar_answers or [])[:3]:
@@ -194,7 +194,7 @@ def _option_pick_has_backing(
 
     # 1) Hint agreement (cheap, no extra model call).
     hints: list[str] = []
-    for hint in (free_tier.config_hint, free_tier.rag_fill, free_tier.rag_raw):
+    for hint in (free_tier.config_hint, free_tier.rag_fill):
         if hint and str(hint).strip():
             hints.append(str(hint).strip())
     for sa in (free_tier.similar_answers or [])[:3]:
@@ -215,7 +215,7 @@ def _option_pick_has_backing(
         fill_answer=value,
         profile_excerpt=_build_application_context(config),
         similar_answers=free_tier.similar_answers,
-        rag_hint=free_tier.rag_fill or free_tier.rag_raw or free_tier.config_hint,
+        rag_hint=free_tier.rag_fill or free_tier.config_hint,
     )
     return verified
 
@@ -290,8 +290,6 @@ def _draft_one_field(
     *,
     question: str,
     field: dict[str, Any],
-    jd: str = "",
-    job_title: str = "",
     company: str = "",
     profile_context: str | None = None,
 ) -> DraftResult:
@@ -301,8 +299,6 @@ def _draft_one_field(
         config,
         question=question,
         field=field,
-        job_title=job_title,
-        jd=jd,
     )
 
     rule = _try_rule_rag_from_context(config, free_tier, question=question, field=field)
@@ -328,8 +324,6 @@ def draft_answer_for_field(
     *,
     question: str,
     field: dict[str, Any],
-    jd: str = "",
-    job_title: str = "",
     company: str = "",
 ) -> DraftResult:
     """
@@ -347,8 +341,6 @@ def draft_answer_for_field(
         config,
         question=question,
         field=field,
-        jd=jd,
-        job_title=job_title,
         company=company,
     )
     return _cache_result(cache_key, result)
@@ -358,8 +350,6 @@ def draft_answers_for_fields(
     config: AppConfig,
     fields: list[tuple[str, dict[str, Any]]],
     *,
-    jd: str = "",
-    job_title: str = "",
     company: str = "",
 ) -> dict[str, DraftResult]:
     """Draft answers sequentially — no batch LLM (better accuracy)."""
@@ -382,8 +372,6 @@ def draft_answers_for_fields(
             config,
             question=question,
             field=field,
-            jd=jd,
-            job_title=job_title,
             company=company,
             profile_context=profile_context,
         )

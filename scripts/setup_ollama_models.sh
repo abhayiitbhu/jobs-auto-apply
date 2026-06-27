@@ -41,9 +41,11 @@ fi
 echo "=== Pull base models ==="
 ollama pull qwen2.5:7b
 if [ "$VERIFIER" -eq 1 ]; then
-  ollama pull qwen2.5:3b
+  # Verifier uses a different model family (Llama vs Qwen) so its errors
+  # decorrelate from the generator, while staying light (~3b) for low latency/VRAM.
+  ollama pull llama3.2:3b
 else
-  echo "Skipping qwen2.5:3b — llm.verifier_enabled is false in $CONFIG_FILE"
+  echo "Skipping llama3.2:3b — llm.verifier_enabled is false in $CONFIG_FILE"
 fi
 
 echo ""

@@ -61,7 +61,7 @@ The entry point is `main.py`, which loads `.env` (if present) and invokes the Cl
 | Command | Description |
 |---------|-------------|
 | `run` | Search, filter, and apply automatically (or apply the approved queue if `require_review` is set). |
-| `serve` | Always-on scheduler: re-applies every N minutes; with `telegram.mode: listener`, Telegram Q&A runs in the same process. |
+| `serve` | Always-on HTTP server (uvicorn): re-applies every N minutes and exposes `GET /status` and `POST /run-now` (`--host`/`--port`, default `127.0.0.1:8765`). With `telegram.mode: listener`, Telegram Q&A runs in the same process. |
 | `review` | Collect listings per platform, then interactively approve/reject before applying. |
 | `apply-reviewed` | Submit applications only for jobs approved in the review queue. |
 | `review-status` | Show pending / approved / rejected counts per platform. |
@@ -155,7 +155,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 | `user` | Name, email, phone, LinkedIn — used to fill ATS forms. |
 | `profile` | Core skills, roles, headline used for matching and cover notes. |
 | `compensation` | Current/expected CTC (used for CTC questions and cover letter). |
-| `cover_letter` | Cover note mode (`dynamic` / `template` / `llm`) and options. |
+| `cover_letter` | Cover note mode (`dynamic` / `template`), reference letter path, and options. |
 | `auth`, `browser` | Login method and Chrome-profile / Playwright browser settings. |
 | `paths` | Locations of `application_facts`, `user_memory.json`, `pending_questions.json`, etc. |
 | `answers` | Notice/join threshold and default experience chip options. |
@@ -170,7 +170,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 
 ### Platform filters
 
-- **Naukri** — `keywords`, `locations`, `experience_min`, `salary_min_lakhs`, `remote_only`
+- **Naukri** — `keywords`, `locations`, `experience_max` (Naukri uses the max; `experience_min` feeds other platforms), `salary_min_lakhs`, `remote_only`, `quick_apply_only`, `sort`, `max_job_age_days`, `max_pages`
 - **Hirist** — `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`)
 - **Instahyre** — `job_functions`, `locations`, `experience_years`, `company_size`
 - **Wellfound / Uplers** — keywords, skills, locations, roles
@@ -191,7 +191,7 @@ brew install ollama && brew services start ollama
 bash scripts/setup_ollama_models.sh
 ```
 
-This pulls `qwen2.5:7b` and creates a **`job-answers`** model (generator). If `llm.verifier_enabled: true`, it also pulls `qwen2.5:3b` and creates **`job-verify`** (a lighter verifier for high-risk fields). Then in `config.yaml`:
+This pulls `qwen2.5:7b` and creates a **`job-answers`** model (generator). If `llm.verifier_enabled: true`, it also pulls `llama3.2:3b` and creates **`job-verify`**, a lightweight independent verifier for high-risk fields. The verifier deliberately uses a **different model family** (Llama vs Qwen) so its mistakes decorrelate from the generator's, while staying small (~3b) to keep latency and VRAM low. Then in `config.yaml`:
 
 ```yaml
 llm:
@@ -218,12 +218,13 @@ Each application scrapes the **job description** and builds a tailored note:
 
 ```yaml
 cover_letter:
-  mode: dynamic    # dynamic (default) | template | llm
+  mode: dynamic    # dynamic (default) | template
   include_ctc: true
   max_words: 200
+  reference_path: "profile/cover_letter_reference.txt"
 ```
 
-For highest quality set `mode: llm` (uses the configured LLM, or `OPENAI_API_KEY` if you wire one in).
+In `dynamic` mode, the letter is generated from the job description and your reference letter at `cover_letter.reference_path` (default `profile/cover_letter_reference.txt`) — drop in a sample cover letter there to anchor the tone and structure. When no JD is available (or `mode: template`), a static template is used instead.
 
 ## Logging in
 
@@ -301,6 +302,9 @@ Created under `data/` (paths configurable in `config.paths`):
 | `data/user_memory.json` | Confirmed Q&A answers, review decisions, preferences. |
 | `data/pending_questions.json` | Questions deferred for you to answer manually. |
 | `data/technical_failures.json` | Jobs that failed to fill (for retry/inspection). |
+| `data/naukri_resume_sync.json` | Timestamp of the last Naukri resume sync (`config.paths.naukri_resume_sync`). |
+| `data/telegram_chat.json` | Captured Telegram `chat_id` (written by `telegram-login`). |
+| `data/telegram_offset.json` | Last processed Telegram `getUpdates` offset (survives `serve --reload`). |
 | `data/sessions/` | Saved browser sessions (Option B login). |
 | `data/faiss/` | FAISS vector index for RAG over prior answers. |
 | `data/applied_*.json`, `data/run.log` | Applied-job ledger and run log. |
@@ -310,6 +314,7 @@ Created under `data/` (paths configurable in `config.paths`):
 | Script | Purpose |
 |--------|---------|
 | `scripts/setup_ollama_models.sh` | Pull base models and create `job-answers` / `job-verify`. |
+| `scripts/generate_config_schema.py` | Regenerate `config.schema.json` from the config dataclasses. |
 | `scripts/cleanup_user_memory.py` | Prune/repair entries in `user_memory.json`. |
 | `scripts/migrate_memory_to_groups.py` | Migrate legacy memory to group-keyed answers. |
 | `scripts/test_single_naukri.py` | Apply to a single Naukri job for debugging. |

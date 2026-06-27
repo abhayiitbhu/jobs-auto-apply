@@ -13,7 +13,13 @@ from ..config import AppConfig
 from ..cover_letter import build_cover_letter
 from ..page_load import prepare_interactive_page
 from ..pending_questions import queue_unanswered
-from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
+from ..utils import (
+    JobListing,
+    defer_job_for_run,
+    job_key,
+    record_abandoned_apply,
+    save_applied_job,
+)
 from .questions import (
     CannotAnswerTruthfully,
     _chatbot_flow_complete,
@@ -47,6 +53,25 @@ _NAUKRI_POST_APPLY_RE = re.compile(
 
 def _is_naukri_post_apply_url(url: str) -> bool:
     return bool(_NAUKRI_POST_APPLY_RE.search(url))
+
+
+def _record_non_quick_apply(job: JobListing, config: AppConfig | None, branch: str) -> None:
+    """Persist a non-quick-apply Naukri job so it is not re-opened on every run.
+
+    The SRP keeps jobs whose Quick Apply badge is unknown (wider scope), so some
+    only reveal themselves as non-quick on the detail page. Without recording
+    them, ``load_applied_jobs`` never blocks them and the producer re-queues and
+    re-navigates to them on every server start. Mark them ``abandoned`` (a
+    permanent, blocking status that also survives ``reconcile_applied_jobs``).
+    """
+    if config is None or not getattr(job, "job_id", ""):
+        return
+    record_abandoned_apply(
+        config.applied_jobs_path,
+        job_key(job.source, job.job_id),
+        {"source": "naukri", "title": job.title, "url": job.url},
+        reason=f"non-quick-apply ({branch})",
+    )
 
 
 _SIMILAR_OPPORTUNITIES_JS = """
@@ -509,6 +534,23 @@ async def _fill_cover_letter_if_present(
             return
 
 
+async def _naukri_apply_completed(page: Page) -> bool:
+    """True when the application has actually gone through.
+
+    A chatbot apply finishes by either navigating to the post-apply / recommended
+    jobs page, flipping the job-detail button to "Applied", closing the chatbot
+    drawer, or showing a terminal "thanks" message. Any of these means a question
+    re-discovered afterwards is a stale echo, not a real unanswered question.
+    """
+    if await _naukri_post_apply_redirected(page):
+        return True
+    if await _aurus_already_applied(page):
+        return True
+    if not await chatbot_is_open(page):
+        return True
+    return await _chatbot_flow_complete(page)
+
+
 async def _handle_chatbot_questions(
     page: Page,
     job: JobListing,
@@ -538,6 +580,7 @@ async def _handle_chatbot_questions(
 
     await prepare_interactive_page(page, fast=True)
     stable_empty = 0
+    answered_labels: set[str] = set()
     for step in range(_MAX_CHATBOT_STEPS):
         if await _naukri_post_apply_redirected(page):
             return True
@@ -559,6 +602,26 @@ async def _handle_chatbot_questions(
                 return False
             await page.wait_for_timeout(step_delay)
             continue
+
+        if answered_labels and all(field.get("label", "").strip().lower() in answered_labels for field in questions):
+            # Every "question" on screen is one we already answered this session —
+            # this is the chatbot echoing a completed step (e.g. a radio answer
+            # re-rendered as a text bubble) while the apply is being submitted.
+            # Give the post-apply state a beat to settle, then treat a completed
+            # application as success instead of re-filling a stale duplicate.
+            if await _naukri_apply_completed(page):
+                logger.info(
+                    "Naukri chatbot: application complete (echoed answered question): %s",
+                    job.title,
+                )
+                return True
+            await page.wait_for_timeout(step_delay)
+            if await _naukri_apply_completed(page):
+                logger.info(
+                    "Naukri chatbot: application complete after settle: %s",
+                    job.title,
+                )
+                return True
 
         stable_empty = 0
         logger.info(
@@ -618,6 +681,16 @@ async def _handle_chatbot_questions(
                             filled = True
                             break
             except CannotAnswerTruthfully as exc:
+                # A "cannot answer truthfully" on a question we already answered this
+                # session is almost always a stale echo of a completed step — the
+                # radio we clicked may have already submitted the application. Verify
+                # before skipping so a successful apply isn't misreported as a skip.
+                if await _naukri_apply_completed(page):
+                    logger.info(
+                        "Naukri chatbot: application already complete despite unfillable echo: %s",
+                        job.title,
+                    )
+                    return True
                 # Honest skip: the only options would overstate experience the user
                 # lacks. Queue for manual decision; do NOT record a technical failure.
                 missing, pending_n = _queue_missing(
@@ -636,6 +709,15 @@ async def _handle_chatbot_questions(
                 )
                 return None
             if not filled:
+                # Same guard as the truthful-skip path: a fill miss on a question
+                # we already answered can be a post-submit echo. Don't flag a tech
+                # failure if the application actually went through.
+                if await _naukri_apply_completed(page):
+                    logger.info(
+                        "Naukri chatbot: application already complete despite unfilled echo: %s",
+                        job.title,
+                    )
+                    return True
                 missing, pending_n = _queue_missing(
                     config,
                     job,
@@ -658,6 +740,8 @@ async def _handle_chatbot_questions(
                 logger.warning("Skipped Naukri apply (could not fill): %s", job.title)
                 return None
 
+            answered_labels.add(label.lower())
+
         await page.wait_for_timeout(step_delay)
 
     if await _aurus_already_applied(page):
@@ -675,6 +759,7 @@ async def _try_apply_on_page(page: Page, job: JobListing, config: AppConfig) -> 
 
     if await _naukri_detail_is_non_quick_apply(page):
         logger.info("Skipping non-quick-apply Naukri job: %s", job.title)
+        _record_non_quick_apply(job, config, "try_apply_on_page")
         return None
 
     await _wait_for_apply_ready(page, timeout_ms=12000)
@@ -811,6 +896,7 @@ async def apply_to_job(
         and await _find_quick_apply_button(page) is None
     ):
         logger.info("Skipping non-quick-apply Naukri job on detail (early): %s", job.title)
+        _record_non_quick_apply(job, config, "early")
         return None
 
     # Short settle window: quick-apply jobs flip to "ready" within a few
@@ -822,6 +908,7 @@ async def apply_to_job(
     await _wait_for_apply_ready(page, timeout_ms=5000)
     if await _find_quick_apply_button(page) is None and await _naukri_detail_is_non_quick_apply(page):
         logger.info("Skipping non-quick-apply Naukri job on detail (settled): %s", job.title)
+        _record_non_quick_apply(job, config, "settled")
         return None
 
     await _wait_for_apply_ready(page, timeout_ms=10000)
@@ -839,6 +926,7 @@ async def apply_to_job(
 
     if await _naukri_detail_is_non_quick_apply(page):
         logger.info("Skipping non-quick-apply Naukri job on detail: %s", job.title)
+        _record_non_quick_apply(job, config, "detail")
         return None
 
     result = await _try_apply_on_page(page, job, config)

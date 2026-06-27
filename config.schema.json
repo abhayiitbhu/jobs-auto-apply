@@ -753,6 +753,10 @@
           "type": "integer",
           "default": 3
         },
+        "rag_min_score": {
+          "type": "number",
+          "default": 0.5
+        },
         "vector_auto_answer_score": {
           "type": "number",
           "default": 0.92
@@ -766,7 +770,7 @@
           "default": "data/faiss"
         }
       },
-      "description": "LLMConfig(enabled: 'bool' = False, base_url: 'str' = 'http://127.0.0.1:11434', model: 'str' = 'job-answers', verifier_model: 'str' = 'job-verify', verifier_enabled: 'bool' = True, temperature: 'float' = 0.05, max_tokens: 'int' = 256, keep_alive: 'str' = '30m', max_concurrency: 'int' = 2, auto_save: 'bool' = True, auto_answer_pending: 'bool' = True, retry_pending_jobs: 'bool' = True, prompt_pending_questions: 'bool' = False, min_confidence: 'float' = 0.92, min_confidence_rag_agree: 'float' = 0.88, vector_agree_score: 'float' = 0.8, min_confidence_new_experience: 'float' = 0.96, min_confidence_persist: 'float' = 0.98, plain_text_confidence: 'float' = 0.35, uncorroborated_confidence_cap: 'float' = 0.6, rag_agree_input_types: 'list[str]' = <factory>, use_faiss_memory: 'bool' = True, rag_top_k: 'int' = 3, vector_auto_answer_score: 'float' = 0.92, embeddings_model: 'str' = 'sentence-transformers/all-MiniLM-L6-v2', faiss_index_dir: 'str' = 'data/faiss')"
+      "description": "LLMConfig(enabled: 'bool' = False, base_url: 'str' = 'http://127.0.0.1:11434', model: 'str' = 'job-answers', verifier_model: 'str' = 'job-verify', verifier_enabled: 'bool' = True, temperature: 'float' = 0.05, max_tokens: 'int' = 256, keep_alive: 'str' = '30m', max_concurrency: 'int' = 2, auto_save: 'bool' = True, auto_answer_pending: 'bool' = True, retry_pending_jobs: 'bool' = True, prompt_pending_questions: 'bool' = False, min_confidence: 'float' = 0.92, min_confidence_rag_agree: 'float' = 0.88, vector_agree_score: 'float' = 0.8, min_confidence_new_experience: 'float' = 0.96, min_confidence_persist: 'float' = 0.98, plain_text_confidence: 'float' = 0.35, uncorroborated_confidence_cap: 'float' = 0.6, rag_agree_input_types: 'list[str]' = <factory>, use_faiss_memory: 'bool' = True, rag_top_k: 'int' = 3, rag_min_score: 'float' = 0.0, vector_auto_answer_score: 'float' = 0.92, embeddings_model: 'str' = 'sentence-transformers/all-MiniLM-L6-v2', faiss_index_dir: 'str' = 'data/faiss')"
     },
     "WhatsAppConfig": {
       "type": "object",

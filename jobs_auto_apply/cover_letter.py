@@ -320,12 +320,16 @@ async def build_cover_letter(
     title = job.title or "this role"
     facts = load_resume_facts(config.base_dir)
 
-    if mode == "template" or not jd:
-        if mode != "template" and not jd:
-            logger.debug("No JD found; using template for %s", job.url)
+    if mode == "template":
         return render_static_template(config, title=title, company=company)
 
     if mode == "llm":
         logger.warning("cover_letter.mode llm is removed; using dynamic reference-based letters")
+
+    if not jd:
+        logger.debug(
+            "No JD found for %s; generating cover letter from profile/reference/company context",
+            job.url,
+        )
 
     return _ensure_signature(generate_cover_letter_dynamic(config, job=job, jd=jd), facts)

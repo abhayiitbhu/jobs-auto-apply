@@ -41,9 +41,7 @@ def suggest_answer(
     *,
     question: str,
     field: dict[str, Any] | None = None,
-    job_title: str = "",
     company: str = "",
-    jd: str = "",
 ) -> str | None:
     """Draft via rule RAG → vector → Ollama; returns fill value for the form."""
     field = field_for_question(question, field)
@@ -53,8 +51,6 @@ def suggest_answer(
         config,
         question=question,
         field=field,
-        jd=jd,
-        job_title=job_title,
         company=company,
     )
     return result.fill
