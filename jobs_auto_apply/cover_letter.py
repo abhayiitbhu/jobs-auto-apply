@@ -111,6 +111,24 @@ def _load_cover_letter_reference(config: AppConfig) -> str:
     return ""
 
 
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.S)
+_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", re.S)
+
+
+def strip_markdown_emphasis(text: str) -> str:
+    """Remove Markdown bold/italic markers for plain-text form fields.
+
+    Cover letters keep ``**bold**`` markers so console/review previews can show
+    emphasis, but raw application textareas render those asterisks literally.
+    Strip them right before filling a form so the submitted letter is clean.
+    """
+    if not text:
+        return text
+    text = _BOLD_RE.sub(r"\1", text)
+    text = _ITALIC_RE.sub(r"\1", text)
+    return text
+
+
 def _format_phone_display(phone: str) -> str:
     digits = re.sub(r"\D", "", phone)
     if len(digits) == 10:
@@ -154,7 +172,11 @@ def _adapt_reference_cover_letter(
     org = job.company or "your organisation"
     title = job.title or "this role"
     skills = _match_skills(jd, config.profile.core_skills)
-    skill_phrase = ", ".join(skills[:3]) if skills else "backend systems and cloud infrastructure"
+    skill_phrase = (
+        ", ".join(f"**{skill}**" for skill in skills[:3])
+        if skills
+        else "**backend systems** and **cloud infrastructure**"
+    )
 
     text = reference.replace("{{title}}", title).replace("{{company}}", org).replace("{{skills}}", skill_phrase)
 

@@ -10,6 +10,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import AppConfig, WorkdayConfig
 from ..cookies import split_name
+from ..cover_letter import strip_markdown_emphasis
 from ..utils import JobListing
 
 logger = logging.getLogger("job_apply")
@@ -239,6 +240,7 @@ async def _fill_linkedin(page: Page, url: str) -> None:
 
 
 async def _fill_cover_letter(page: Page, note: str) -> None:
+    note = strip_markdown_emphasis(note)
     for automation_id in (
         "coverLetter",
         "coverLetterText",

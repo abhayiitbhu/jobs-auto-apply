@@ -94,7 +94,7 @@ class ProfileConfig(JsonSchemaMixin):
 class CoverLetterConfig(JsonSchemaMixin):
     mode: str = "dynamic"  # dynamic | template
     include_ctc: bool = True
-    max_words: int = 400
+    max_words: int = 200
     reference_path: str = "profile/cover_letter_reference.txt"
 
 
@@ -678,7 +678,7 @@ def _cover_letter_config(data: dict[str, Any]) -> CoverLetterConfig:
     return CoverLetterConfig(
         mode=str(data.get("mode", "dynamic")),
         include_ctc=bool(data.get("include_ctc", True)),
-        max_words=int(data.get("max_words", 400)),
+        max_words=int(data.get("max_words", 200)),
         reference_path=str(data.get("reference_path", "profile/cover_letter_reference.txt")),
     )
 

@@ -21,14 +21,16 @@ class SalaryRange:
 
 # ₹7.2L - ₹9.6L | ₹35L | ₹60,000 - ₹1L (monthly) | Rs 35 LPA
 _L_SUFFIX = r"(?:L|LPA|lakhs?)"
+# Wellfound renders ranges with en/em dashes (e.g. "₹20L – ₹25L"), not just ASCII hyphen.
+_DASH = r"[-\u2013\u2014]"
 _INR_RANGE = re.compile(
     rf"(?:₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?"
-    rf"(?:\s*[-]\s*(?:₹|Rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?)?",
+    rf"(?:\s*{_DASH}\s*(?:₹|Rs\.?)?\s*([\d,]+(?:\.\d+)?)\s*({_L_SUFFIX})?)?",
     re.I,
 )
 # 2.5L - 15L | 7.2L-9.6L (Wellfound sometimes omits ₹ on the range)
 _INR_BARE = re.compile(
-    rf"\b([\d.]+)\s*{_L_SUFFIX}\s*[-]\s*([\d.]+)\s*{_L_SUFFIX}\b",
+    rf"\b([\d.]+)\s*{_L_SUFFIX}\s*{_DASH}\s*([\d.]+)\s*{_L_SUFFIX}\b",
     re.I,
 )
 _INR_SINGLE = re.compile(

@@ -9,7 +9,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import AppConfig, UserConfig
 from ..cookies import split_name
-from ..cover_letter import build_cover_letter
+from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import ensure_page_ready, goto_settled
 from ..utils import JobListing
 from .detector import detect_ats
@@ -73,6 +73,7 @@ async def _upload_resume(page: Page, resume_path: Path) -> bool:
 
 
 async def _fill_cover_letter(page: Page, note: str) -> None:
+    note = strip_markdown_emphasis(note)
     for selector in (
         'textarea[name*="cover" i]',
         'textarea[id*="cover" i]',

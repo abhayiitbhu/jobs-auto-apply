@@ -12,7 +12,7 @@ from ..apply_runner import run_apply_batch
 from ..ats.apply import apply_on_company_site
 from ..config import AppConfig
 from ..cookies import is_external_career_url
-from ..cover_letter import build_cover_letter
+from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import goto_settled, prepare_interactive_page
 from ..pending_questions import queue_unanswered
 from ..salary import is_job_salary_eligible, job_eligibility
@@ -357,6 +357,7 @@ async def ensure_resume_on_profile(page: Page, resume_path) -> None:
 
 
 async def _fill_cover_note(page: Page, note: str) -> None:
+    note = strip_markdown_emphasis(note)
     textarea = page.locator('textarea[placeholder*="note" i], textarea[placeholder*="message" i], textarea')
     await textarea.first.wait_for(state="visible", timeout=10000)
     await textarea.first.fill(note)

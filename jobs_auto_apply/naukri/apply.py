@@ -10,7 +10,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 from ..application_questions import resolve_question_answers
 from ..apply_runner import run_apply_batch
 from ..config import AppConfig
-from ..cover_letter import build_cover_letter
+from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import prepare_interactive_page
 from ..pending_questions import queue_unanswered
 from ..utils import (
@@ -529,7 +529,7 @@ async def _fill_cover_letter_if_present(
     ):
         area = page.locator(selector)
         if await area.count() > 0 and await area.first.is_visible():
-            note = await build_cover_letter(config, job=job, page=page, jd=jd)
+            note = strip_markdown_emphasis(await build_cover_letter(config, job=job, page=page, jd=jd))
             await area.first.fill(note)
             return
 
