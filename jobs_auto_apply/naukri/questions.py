@@ -1231,30 +1231,34 @@ def _pick_notice_period_chip(answer: str, chips: list[str]) -> str | None:
             immediate = _pick_immediate_notice_chip(chips)
             if immediate:
                 return immediate
-        approx_months = max(1, round(days / 30))
-        for chip in chips:
-            chip_month_m = re.search(r"(\d+)\s*month", chip, re.I)
-            if chip_month_m and int(chip_month_m.group(1)) == approx_months:
-                return chip
+        # A 0-day (immediately available) notice must never map to a month chip —
+        # that overstates the notice period. Only days >= 1 may round up to months.
+        if days >= 1:
+            approx_months = max(1, round(days / 30))
+            for chip in chips:
+                chip_month_m = re.search(r"(\d+)\s*month", chip, re.I)
+                if chip_month_m and int(chip_month_m.group(1)) == approx_months:
+                    return chip
         if days <= 15:
             for chip in chips:
                 if _SHORT_NOTICE_CHIP.search(chip):
                     return chip
-        if days <= 30:
+        if 1 <= days <= 30:
             for chip in chips:
                 if re.search(r"\b1\s*month", chip, re.I):
                     return chip
-        if days <= 60:
+        if 1 <= days <= 60:
             for chip in chips:
                 if re.search(r"\b2\s*month", chip, re.I):
                     return chip
-        if days <= 90:
+        if 1 <= days <= 90:
             for chip in chips:
                 if re.search(r"\b3\s*month", chip, re.I):
                     return chip
-        for chip in chips:
-            if re.search(r"more than 3 month", chip, re.I):
-                return chip
+        if days >= 1:
+            for chip in chips:
+                if re.search(r"more than 3 month", chip, re.I):
+                    return chip
 
     for num in re.findall(r"(\d+)", a):
         days = int(num)
@@ -1271,7 +1275,10 @@ def _pick_notice_period_chip(answer: str, chips: list[str]) -> str | None:
             for chip in chips:
                 if _SHORT_NOTICE_CHIP.search(chip):
                     return chip
-        if days <= 30:
+        # A 0-day (immediately available) notice must never map to a month chip —
+        # that overstates the notice period. Only days >= 1 may round up to "1 month";
+        # an immediate candidate with only month chips is left unselected (manual).
+        if 1 <= days <= 30:
             for chip in chips:
                 if re.search(r"\b1\s*month", chip, re.I):
                     return chip

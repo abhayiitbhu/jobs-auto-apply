@@ -5,6 +5,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
@@ -64,6 +65,19 @@ def _browser_launch_kwargs(config: AppConfig) -> dict:
 
 def _session_path(config: AppConfig, platform: str) -> Path:
     return config.auth_sessions_dir / f"{platform}.json"
+
+
+def _cookie_matches_host(cookie_domain: str, host: str) -> bool:
+    """True when a stored cookie's domain applies to the active platform's host.
+
+    Cookie domains may carry a leading dot (``.uplers.com``); a cookie set for a
+    parent domain also applies to its subdomains, so match by host suffix.
+    """
+    cookie_domain = cookie_domain.lstrip(".").lower()
+    host = host.lower()
+    if not cookie_domain or not host:
+        return False
+    return host == cookie_domain or host.endswith("." + cookie_domain)
 
 
 async def _create_ephemeral_context(
@@ -166,14 +180,17 @@ async def _close_browser_context(browser: Browser | None, context: BrowserContex
         await asyncio.sleep(1.5)
 
 
-async def _run_to_completion(coro: Awaitable[None]) -> None:
-    """Await *coro* fully even if this task is cancelled mid-way.
+async def _run_to_completion(coro: Awaitable):
+    """Await *coro* fully even if this task is cancelled mid-way, returning its result.
 
     On ``serve --reload`` (or any shutdown) the in-flight apply cycle is
-    cancelled while a Playwright browser is still open. If that ``CancelledError``
-    interrupts the driver teardown, Python closes its end of the driver pipe
-    while the Node driver is still mid-write, crashing it with an unhandled
-    ``EPIPE``. Shielding the teardown lets the driver always shut down cleanly.
+    cancelled while a Playwright driver round-trip is in progress (the driver
+    handshake, a browser launch, or teardown). If that ``CancelledError``
+    interrupts the round-trip, Python closes its end of the driver pipe while the
+    Node driver is still mid-write, crashing it with an unhandled ``EPIPE``.
+    Shielding each round-trip lets the driver always reach an idle state before
+    the pipe closes, so it shuts down cleanly. If a cancellation was absorbed it
+    is re-raised once the round-trip has finished.
     """
     task = asyncio.ensure_future(coro)
     cancelled = False
@@ -181,10 +198,12 @@ async def _run_to_completion(coro: Awaitable[None]) -> None:
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError:
-            # Absorb cancellation aimed at us; keep waiting for cleanup to finish.
+            # Absorb cancellation aimed at us; keep waiting for the round-trip to finish.
             cancelled = True
+    result = task.result()
     if cancelled:
         raise asyncio.CancelledError
+    return result
 
 
 @asynccontextmanager
@@ -203,17 +222,33 @@ async def browser_session(
     use_browser_auth = config.auth.method == "browser"
     use_chrome_profile = _use_chrome_profile(config, platform)
 
-    playwright = await async_playwright().start()
+    # Start the driver under a shield and capture the Playwright object even if a
+    # shutdown cancellation arrives mid-handshake, so the outer ``finally`` can
+    # always stop the driver cleanly. An abandoned handshake (or launch) leaves
+    # the Node driver mid-write; when Python then closes the pipe it crashes with
+    # an unhandled EPIPE, so every bring-up round-trip is run to completion.
+    _start_task = asyncio.ensure_future(async_playwright().start())
+    _start_cancelled = False
+    while not _start_task.done():
+        try:
+            await asyncio.shield(_start_task)
+        except asyncio.CancelledError:
+            _start_cancelled = True
+    playwright = _start_task.result()
     try:
+        if _start_cancelled:
+            raise asyncio.CancelledError
         browser: Browser | None
         if use_chrome_profile:
             browser = None
-            context = await _launch_chrome_profile_context(playwright, config)
+            context = await _run_to_completion(_launch_chrome_profile_context(playwright, config))
         else:
-            browser, context = await _create_ephemeral_context(
-                playwright,
-                config,
-                storage_path if use_browser_auth else None,
+            browser, context = await _run_to_completion(
+                _create_ephemeral_context(
+                    playwright,
+                    config,
+                    storage_path if use_browser_auth else None,
+                )
             )
 
         if not use_chrome_profile and not use_browser_auth and cookies_path.exists():
@@ -241,13 +276,14 @@ async def browser_session(
             try:
                 import json
 
+                host = urlparse(origin).hostname or ""
                 state = json.loads(storage_path.read_text(encoding="utf-8"))
-                cookies = [c for c in state.get("cookies", []) if "wellfound" in str(c.get("domain", ""))]
+                cookies = [c for c in state.get("cookies", []) if _cookie_matches_host(str(c.get("domain", "")), host)]
                 if cookies:
                     await context.add_cookies(cookies)
                     logged_in = await verify_fn(page, config.user.expected_display_name)
                     if logged_in:
-                        logger.info("Restored Wellfound session from %s", storage_path)
+                        logger.info("Restored %s session from %s", platform_label, storage_path)
             except Exception as exc:
                 logger.debug("Could not restore saved session: %s", exc)
 

@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
-from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import UplersFiltersConfig
-from ..cookies import slugify
 from ..utils import JobListing
-from .auth import UPLERS_JOBS_URLS, UPLERS_ORIGIN
+from .auth import UPLERS_JOBS_URLS
 
 logger = logging.getLogger("job_apply")
 
@@ -90,17 +87,6 @@ async def apply_filters(page: Page, filters: UplersFiltersConfig) -> None:
     logger.info("Uplers filters applied; URL: %s", page.url)
 
 
-def _make_job_id(href: str, title: str) -> str:
-    return hashlib.sha1(f"{href}|{title}".encode()).hexdigest()[:16]
-
-
-def _parse_job_card_text(text: str) -> tuple[str, str]:
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-    title = lines[0] if lines else "Unknown"
-    company = lines[1] if len(lines) > 1 else ""
-    return title, company
-
-
 async def _scroll_results(page: Page, rounds: int = 6) -> None:
     for _ in range(rounds):
         await page.mouse.wheel(0, 2000)
@@ -113,83 +99,41 @@ async def collect_job_listings(page: Page, limit: int) -> list[JobListing]:
     listings: list[JobListing] = []
     seen: set[str] = set()
 
-    selectors = [
-        'a[href*="/talent/opportunit"]',
-        'a[href*="/talent/job"]',
-        'a[href*="/opportunit"]',
-        '[data-testid*="job"] a',
-        ".job-card a",
-        "article a",
-    ]
+    cards = page.locator("div.jobCardMobile")
+    count = await cards.count()
+    for i in range(count):
+        card = cards.nth(i)
 
-    for selector in selectors:
-        links = page.locator(selector)
-        count = await links.count()
-        for i in range(count):
-            link = links.nth(i)
-            href = await link.get_attribute("href")
-            if not href:
-                continue
-            full_url = urljoin(UPLERS_ORIGIN, href)
-            if not _looks_like_job_url(full_url):
-                continue
-            text = await link.inner_text()
-            title, company = _parse_job_card_text(text)
-            job_id = _make_job_id(full_url, title)
-            if job_id in seen:
-                continue
-            seen.add(job_id)
-            listings.append(
-                JobListing(
-                    job_id=job_id,
-                    title=title,
-                    company=company,
-                    url=full_url,
-                    source="uplers",
-                    external_ats=True,
-                )
+        job_id = await card.get_attribute("id")
+        if not job_id:
+            continue
+        if job_id in seen:
+            continue
+        seen.add(job_id)
+
+        title_loc = card.locator(".jobTitle .content h6")
+        title = (await title_loc.first.inner_text()).strip() if await title_loc.count() else "Unknown"
+
+        company_loc = card.locator(".companyName")
+        company = (await company_loc.first.inner_text()).strip() if await company_loc.count() else ""
+
+        partnered = await card.locator(".uplersPartnerBadge").count() > 0
+        if partnered:
+            continue
+
+        full_url = f"{UPLERS_JOBS_URLS[0]}?activeJob={job_id}"
+        listings.append(
+            JobListing(
+                job_id=job_id,
+                title=title,
+                company=company,
+                url=full_url,
+                source="uplers",
+                external_ats=not partnered,
             )
-            if len(listings) >= limit:
-                break
-        if listings:
+        )
+        if len(listings) >= limit:
             break
-
-    # Broader fallback: any apply/view links on page
-    if not listings:
-        all_links = page.locator("a")
-        count = await all_links.count()
-        for i in range(min(count, limit * 5)):
-            link = all_links.nth(i)
-            href = await link.get_attribute("href") or ""
-            text = (await link.inner_text()).strip()
-            if not href or len(text) < 4:
-                continue
-            full_url = urljoin(UPLERS_ORIGIN, href)
-            if not _looks_like_job_url(full_url):
-                continue
-            title, company = _parse_job_card_text(text)
-            job_id = _make_job_id(full_url, title)
-            if job_id in seen:
-                continue
-            seen.add(job_id)
-            listings.append(
-                JobListing(
-                    job_id=job_id,
-                    title=title,
-                    company=company or slugify(text)[:40],
-                    url=full_url,
-                    source="uplers",
-                    external_ats=True,
-                )
-            )
-            if len(listings) >= limit:
-                break
 
     logger.info("Found %d Uplers job listings", len(listings))
     return listings[:limit]
-
-
-def _looks_like_job_url(url: str) -> bool:
-    path = urlparse(url).path.lower()
-    keywords = ("opportunit", "/job", "/jobs", "/role", "/position", "/opening")
-    return any(k in path for k in keywords)

@@ -47,6 +47,16 @@ def finalize_answer_for_field(
         return None
 
     field = enrich_field_for_llm(field)
+    # Open free-text fields have no canonical/fill distinction (the canonical slot
+    # exists to map a stored value onto choice/chip option labels). When the model
+    # returns a canonical that differs from its actual answer — e.g. answer "Yes",
+    # canonical "Bangalore" for "Are you based out of Bangalore? If yes, which
+    # locality?" — using the canonical would silently replace the real answer. On
+    # plain text fields, trust the answer the model chose.
+    from .fields import is_free_text_field
+
+    if canonical and is_free_text_field(field):
+        canonical = None
     stored = (canonical or "").strip() or canonicalize_stored_answer(question, text, field, config)
     if not stored:
         return None

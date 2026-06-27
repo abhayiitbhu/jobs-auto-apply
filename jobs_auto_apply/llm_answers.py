@@ -716,14 +716,27 @@ def verify_llm_answer_detailed(
     if not model:
         return True, False
 
+    # Only past answers from the SAME question group may serve as databank backing.
+    # A topically-related answer to a *different* question (e.g. "Are you an ex-TCS
+    # employee? -> No previous employment with TCS") must not corroborate a different
+    # question (e.g. "Are you interested in working with TCS?"), or the verifier would
+    # rubber-stamp a reused-but-wrong answer just because the text exists somewhere.
+    current_group = classify_question(question)
     databank_lines: list[str] = []
     if rag_hint and str(rag_hint).strip():
         databank_lines.append(f"Rules/RAG suggestion: {str(rag_hint).strip()}")
-    for item in (similar_answers or [])[:3]:
+    same_group_seen = 0
+    for item in similar_answers or []:
+        if same_group_seen >= 3:
+            break
         ans = str(getattr(item, "answer", "") or "").strip()
         ques = str(getattr(item, "question", "") or "").strip()
-        if ans:
-            databank_lines.append(f"Past answer — Q: {ques[:80]} -> A: {ans[:80]}")
+        if not ans:
+            continue
+        if classify_question(ques) != current_group:
+            continue
+        databank_lines.append(f"Past answer — Q: {ques[:80]} -> A: {ans[:80]}")
+        same_group_seen += 1
     databank_block = (
         "\n\n=== CANDIDATE DATABANK (past answers + rules) ===\n" + "\n".join(databank_lines) if databank_lines else ""
     )
@@ -733,9 +746,14 @@ def verify_llm_answer_detailed(
             "You verify job application answers against the candidate profile AND "
             "databank. "
             'Return strict JSON only: {"ok": true} or {"ok": false}. '
-            "ok=true only when the answer is supported by the profile or the "
-            "databank (past answers / rules) and matches the field format. "
-            "ok=false if it contradicts them or is unsupported invention."
+            "ok=true only when ALL of these hold: (1) the answer directly and "
+            "relevantly responds to THIS question (not merely a related topic), "
+            "(2) it is supported by the profile or the databank (past answers / "
+            "rules), and (3) it matches the field format. "
+            "ok=false if it does not actually answer the question asked, if it "
+            "contradicts the profile/databank, or if it is unsupported invention. "
+            "A past answer to a DIFFERENT question is NOT support — judge relevance "
+            "to the exact question shown."
         )
     )
     human = HumanMessage(

@@ -36,6 +36,7 @@ _CANONICAL_SKILL_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bgcp\b|google cloud|bigquery"), "gcp"),
     (re.compile(r"\bazure\b"), "azure"),
     (re.compile(r"\bglue\b|\bredshift\b"), "glue_redshift"),
+    (re.compile(r"\boracle\b|pl\s*/?\s*sql|\bplsql\b"), "oracle"),
     (re.compile(r"\bmysql\b"), "mysql"),
     (re.compile(r"\bmongodb\b|mongo db"), "mongodb"),
     (re.compile(r"\bkafka\b"), "kafka"),
@@ -289,6 +290,16 @@ def classify_question(label: str) -> str:
         for pattern in group.patterns:
             if pattern.search(norm):
                 return group.group_id
+
+    # "Product-based vs service-based company/org" asks about the *type* of employer,
+    # not a skill. Without this guard the generic "how many years of experience in X"
+    # heuristic below extracts "product based company" as a skill -> skill:product_based_company,
+    # which then fabricates a bogus "0 years" answer that contradicts the truthful
+    # "Yes, I'm from a product-based company" answers stored under other phrasings.
+    if re.search(r"\b(?:product|service)[\s-]?based\b", norm) and re.search(
+        r"\b(?:compan|organi|firm|setup|set-up|employer|startup|mnc|environment|business)", norm
+    ):
+        return f"unique:{question_key(label)}"
 
     if re.search(r"do (you|u) have experience", norm) or (
         re.search(r"experience.{0,20}\?", norm) and not re.search(r"\byears?\b", norm)

@@ -298,14 +298,25 @@ def _log_already_applied(job: JobListing, *, reason: str = "", config: AppConfig
         logger.info("Already applied on Naukri (%s): %s", reason, job.title)
     else:
         logger.info("Already applied on Naukri: %s", job.title)
+    if config is None or not getattr(job, "job_id", ""):
+        return
+    key = job_key(job.source, job.job_id)
+    # Naukri itself confirms the job is applied, so persist it — otherwise the
+    # SRP keeps re-surfacing it every run and we re-navigate to the detail page
+    # only to detect "already applied" again, never recording it.
+    save_applied_job(
+        config.applied_jobs_path,
+        key,
+        {"source": "naukri", "title": job.title, "url": job.url},
+        status="applied",
+    )
     # A job we've already applied to should not linger as a technical failure.
-    if config is not None and getattr(job, "job_id", ""):
-        try:
-            from ..technical_failures import clear_technical_failure
+    try:
+        from ..technical_failures import clear_technical_failure
 
-            clear_technical_failure(config.base_dir, job_key(job.source, job.job_id))
-        except Exception:
-            pass
+        clear_technical_failure(config.base_dir, key)
+    except Exception:
+        pass
 
 
 async def _confirm_naukri_apply(page: Page, job: JobListing, config: AppConfig) -> bool:

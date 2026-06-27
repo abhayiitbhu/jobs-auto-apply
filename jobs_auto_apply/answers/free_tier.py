@@ -79,7 +79,16 @@ def collect_free_tier_context(
 
     if config.llm.use_faiss_memory:
         k = max(config.llm.rag_top_k, _MIN_RAG_FOR_LLM)
-        ctx.similar_answers = retrieve_similar_answers(config, question, k=k)
+        similar = retrieve_similar_answers(config, question, k=k)
+        # For `unique:` questions there is no shared semantic group, so a lexically
+        # similar past answer (e.g. another question that merely mentions the same
+        # company/skill) is not a real precedent. Surfacing it as an LLM hint causes
+        # the model to copy a topically-related but wrong answer. Restrict hints to
+        # the exact same group so unique questions only see truly matching precedents.
+        if classify_question(question).startswith("unique:"):
+            current_group = classify_question(question)
+            similar = [item for item in similar if classify_question(item.question) == current_group]
+        ctx.similar_answers = similar
         ctx.vector_best = _best_similar_match(config, question, ctx.similar_answers, require_same_group=True)
 
     return ctx
