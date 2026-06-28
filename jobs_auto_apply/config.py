@@ -104,6 +104,8 @@ class ResumeConfig(JsonSchemaMixin):
     sync_to_wellfound: bool = False
     sync_to_naukri: bool = True
     naukri_sync_interval_minutes: int = 30
+    sync_to_hirist: bool = True
+    hirist_sync_interval_minutes: int = 30
 
 
 @dataclass
@@ -351,6 +353,7 @@ class PathsConfig(JsonSchemaMixin):
     user_memory: str = "data/user_memory.json"
     pending_questions: str = "data/pending_questions.json"
     naukri_resume_sync: str = "data/naukri_resume_sync.json"
+    hirist_resume_sync: str = "data/hirist_resume_sync.json"
 
 
 @dataclass
@@ -445,6 +448,10 @@ class AppConfig(JsonSchemaMixin):
     @property
     def naukri_resume_sync_path(self) -> Path:
         return self.base_dir / self.paths.naukri_resume_sync
+
+    @property
+    def hirist_resume_sync_path(self) -> Path:
+        return self.base_dir / self.paths.hirist_resume_sync
 
     @property
     def whatsapp_profile_path(self) -> Path:
@@ -802,6 +809,7 @@ def load_config(path: Path) -> AppConfig:
         user_memory=str(paths_raw.get("user_memory", "data/user_memory.json")),
         pending_questions=str(paths_raw.get("pending_questions", "data/pending_questions.json")),
         naukri_resume_sync=str(paths_raw.get("naukri_resume_sync", "data/naukri_resume_sync.json")),
+        hirist_resume_sync=str(paths_raw.get("hirist_resume_sync", "data/hirist_resume_sync.json")),
     )
     answers_policy = AnswersPolicyConfig(
         notice_join_threshold_days=int(answers_raw.get("notice_join_threshold_days", 15)),
@@ -862,6 +870,8 @@ def load_config(path: Path) -> AppConfig:
             sync_to_wellfound=bool(resume.get("sync_to_wellfound", False)),
             sync_to_naukri=bool(resume.get("sync_to_naukri", True)),
             naukri_sync_interval_minutes=int(resume.get("naukri_sync_interval_minutes", 30)),
+            sync_to_hirist=bool(resume.get("sync_to_hirist", True)),
+            hirist_sync_interval_minutes=int(resume.get("hirist_sync_interval_minutes", 30)),
         ),
         profile=profile,
         compensation=compensation,

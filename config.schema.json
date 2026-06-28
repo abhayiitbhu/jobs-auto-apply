@@ -143,9 +143,17 @@
         "naukri_sync_interval_minutes": {
           "type": "integer",
           "default": 30
+        },
+        "sync_to_hirist": {
+          "type": "boolean",
+          "default": true
+        },
+        "hirist_sync_interval_minutes": {
+          "type": "integer",
+          "default": 30
         }
       },
-      "description": "ResumeConfig(path: 'str', sync_to_wellfound: 'bool' = False, sync_to_naukri: 'bool' = True, naukri_sync_interval_minutes: 'int' = 30)"
+      "description": "ResumeConfig(path: 'str', sync_to_wellfound: 'bool' = False, sync_to_naukri: 'bool' = True, naukri_sync_interval_minutes: 'int' = 30, sync_to_hirist: 'bool' = True, hirist_sync_interval_minutes: 'int' = 30)"
     },
     "ProfileConfig": {
       "type": "object",
@@ -293,14 +301,14 @@
         },
         "max_words": {
           "type": "integer",
-          "default": 400
+          "default": 200
         },
         "reference_path": {
           "type": "string",
           "default": "profile/cover_letter_reference.txt"
         }
       },
-      "description": "CoverLetterConfig(mode: 'str' = 'dynamic', include_ctc: 'bool' = True, max_words: 'int' = 400, reference_path: 'str' = 'profile/cover_letter_reference.txt')"
+      "description": "CoverLetterConfig(mode: 'str' = 'dynamic', include_ctc: 'bool' = True, max_words: 'int' = 200, reference_path: 'str' = 'profile/cover_letter_reference.txt')"
     },
     "PlatformConfig": {
       "type": "object",
@@ -770,7 +778,7 @@
           "default": "data/faiss"
         }
       },
-      "description": "LLMConfig(enabled: 'bool' = False, base_url: 'str' = 'http://127.0.0.1:11434', model: 'str' = 'job-answers', verifier_model: 'str' = 'job-verify', verifier_enabled: 'bool' = True, temperature: 'float' = 0.05, max_tokens: 'int' = 256, keep_alive: 'str' = '30m', max_concurrency: 'int' = 2, auto_save: 'bool' = True, auto_answer_pending: 'bool' = True, retry_pending_jobs: 'bool' = True, prompt_pending_questions: 'bool' = False, min_confidence: 'float' = 0.92, min_confidence_rag_agree: 'float' = 0.88, vector_agree_score: 'float' = 0.8, min_confidence_new_experience: 'float' = 0.96, min_confidence_persist: 'float' = 0.98, plain_text_confidence: 'float' = 0.35, uncorroborated_confidence_cap: 'float' = 0.6, rag_agree_input_types: 'list[str]' = <factory>, use_faiss_memory: 'bool' = True, rag_top_k: 'int' = 3, rag_min_score: 'float' = 0.0, vector_auto_answer_score: 'float' = 0.92, embeddings_model: 'str' = 'sentence-transformers/all-MiniLM-L6-v2', faiss_index_dir: 'str' = 'data/faiss')"
+      "description": "LLMConfig(enabled: 'bool' = False, base_url: 'str' = 'http://127.0.0.1:11434', model: 'str' = 'job-answers', verifier_model: 'str' = 'job-verify', verifier_enabled: 'bool' = True, temperature: 'float' = 0.05, max_tokens: 'int' = 256, keep_alive: 'str' = '30m', max_concurrency: 'int' = 2, auto_save: 'bool' = True, auto_answer_pending: 'bool' = True, retry_pending_jobs: 'bool' = True, prompt_pending_questions: 'bool' = False, min_confidence: 'float' = 0.92, min_confidence_rag_agree: 'float' = 0.88, vector_agree_score: 'float' = 0.8, min_confidence_new_experience: 'float' = 0.96, min_confidence_persist: 'float' = 0.98, plain_text_confidence: 'float' = 0.35, uncorroborated_confidence_cap: 'float' = 0.6, rag_agree_input_types: 'list[str]' = <factory>, use_faiss_memory: 'bool' = True, rag_top_k: 'int' = 3, rag_min_score: 'float' = 0.5, vector_auto_answer_score: 'float' = 0.92, embeddings_model: 'str' = 'sentence-transformers/all-MiniLM-L6-v2', faiss_index_dir: 'str' = 'data/faiss')"
     },
     "WhatsAppConfig": {
       "type": "object",
@@ -1090,9 +1098,13 @@
         "naukri_resume_sync": {
           "type": "string",
           "default": "data/naukri_resume_sync.json"
+        },
+        "hirist_resume_sync": {
+          "type": "string",
+          "default": "data/hirist_resume_sync.json"
         }
       },
-      "description": "PathsConfig(application_facts: 'str' = 'profile/application_facts.yaml', user_memory: 'str' = 'data/user_memory.json', pending_questions: 'str' = 'data/pending_questions.json', naukri_resume_sync: 'str' = 'data/naukri_resume_sync.json')"
+      "description": "PathsConfig(application_facts: 'str' = 'profile/application_facts.yaml', user_memory: 'str' = 'data/user_memory.json', pending_questions: 'str' = 'data/pending_questions.json', naukri_resume_sync: 'str' = 'data/naukri_resume_sync.json', hirist_resume_sync: 'str' = 'data/hirist_resume_sync.json')"
     },
     "AnswersPolicyConfig": {
       "type": "object",

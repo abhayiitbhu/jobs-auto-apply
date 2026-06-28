@@ -31,6 +31,10 @@ from .config import (
     load_config,
 )
 from .hirist.apply import apply_batch as hirist_apply_batch
+from .hirist.resume_sync import (
+    run_hirist_resume_sync_scheduler,
+    sync_hirist_resume_if_due,
+)
 from .hirist.search import apply_filters as hirist_apply_filters
 from .hirist.search import collect_from_search_urls as hirist_collect_from_search_urls
 from .hirist.search import collect_job_listings as hirist_collect_jobs
@@ -308,7 +312,7 @@ def serve_cmd(
 
 
 async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, asyncio.Task]:
-    """Startup sync + 30-minute background scheduler (all platforms)."""
+    """Startup sync + interval background scheduler for Naukri only."""
     stop = asyncio.Event()
     try:
         await sync_naukri_resume_if_due(config)
@@ -318,11 +322,38 @@ async def _start_naukri_resume_sync(config: AppConfig) -> tuple[asyncio.Event, a
     return stop, task
 
 
-async def _stop_naukri_resume_sync(stop: asyncio.Event, task: asyncio.Task) -> None:
-    stop.set()
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+async def _start_hirist_resume_sync(config: AppConfig) -> tuple[asyncio.Event, asyncio.Task]:
+    """Startup sync + interval background scheduler for Hirist only."""
+    stop = asyncio.Event()
+    try:
+        await sync_hirist_resume_if_due(config)
+    except Exception as exc:
+        logger.warning("Hirist resume sync at startup failed: %s", exc)
+    task = asyncio.create_task(run_hirist_resume_sync_scheduler(config, stop))
+    return stop, task
+
+
+async def _start_resume_sync(config: AppConfig, platform: str) -> list[tuple[asyncio.Event, asyncio.Task]]:
+    """Start resume sync only for the job boards this run targets.
+
+    Running ``--platform hirist`` syncs the resume to Hirist only; ``--platform
+    naukri`` syncs to Naukri only; ``all`` syncs to whichever are enabled.
+    """
+    targets = set(_enabled_platforms(config, platform))
+    handles: list[tuple[asyncio.Event, asyncio.Task]] = []
+    if "naukri" in targets:
+        handles.append(await _start_naukri_resume_sync(config))
+    if "hirist" in targets:
+        handles.append(await _start_hirist_resume_sync(config))
+    return handles
+
+
+async def _stop_resume_sync(handles: list[tuple[asyncio.Event, asyncio.Task]]) -> None:
+    for stop, task in handles:
+        stop.set()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 async def _run(config_path: Path, platform: str, verbose: bool) -> None:
@@ -333,7 +364,7 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
     setup_logging(config.log_path, verbose=verbose)
     _check_prerequisites(config, require_resume=True)
 
-    resume_stop, resume_task = await _start_naukri_resume_sync(config)
+    resume_handles = await _start_resume_sync(config, platform)
     try:
         if config.application.require_review:
             console.print(
@@ -381,7 +412,7 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
         await _finish_pending_questions(config, platform, targets, applied_count=total_applied)
         clear_deferred_applies(config.applied_jobs_path)
     finally:
-        await _stop_naukri_resume_sync(resume_stop, resume_task)
+        await _stop_resume_sync(resume_handles)
 
 
 _server_listener_channel: str | None = None
@@ -567,11 +598,11 @@ async def _apply_reviewed_cmd(config_path: Path, platform: str, verbose: bool) -
     config = load_config(config_path)
     setup_logging(config.log_path, verbose=verbose)
     _check_prerequisites(config, require_resume=True)
-    resume_stop, resume_task = await _start_naukri_resume_sync(config)
+    resume_handles = await _start_resume_sync(config, platform)
     try:
         await _apply_reviewed(config, platform)
     finally:
-        await _stop_naukri_resume_sync(resume_stop, resume_task)
+        await _stop_resume_sync(resume_handles)
 
 
 async def _apply_reviewed(config: AppConfig, platform: str) -> None:
@@ -1175,6 +1206,7 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
         return 0
     max_pages = max(1, filters.max_pages)
     async with hirist_session(config) as (_, context, page):
+        await sync_hirist_resume_if_due(config, page=page)
         if not filters.search_urls and max_pages <= 1:
             limit = scrape_limit(config.application.max_jobs_per_run, multiplier=1)
             await hirist_apply_filters(page, filters)

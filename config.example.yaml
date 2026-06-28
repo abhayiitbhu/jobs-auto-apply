@@ -90,6 +90,7 @@ paths:
   user_memory: data/user_memory.json
   pending_questions: data/pending_questions.json
   naukri_resume_sync: data/naukri_resume_sync.json
+  hirist_resume_sync: data/hirist_resume_sync.json
 
 answers:
   notice_join_threshold_days: 15
@@ -106,6 +107,9 @@ resume:
   # Upload resume to Naukri profile before each Naukri run (keeps profile fresh for recruiters)
   sync_to_naukri: true
   naukri_sync_interval_minutes: 30
+  # Upload resume to Hirist profile before each Hirist run (only runs during a Hirist flow)
+  sync_to_hirist: true
+  hirist_sync_interval_minutes: 30
 
 # Fallback static template (used when cover_letter.mode: template)
 cover_note: |

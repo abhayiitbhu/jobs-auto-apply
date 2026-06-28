@@ -303,6 +303,7 @@ Created under `data/` (paths configurable in `config.paths`):
 | `data/pending_questions.json` | Questions deferred for you to answer manually. |
 | `data/technical_failures.json` | Jobs that failed to fill (for retry/inspection). |
 | `data/naukri_resume_sync.json` | Timestamp of the last Naukri resume sync (`config.paths.naukri_resume_sync`). |
+| `data/hirist_resume_sync.json` | Timestamp of the last Hirist resume sync (`config.paths.hirist_resume_sync`). |
 | `data/telegram_chat.json` | Captured Telegram `chat_id` (written by `telegram-login`). |
 | `data/telegram_offset.json` | Last processed Telegram `getUpdates` offset (survives `serve --reload`). |
 | `data/sessions/` | Saved browser sessions (Option B login). |
