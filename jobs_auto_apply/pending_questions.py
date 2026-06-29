@@ -1134,6 +1134,45 @@ async def answer_pending_groups_via_messenger(
     )
 
 
+async def _close_states_for_dropped_urls(
+    client,
+    order: list[dict[str, Any]],
+    dropped_urls: set[str],
+    *,
+    skip_state: dict[str, Any],
+) -> int:
+    """Close any other in-flight question whose jobs were all just dropped.
+
+    When the user drops a job, its URL is stripped from every pending question
+    at the persistence layer. The live messenger loop still has the other
+    questions for that job open, so mirror the cleanup here: remove the dropped
+    URLs from each remaining state's group and mark a state done once it has no
+    jobs left. Returns the number of states closed so the caller can adjust its
+    ``remaining`` counter.
+    """
+    if not dropped_urls:
+        return 0
+    closed = 0
+    for state in order:
+        if state is skip_state or state["done"]:
+            continue
+        group = state["group"]
+        kept = [j for j in group.jobs if str(j.get("url", "")).strip() not in dropped_urls]
+        if len(kept) == len(group.jobs):
+            continue
+        group.jobs = kept
+        if group.jobs:
+            continue  # question still applies to other jobs — keep it open
+        state["done"] = True
+        closed += 1
+        with contextlib.suppress(Exception):
+            await client.send(
+                "Closed — this question only applied to the job you just dropped.",
+                **_reply_send_kwargs(client, state["message_id"]),
+            )
+    return closed
+
+
 async def _answer_pending_groups_reply_routed(
     base_dir: Path,
     config: AppConfig,
@@ -1260,6 +1299,9 @@ async def _answer_pending_groups_reply_routed(
         if outcome == "answered":
             answered += 1
             jobs_to_retry.extend(retry)
+        elif outcome == "dropped":
+            dropped_urls = {str(job.get("url", "")).strip() for job in state["group"].jobs if job.get("url")}
+            remaining -= await _close_states_for_dropped_urls(client, order, dropped_urls, skip_state=state)
 
     return answered, jobs_to_retry
 

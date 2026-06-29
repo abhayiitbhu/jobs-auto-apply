@@ -367,6 +367,11 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
     reset_chrome_lock_flag()
     config = load_config(config_path)
     setup_logging(config.log_path, verbose=verbose)
+
+    from .purge import maybe_purge
+
+    maybe_purge(config)
+
     _check_prerequisites(config, require_resume=True)
 
     resume_handles = await _start_resume_sync(config, platform)

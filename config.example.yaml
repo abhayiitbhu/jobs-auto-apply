@@ -374,3 +374,9 @@ telegram:
 state:
   applied_jobs_file: "data/applied_jobs.json"
   log_file: "data/run.log"
+  # Periodically wipe accumulated run state so the bot starts fresh and will
+  # re-apply to previously-applied jobs. Clears the log, applied-jobs list,
+  # technical failures, pending questions and run-issue log. Login sessions,
+  # learned answers (user_memory) and the drop-keyword blocklist are kept.
+  purge_enabled: true
+  purge_interval_days: 7

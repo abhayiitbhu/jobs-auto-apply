@@ -1057,9 +1057,17 @@
         "log_file": {
           "type": "string",
           "default": "data/run.log"
+        },
+        "purge_enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "purge_interval_days": {
+          "type": "integer",
+          "default": 7
         }
       },
-      "description": "StateConfig(applied_jobs_file: 'str' = 'data/applied_jobs.json', log_file: 'str' = 'data/run.log')"
+      "description": "StateConfig(applied_jobs_file: 'str' = 'data/applied_jobs.json', log_file: 'str' = 'data/run.log', purge_enabled: 'bool' = True, purge_interval_days: 'int' = 7)"
     },
     "PathsConfig": {
       "type": "object",

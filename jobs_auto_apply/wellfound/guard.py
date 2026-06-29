@@ -11,7 +11,10 @@ from ..apply_runner import ApplyBatchStopped
 logger = logging.getLogger("job_apply")
 
 RESTRICTED_TEXT = re.compile(
-    r"access is temporarily restricted|temporarily restricted|" r"unusual traffic|verify you are human|access denied",
+    r"access is temporarily restricted|temporarily restricted|"
+    r"unusual traffic|unusual activity|verify you are human|access denied|"
+    r"why is this step needed|we detected unusual activity|"
+    r"automated \(bot\) activity",
     re.I,
 )
 
@@ -44,10 +47,61 @@ async def is_access_restricted(page: Page) -> bool:
         if page.is_closed():
             return False
         text = await page.title()
-        if RESTRICTED_TEXT.search(text):
+        title_match = bool(RESTRICTED_TEXT.search(text))
+        body = ""
+        try:
+            body = await page.locator("body").inner_text(timeout=3000)
+        except Exception:
+            body = ""
+        body_match = bool(RESTRICTED_TEXT.search(body))
+        # #region agent log
+        try:
+            import json as _json
+            import time as _time
+
+            frame_match = False
+            frame_phrase = False
+            for _fr in page.frames:
+                try:
+                    _ft = await _fr.locator("body").inner_text(timeout=1000)
+                except Exception:
+                    _ft = ""
+                if RESTRICTED_TEXT.search(_ft):
+                    frame_match = True
+                if "unusual activity" in _ft.lower() or "why is this step needed" in _ft.lower():
+                    frame_phrase = True
+            with open("/Users/abhayjain/Documents/jobs-auto-apply/.cursor/debug-d00557.log", "a") as _lf:
+                _lf.write(
+                    _json.dumps(
+                        {
+                            "sessionId": "d00557",
+                            "runId": "post-fix",
+                            "hypothesisId": "A,B,C,D",
+                            "location": "guard.py:is_access_restricted",
+                            "message": "access_restricted_check",
+                            "data": {
+                                "url": (page.url or "")[:120],
+                                "title": (text or "")[:120],
+                                "title_match": title_match,
+                                "body_len": len(body),
+                                "body_match": body_match,
+                                "body_has_unusual_activity": "unusual activity" in body.lower(),
+                                "body_has_why_step": "why is this step needed" in body.lower(),
+                                "frame_count": len(page.frames),
+                                "frame_match": frame_match,
+                                "frame_has_phrase": frame_phrase,
+                            },
+                            "timestamp": int(_time.time() * 1000),
+                        }
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
+        if title_match or body_match:
             return True
-        body = await page.locator("body").inner_text(timeout=3000)
-        return bool(RESTRICTED_TEXT.search(body))
+        return False
     except Exception:
         return False
 

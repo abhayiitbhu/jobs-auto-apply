@@ -352,6 +352,12 @@ class AnswersPolicyConfig(JsonSchemaMixin):
 class StateConfig(JsonSchemaMixin):
     applied_jobs_file: str = "data/applied_jobs.json"
     log_file: str = "data/run.log"
+    # Periodically wipe accumulated run state (logs, applied-jobs history,
+    # technical failures, pending questions) so the bot starts fresh and will
+    # re-apply to jobs again. User-curated state (login sessions, learned
+    # answers/user_memory, drop-keyword blocklist) is never purged.
+    purge_enabled: bool = True
+    purge_interval_days: int = 7
 
 
 @dataclass
@@ -415,6 +421,11 @@ class AppConfig(JsonSchemaMixin):
     @property
     def log_path(self) -> Path:
         return self.base_dir / self.state.log_file
+
+    @property
+    def purge_state_path(self) -> Path:
+        # Tracks when run state was last purged so the 7-day cycle survives restarts.
+        return self.base_dir / "data" / "purge_state.json"
 
     @property
     def user_memory_path(self) -> Path:
@@ -886,6 +897,8 @@ def load_config(path: Path) -> AppConfig:
         state=StateConfig(
             applied_jobs_file=str(state.get("applied_jobs_file", "data/applied_jobs.json")),
             log_file=str(state.get("log_file", "data/run.log")),
+            purge_enabled=bool(state.get("purge_enabled", True)),
+            purge_interval_days=int(state.get("purge_interval_days", 7)),
         ),
         paths=paths,
         answers=answers_policy,
