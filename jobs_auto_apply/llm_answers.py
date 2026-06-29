@@ -29,6 +29,71 @@ _EMOJI_RE = re.compile(
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[•\-\*\u2022\u25cf\u25aa\u2023\u2043\u2219]|\d+[.)])\s+")
 
 
+def _verified_degree_phrase(edu: dict[str, Any]) -> str:
+    """Short, true degree label for substitution (from application_facts.education)."""
+    highest = str(edu.get("highest", "") or "").strip()
+    if highest:
+        head = re.split(r"\s+in\s+|,", highest, maxsplit=1)[0].strip()
+        if head:
+            return head
+    if edu.get("has_masters"):
+        return "Master's degree"
+    if edu.get("has_bachelors"):
+        return "Bachelor's degree"
+    return "degree"
+
+
+# Credential terms the model sometimes invents. Matches PhD / Ph.D. / Ph D /
+# doctorate(s); the adjective "doctoral" is handled separately so "doctoral
+# research" collapses to "research" rather than an awkward degree noun. No trailing
+# \b so an abbreviation dot in "Ph.D." is consumed rather than left dangling.
+_PHD_TERM_RE = re.compile(r"\b(?:ph\.?\s?d\.?s?|doctorates?|doctoral degrees?)", re.I)
+_DOCTORAL_ADJ_RE = re.compile(r"\bdoctoral\b\s*", re.I)
+_MBA_TERM_RE = re.compile(r"\bM\.?\s?B\.?\s?A\.?s?\b")
+
+
+def _fix_article_before(text: str, phrase: str) -> str:
+    """Repair a/an agreement for an inserted ``phrase`` (preserving capitalization)."""
+    art = "an" if phrase[:1].lower() in "aeiou" else "a"
+    return re.sub(
+        r"\b([Aa]n?)\s+" + re.escape(phrase),
+        lambda m: (art.capitalize() if m.group(1)[0].isupper() else art) + " " + phrase,
+        text,
+    )
+
+
+def _scrub_unearned_credentials(text: str, config: AppConfig) -> str:
+    """Deterministically rewrite degree claims the candidate does NOT hold.
+
+    The LLM occasionally inflates the candidate's real qualification into a PhD/
+    doctorate (or MBA) when a JD/company emphasises research — a hallucination that
+    never appears in the profile. This guard is profile-grounded and does not depend
+    on the model: it is driven by ``application_facts.education`` flags and replaces
+    any forbidden credential with the candidate's verified highest degree.
+    """
+    if not text:
+        return text
+    try:
+        facts = load_application_facts(config)
+        edu = facts.get("education")
+    except Exception:
+        edu = None
+    if not isinstance(edu, dict):
+        return text
+
+    degree = _verified_degree_phrase(edu)
+    out = text
+    if not edu.get("has_phd", False):
+        out = _DOCTORAL_ADJ_RE.sub("", out)
+        out = _PHD_TERM_RE.sub(degree, out)
+    if not edu.get("has_mba", False):
+        out = _MBA_TERM_RE.sub(degree, out)
+    if out != text:
+        out = _fix_article_before(out, degree)
+        out = re.sub(r"[ \t]{2,}", " ", out)
+    return out
+
+
 def _sanitize_cover_letter(text: str) -> str:
     """Force LLM cover-letter output into clean prose.
 
@@ -1166,6 +1231,7 @@ def generate_join_reason(
         if not raw:
             return None
         text = _QUOTE_WRAP.sub(r"\1", raw).strip()
+        text = _scrub_unearned_credentials(text, config)
         words = text.split()
         if len(words) > max_words:
             text = " ".join(words[:max_words]).rstrip(",;:") + "."
@@ -1269,6 +1335,7 @@ def generate_cover_letter_llm(
             return None
         text = _QUOTE_WRAP.sub(r"\1", raw).strip()
         text = _sanitize_cover_letter(text)
+        text = _scrub_unearned_credentials(text, config)
         if not text:
             return None
         words = text.split()

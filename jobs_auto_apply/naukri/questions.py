@@ -24,6 +24,21 @@ from ..config import AppConfig
 
 logger = logging.getLogger("job_apply")
 
+_DBG_LEVELS = {"D": logging.DEBUG, "I": logging.INFO, "W": logging.WARNING, "E": logging.ERROR}
+
+
+def _dbg_log(level: str, location: str, message: str, data: dict[str, Any] | None = None) -> None:
+    """Lightweight structured debug logger used by the Naukri apply flow.
+
+    Emits through the shared "job_apply" logger so the temporary
+    `# region agent log` instrumentation has a single, no-op-safe sink.
+    """
+    log_level = _DBG_LEVELS.get(level.upper(), logging.DEBUG)
+    if data:
+        logger.log(log_level, "[%s] %s | %s", location, message, data)
+    else:
+        logger.log(log_level, "[%s] %s", location, message)
+
 
 class CannotAnswerTruthfully(Exception):
     """The question's only options would overstate experience the user lacks.
@@ -2771,6 +2786,14 @@ def _effective_options(
 def _is_naukri_chatbot_question(label: str) -> bool:
     """Aurus chatbot often uses short field labels without '?'."""
     if is_plausible_application_question(label):
+        return True
+    # Open-ended "Describe / elaborate / tell us about …" prompts are real
+    # free-text questions but are usually long (>100 chars) and lack a leading
+    # interrogative keyword, so the generic plausibility + length checks below
+    # discard them — leaving the chatbot stuck on an answerable question.
+    from ..answers.validation import is_open_ended_describe_question
+
+    if is_open_ended_describe_question(label):
         return True
     text = re.sub(r"\s+", " ", label.strip())
     return bool(text) and 3 <= len(text) <= 100 and not _SKIP_CHIP.search(text)

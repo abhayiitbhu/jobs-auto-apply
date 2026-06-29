@@ -116,6 +116,84 @@ def clear_technical_failure(base_dir: Path, job_key: str) -> bool:
     return True
 
 
+def _job_id_from_url(url: str) -> str:
+    import re
+
+    m = re.search(r"(\d{6,})(?:\?|$)", url or "")
+    return m.group(1) if m else ""
+
+
+def matching_failures(
+    base_dir: Path,
+    *,
+    source: str,
+    url: str = "",
+    job_id: str = "",
+) -> dict[str, dict[str, Any]]:
+    """Return technical-failure entries that refer to the given job.
+
+    Matches by ``job_key`` (``source:job_id``) and, as a fallback, by the numeric
+    id embedded in the stored URL — the producer and the single-job test harness
+    can derive ``job_id`` differently, so both are checked.
+    """
+    data = _load(technical_failures_path(base_dir))
+    failures = data["failures"]
+    wanted_ids = {i for i in (job_id, _job_id_from_url(url)) if i}
+    wanted_keys = {f"{source}:{i}" for i in wanted_ids}
+    out: dict[str, dict[str, Any]] = {}
+    for key, entry in failures.items():
+        if entry.get("source") and entry.get("source") != source:
+            continue
+        if key in wanted_keys:
+            out[key] = entry
+            continue
+        entry_url = str(entry.get("url", ""))
+        if entry_url and url and entry_url == url:
+            out[key] = entry
+            continue
+        if wanted_ids and _job_id_from_url(entry_url) in wanted_ids:
+            out[key] = entry
+    return out
+
+
+def clear_technical_failures_for_job(
+    base_dir: Path,
+    *,
+    source: str,
+    url: str = "",
+    job_id: str = "",
+) -> list[str]:
+    """Remove all technical-failure entries for a job; return the removed keys."""
+    path = technical_failures_path(base_dir)
+    with _lock:
+        data = _load(path)
+        failures = data["failures"]
+        wanted_ids = {i for i in (job_id, _job_id_from_url(url)) if i}
+        wanted_keys = {f"{source}:{i}" for i in wanted_ids}
+        removed: list[str] = []
+        for key in list(failures.keys()):
+            entry = failures[key]
+            if entry.get("source") and entry.get("source") != source:
+                continue
+            entry_url = str(entry.get("url", ""))
+            if (
+                key in wanted_keys
+                or (entry_url and url and entry_url == url)
+                or (wanted_ids and _job_id_from_url(entry_url) in wanted_ids)
+            ):
+                failures.pop(key, None)
+                removed.append(key)
+        if removed:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+    for key in removed:
+        logger.info("Cleared technical failure for %s (resolved via single-job test)", key)
+    return removed
+
+
 def load_technical_failures(base_dir: Path) -> list[dict[str, Any]]:
     items = list(_load(technical_failures_path(base_dir))["failures"].values())
     items.sort(key=lambda e: str(e.get("last_seen", "")), reverse=True)
