@@ -213,6 +213,10 @@ async def collect_from_search_urls(
     *,
     feed_dicts: list[dict] | None = None,
     default_job_functions: list[str] | None = None,
+    job_function_aliases: dict[str, str] | None = None,
+    default_skills: str | None = None,
+    skill_chip_values: dict[str, str] | None = None,
+    skill_type_queries: dict[str, str] | None = None,
 ) -> list[JobListing]:
     merged: dict[str, JobListing] = {}
     per_feed = limit if limit > 0 else 5000
@@ -220,6 +224,10 @@ async def collect_from_search_urls(
         search_urls=urls,
         feed_dicts=feed_dicts,
         default_job_functions=default_job_functions,
+        job_function_aliases=job_function_aliases,
+        default_skills=default_skills,
+        skill_chip_values=skill_chip_values,
+        skill_type_queries=skill_type_queries,
     ):
         logger.info("Instahyre feed: %s", spec.name)
         feed_key = await activate_feed(page, spec)

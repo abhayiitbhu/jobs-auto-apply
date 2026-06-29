@@ -515,15 +515,37 @@ def parse_pending_reply(
     drop_keyword: str = "drop",
     ignore_keyword: str = "ignore",
 ) -> str:
-    """Map a user reply to an answer string or a sentinel action."""
+    """Map a user reply to an answer string or a sentinel action.
+
+    A bare ``drop`` drops the job(s) for this question. ``drop <keyword>`` does
+    the same and additionally blocks the keyword (see ``extract_drop_keyword``),
+    so both forms resolve to ``PENDING_REPLY_DROP`` here.
+    """
     low = reply.strip().lower()
+    drop = (drop_keyword or "drop").strip().lower()
+    first = low.split(None, 1)[0] if low else ""
     if low == (skip_keyword or "skip").strip().lower():
         return PENDING_REPLY_SKIP
-    if low == (drop_keyword or "drop").strip().lower():
+    if low == drop or first == drop:
         return PENDING_REPLY_DROP
     if low == (ignore_keyword or "ignore").strip().lower():
         return PENDING_REPLY_IGNORE
     return reply.strip()
+
+
+def extract_drop_keyword(reply: str, *, drop_keyword: str = "drop") -> str:
+    """Return the keyword(s) from a ``drop <keyword>`` reply, or "" for a bare drop.
+
+    Example: ``drop python intern`` → ``"python intern"``. Multiple keywords can be
+    comma-separated (``drop data engineer, qa`` → ``"data engineer, qa"``) and are
+    split into separate blocklist entries by ``add_drop_keywords``. Each keyword is
+    added to the user's persisted title blocklist so future runs skip matching jobs.
+    """
+    parts = (reply or "").strip().split(None, 1)
+    drop = (drop_keyword or "drop").strip().lower()
+    if len(parts) == 2 and parts[0].lower() == drop:
+        return parts[1].strip()
+    return ""
 
 
 def prune_answered(base_dir: Path, config: AppConfig | None = None) -> int:
@@ -904,7 +926,9 @@ def _whatsapp_question_message(
     lines.append("")
     lines.append(
         f'Reply with your answer, or "{skip_keyword}" (later), '
-        f'"{drop_keyword}" (skip job), "{ignore_keyword}" (not applicable).'
+        f'"{drop_keyword}" (skip job), "{drop_keyword} <word>" (skip job + block future titles with <word>; '
+        'separate multiple with commas, e.g. "data engineer, qa"), '
+        f'"{ignore_keyword}" (not applicable).'
     )
     return "\n".join(lines)
 
@@ -981,20 +1005,37 @@ async def _process_messenger_reply(
     job_title: str,
     reply: str,
     reply_to_message_id: int | None = None,
+    drop_keyword_text: str = "",
 ) -> tuple[str, list[PendingJobRef]]:
     """Apply one already-parsed reply to a group.
 
     Returns ``(outcome, jobs_to_retry)`` where outcome is one of:
     ``"answered"`` (saved/ignored), ``"skipped"``, ``"dropped"``, or ``"retry"``
     (could not save — caller should keep the question open for another reply).
+
+    ``drop_keyword_text`` (from a ``drop <keyword>`` reply) is persisted to the
+    user's title blocklist so future runs skip jobs whose title matches it.
     """
     send_kw = _reply_send_kwargs(client, reply_to_message_id)
     if reply == PENDING_REPLY_SKIP:
         return "skipped", []
     if reply == PENDING_REPLY_DROP:
         dropped = drop_pending_group_jobs(base_dir, group, config)
+        message = f"Dropped {dropped} job(s) — will not retry."
+        if drop_keyword_text:
+            from .drop_keywords import add_drop_keywords
+
+            added, duplicates = add_drop_keywords(config, drop_keyword_text)
+            if added:
+                joined = ", ".join(f'"{kw}"' for kw in added)
+                message += (
+                    f"\nAdded {joined} to your drop list — " "future jobs with these in the title will be skipped."
+                )
+            if duplicates:
+                joined = ", ".join(f'"{kw}"' for kw in duplicates)
+                message += f"\n{joined} {'was' if len(duplicates) == 1 else 'were'} already in your drop list."
         with contextlib.suppress(Exception):
-            await client.send(f"Dropped {dropped} job(s) — will not retry.", **send_kw)
+            await client.send(message, **send_kw)
         return "dropped", []
     if reply == PENDING_REPLY_IGNORE:
         if ignore_pending_group(base_dir, group, config):
@@ -1072,7 +1113,9 @@ async def answer_pending_groups_via_messenger(
                 f"✅ {applied_part} — {new_groups} {question_word} need your input.\n"
                 "Reply to each question (tap it → Reply) and I'll match your answer to it. "
                 f'Reply with your answer, or "{skip_keyword}" (later), '
-                f'"{drop_keyword}" (skip job), "{ignore_keyword}" (not applicable).'
+                f'"{drop_keyword}" (skip job), "{drop_keyword} <word>" (skip job + block future titles with <word>; '
+                'separate multiple with commas, e.g. "data engineer, qa"), '
+                f'"{ignore_keyword}" (not applicable).'
             )
         except Exception as exc:
             logger.debug("Messenger heads-up message failed: %s", exc)
@@ -1188,11 +1231,15 @@ async def _answer_pending_groups_reply_routed(
                 )
             continue
 
+        raw_text = upd.get("text") or ""
         parsed = parse_pending_reply(
-            upd.get("text") or "",
+            raw_text,
             skip_keyword=skip_keyword,
             drop_keyword=drop_keyword,
             ignore_keyword=ignore_keyword,
+        )
+        drop_keyword_text = (
+            extract_drop_keyword(raw_text, drop_keyword=drop_keyword) if parsed == PENDING_REPLY_DROP else ""
         )
         outcome, retry = await _process_messenger_reply(
             base_dir,
@@ -1204,6 +1251,7 @@ async def _answer_pending_groups_reply_routed(
             job_title=state["job_title"],
             reply=parsed,
             reply_to_message_id=state["message_id"],
+            drop_keyword_text=drop_keyword_text,
         )
         if outcome == "retry":
             continue  # keep the question open so the user can correct their answer

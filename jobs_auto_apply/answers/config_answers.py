@@ -187,6 +187,20 @@ _GENERIC_COMPANY_TOKENS = frozenset(
 )
 
 
+def _generic_company_tokens(config: AppConfig) -> frozenset[str]:
+    """Built-in generic company-name words, extended by application_facts.
+
+    Set ``company_generic_tokens`` in application_facts.yaml to add domain- or
+    region-specific filler words (e.g. "gmbh", "labs") that should not count as a
+    distinctive brand token when matching employers.
+    """
+    app_facts = load_application_facts(config)
+    extra = app_facts.get("company_generic_tokens") or []
+    if not extra:
+        return _GENERIC_COMPANY_TOKENS
+    return _GENERIC_COMPANY_TOKENS | {str(t).strip().lower() for t in extra if str(t).strip()}
+
+
 def _known_employers(config: AppConfig) -> set[str]:
     """Employers the candidate has actually worked at — resume + optional allow-list.
 
@@ -194,6 +208,7 @@ def _known_employers(config: AppConfig) -> set[str]:
     Consultancy Services" -> "tcs"), all lowercased, for substring/word matching.
     """
     names: set[str] = set()
+    generic_tokens = _generic_company_tokens(config)
 
     def _add(raw: str) -> None:
         name = str(raw or "").strip().lower()
@@ -201,7 +216,7 @@ def _known_employers(config: AppConfig) -> set[str]:
             return
         names.add(name)
         tokens = [t for t in re.split(r"[^a-z0-9]+", name) if t]
-        meaningful = [t for t in tokens if t not in _GENERIC_COMPANY_TOKENS]
+        meaningful = [t for t in tokens if t not in generic_tokens]
         # Distinctive brand tokens only (>=4 chars) to avoid generic false matches.
         for token in meaningful:
             if len(token) >= 4:

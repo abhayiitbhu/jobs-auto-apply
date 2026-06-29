@@ -1001,6 +1001,10 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
                     limit,
                     feed_dicts=filters.feeds or None,
                     default_job_functions=filters.job_functions,
+                    job_function_aliases=filters.job_function_aliases,
+                    default_skills=filters.default_skills or None,
+                    skill_chip_values=filters.skill_chip_values,
+                    skill_type_queries=filters.skill_type_queries,
                 )
             return await instahyre_collect_jobs(page, limit)
     return []
@@ -1232,6 +1236,10 @@ async def _run_instahyre(config: AppConfig, applied_ids: set[str]) -> int:
                 search_urls=filters.search_urls or None,
                 feed_dicts=filters.feeds or None,
                 default_job_functions=filters.job_functions,
+                job_function_aliases=filters.job_function_aliases,
+                default_skills=filters.default_skills or None,
+                skill_chip_values=filters.skill_chip_values,
+                skill_type_queries=filters.skill_type_queries,
             )
         limit = scrape_limit(config.application.max_jobs_per_run, multiplier=1)
         await instahyre_apply_filters(page, filters)

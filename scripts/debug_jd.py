@@ -55,5 +55,7 @@ async def main(url: str) -> None:
 
 
 if __name__ == "__main__":
-    u = sys.argv[1] if len(sys.argv) > 1 else "https://wellfound.com/jobs/3711413-backend-developer-node-js"
-    asyncio.run(main(u))
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/debug_jd.py <wellfound-job-url>")
+        sys.exit(1)
+    asyncio.run(main(sys.argv[1]))

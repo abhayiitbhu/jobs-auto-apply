@@ -429,7 +429,7 @@
       "properties": {
         "keywords": {
           "type": "string",
-          "default": "backend developer"
+          "default": ""
         },
         "locations": {
           "type": "array",
@@ -469,7 +469,7 @@
           "default": 1
         }
       },
-      "description": "NaukriFiltersConfig(keywords: 'str' = 'backend developer', locations: 'list[str]' = <factory>, experience_min: 'int | None' = 3, experience_max: 'int | None' = 8, salary_min_lakhs: 'float | None' = None, remote_only: 'bool' = False, quick_apply_only: 'bool' = True, sort: 'str' = 'freshness', max_job_age_days: 'int | None' = None, max_pages: 'int' = 1)"
+      "description": "NaukriFiltersConfig(keywords: 'str' = '', locations: 'list[str]' = <factory>, experience_min: 'int | None' = 3, experience_max: 'int | None' = 8, salary_min_lakhs: 'float | None' = None, remote_only: 'bool' = False, quick_apply_only: 'bool' = True, sort: 'str' = 'freshness', max_job_age_days: 'int | None' = None, max_pages: 'int' = 1)"
     },
     "HiristFiltersConfig": {
       "type": "object",
@@ -486,10 +486,7 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "python",
-            "backend"
-          ]
+          "default": []
         },
         "cities": {
           "type": "array",
@@ -537,32 +534,49 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "Backend Development",
-            "Full-Stack Development",
-            "Other Software Development"
-          ]
+          "default": []
         },
         "locations": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "default": [
-            "Bengaluru",
-            "Remote"
-          ]
+          "default": []
         },
         "experience_years": {
-          "type": "integer",
-          "default": 5
+          "type": "integer"
         },
         "company_size": {
           "type": "string",
           "default": "All"
+        },
+        "default_skills": {
+          "type": "string",
+          "default": ""
+        },
+        "job_function_aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "skill_chip_values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "skill_type_queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
         }
       },
-      "description": "InstahyreFiltersConfig(search_urls: 'list[str]' = <factory>, feeds: 'list[dict[str, Any]]' = <factory>, job_functions: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, experience_years: 'int | None' = 5, company_size: 'str' = 'All')"
+      "description": "InstahyreFiltersConfig(search_urls: 'list[str]' = <factory>, feeds: 'list[dict[str, Any]]' = <factory>, job_functions: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, experience_years: 'int | None' = None, company_size: 'str' = 'All', default_skills: 'str' = '', job_function_aliases: 'dict[str, str]' = <factory>, skill_chip_values: 'dict[str, str]' = <factory>, skill_type_queries: 'dict[str, str]' = <factory>)"
     },
     "WorkdayConfig": {
       "type": "object",
@@ -1069,9 +1083,13 @@
         "hirist_resume_sync": {
           "type": "string",
           "default": "data/hirist_resume_sync.json"
+        },
+        "memory_corrections": {
+          "type": "string",
+          "default": "data/memory_corrections.json"
         }
       },
-      "description": "PathsConfig(application_facts: 'str' = 'profile/application_facts.yaml', user_memory: 'str' = 'data/user_memory.json', pending_questions: 'str' = 'data/pending_questions.json', naukri_resume_sync: 'str' = 'data/naukri_resume_sync.json', hirist_resume_sync: 'str' = 'data/hirist_resume_sync.json')"
+      "description": "PathsConfig(application_facts: 'str' = 'profile/application_facts.yaml', user_memory: 'str' = 'data/user_memory.json', pending_questions: 'str' = 'data/pending_questions.json', naukri_resume_sync: 'str' = 'data/naukri_resume_sync.json', hirist_resume_sync: 'str' = 'data/hirist_resume_sync.json', memory_corrections: 'str' = 'data/memory_corrections.json')"
     },
     "AnswersPolicyConfig": {
       "type": "object",

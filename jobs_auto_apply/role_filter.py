@@ -7,20 +7,10 @@ from .utils import JobListing
 
 logger = logging.getLogger("job_apply")
 
-# Example "keep" anchors for a backend/platform engineering search. NOT applied by
-# default — the filter is domain-neutral unless you set profile.keep_role_keywords.
-# Copy any of these into config.yaml (or write your own, e.g. legal/finance terms).
-# Matched as whole words/phrases, case-insensitively.
-DEFAULT_KEEP_ROLE_KEYWORDS: tuple[str, ...] = (
-    "backend",
-    "back end",
-    "back-end",
-    "platform",
-    "python developer",
-    "java developer",
-    "nodejs backend",
-    "node.js backend",
-)
+# "keep" anchors are NOT applied by default — the filter is domain-neutral unless
+# you set profile.keep_role_keywords in config.yaml. Example backend/platform anchors:
+# "backend", "back end", "back-end", "platform", "python developer", "java developer",
+# "nodejs backend", "node.js backend". Matched as whole words/phrases, case-insensitively.
 
 
 def _title_patterns(

@@ -26,6 +26,7 @@ from jobs_auto_apply.application_questions import (  # noqa: E402
     needs_review_answer,
 )
 from jobs_auto_apply.config import load_config  # noqa: E402
+from jobs_auto_apply.profile.application_facts import load_application_facts  # noqa: E402
 from jobs_auto_apply.question_groups import classify_question  # noqa: E402
 from jobs_auto_apply.rag_answers import generate_rag_answer  # noqa: E402
 
@@ -35,19 +36,53 @@ MEMORY_PATH = ROOT / "data" / "user_memory.json"
 # never be auto-flagged for review by the context-free acceptance heuristic.
 _HUMAN_SOURCES = {"manual", "confirmed", "interactive", "pending", "reviewed"}
 
-# Heuristic markers of a resume / cover-letter prose dump that was accidentally
-# stored as a short-field answer. These signals virtually never appear in a
-# legitimate short answer, so matching one means the entry is junk. Kept generic
-# (no personal data) so it works for any user's memory file.
-_RESUME_DUMP = re.compile(
-    r"results[- ]driven"
-    r"|proven track record"
-    r"|(?:implemented|spearheaded|architected|orchestrated|engineered)\s+\w+"
-    r"|ci/cd pipelines?"
-    r"|[\w.+-]+@[\w-]+\.[\w.-]+"  # email address
-    r"|\bcurriculum vitae\b",
-    re.I,
+# Built-in (domain-neutral) markers of a resume / cover-letter prose dump that was
+# accidentally stored as a short-field answer. These signals virtually never appear
+# in a legitimate short answer, so matching one means the entry is junk. Extend this
+# per profile via the "resume_dump_patterns" key in the corrections file.
+_BASE_RESUME_DUMP_PATTERNS: tuple[str, ...] = (
+    r"results[- ]driven",
+    r"proven track record",
+    r"(?:implemented|spearheaded|architected|orchestrated|engineered)\s+\w+",
+    r"ci/cd pipelines?",
+    r"[\w.+-]+@[\w-]+\.[\w.-]+",  # email address
+    r"\bcurriculum vitae\b",
 )
+
+
+def _load_corrections(config) -> dict:
+    """Load user-specific corrections (manual answers, notice templates, extra
+    resume-dump patterns). Returns an empty-but-valid structure when absent so the
+    script stays fully domain-agnostic out of the box."""
+    path = config.memory_corrections_path
+    data: dict = {}
+    if path.exists():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: could not read corrections file {path}: {exc}")
+    manual = data.get("manual_answers")
+    templates = data.get("notice_question_templates")
+    patterns = data.get("resume_dump_patterns")
+    return {
+        "manual_answers": {str(k): str(v) for k, v in manual.items()} if isinstance(manual, dict) else {},
+        "notice_question_templates": [str(t) for t in templates] if isinstance(templates, list) else [],
+        "resume_dump_patterns": [str(p) for p in patterns] if isinstance(patterns, list) else [],
+    }
+
+
+def _build_resume_dump_re(extra_patterns: list[str]) -> re.Pattern[str]:
+    parts = list(_BASE_RESUME_DUMP_PATTERNS) + [p for p in extra_patterns if p.strip()]
+    return re.compile("|".join(parts), re.I)
+
+
+# Populated from the corrections file in main(); module-level so the helper
+# functions below can reference them. Defaults keep the script importable/usable
+# even before main() runs.
+_RESUME_DUMP = _build_resume_dump_re([])
+_MANUAL: dict[str, str] = {}
 
 
 def _is_yesno_question(question: str) -> bool:
@@ -144,23 +179,6 @@ def _should_overwrite(question: str, old: str, new: str, gid: str) -> bool:
     return bool(gid.startswith("skill_yesno:"))
 
 
-# Manual corrections for entries the classifier mishandles.
-_MANUAL: dict[str, str] = {
-    "How much experience do you have with Salesforce Marketing Cloud?": "0",
-    "What is your exp on Backend Development using JAVA": "4",
-    "Which tool you have experience with (ML framework)?": "0",
-    "Which tool you have experience with (MLops)?": "0",
-    "How many years of experience do you have in Pyspark?": "0",
-    "Do You have 5+ Years of Experience in Data Engineering Domain ?": "No",
-    "Do you have 5+ years of experience in Python backend development?": "No",
-    "Experience in Insurance / Claims / Fraud Detection?": "No",
-    "Experience in Machine Learning & Deep Learning?": "No",
-    "Do you have experience in Aws Lambda, Glue and Redshift?": "No",
-    "What is your notice period? and when is your LWD?": "12/06/2026",
-    "What are your total years of experience into Snowflake and Microsoft Data Fabric?": "0",
-}
-
-
 def _is_known_good(question: str, answer: str, gid: str) -> bool:
     a = answer.strip()
     if gid == "notice_period" and a in ("0", "Immediately available"):
@@ -174,6 +192,12 @@ def _is_known_good(question: str, answer: str, gid: str) -> bool:
 
 def main() -> None:
     config = load_config(ROOT / "config.yaml")
+
+    global _MANUAL, _RESUME_DUMP
+    corrections = _load_corrections(config)
+    _MANUAL = corrections["manual_answers"]
+    _RESUME_DUMP = _build_resume_dump_re(corrections["resume_dump_patterns"])
+
     data = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
     answers = data.get("question_answers", {})
 
@@ -255,12 +279,15 @@ def main() -> None:
             if not entry.get("reviewed"):
                 entry["reviewed"] = True
 
-    # Restore common notice-period keys if missing (correct per application_facts)
-    notice_defaults = {
-        "What is your notice period?": "0",
-        "What is your notice period in days ?": "0",
-        "What is your notice period as per your Offer Letter ?": "0",
-    }
+    # Restore common notice-period keys if missing, seeding the value from your
+    # application_facts (notice_period_days) rather than any hardcoded number. The
+    # question templates are configurable via the corrections file.
+    app_facts = load_application_facts(config)
+    notice_days = app_facts.get("notice_period_days")
+    notice_value = str(int(notice_days)) if isinstance(notice_days, int | float) else None
+    notice_defaults = (
+        {q: notice_value for q in corrections["notice_question_templates"]} if notice_value is not None else {}
+    )
     from jobs_auto_apply.question_keys import question_key
 
     for q, ans in notice_defaults.items():

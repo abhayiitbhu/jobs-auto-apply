@@ -148,11 +148,13 @@ data/sessions/
 data/whatsapp_profile/
 data/telegram_chat.json
 data/telegram_offset.json
+data/drop_keywords.json
 data/naukri_resume_sync.json
 data/hirist_resume_sync.json
 data/user_memory.json
 data/pending_questions.json
 data/technical_failures.json
+data/memory_corrections.json
 data/review/
 data/models/
 data/faiss/

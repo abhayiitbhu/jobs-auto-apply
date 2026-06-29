@@ -314,12 +314,20 @@ async def apply_from_feeds(
     search_urls: list[str] | None = None,
     feed_dicts: list[dict] | None = None,
     default_job_functions: list[str] | None = None,
+    job_function_aliases: dict[str, str] | None = None,
+    default_skills: str | None = None,
+    skill_chip_values: dict[str, str] | None = None,
+    skill_type_queries: dict[str, str] | None = None,
 ) -> int:
     total = 0
     for spec in feeds_from_config(
         search_urls=search_urls,
         feed_dicts=feed_dicts,
         default_job_functions=default_job_functions,
+        job_function_aliases=job_function_aliases,
+        default_skills=default_skills,
+        skill_chip_values=skill_chip_values,
+        skill_type_queries=skill_type_queries,
     ):
         total += await apply_feed(page, spec, config, applied_ids)
         cap = apply_cap(config.application.max_jobs_per_run)

@@ -104,7 +104,7 @@ class UplersFiltersConfig(JsonSchemaMixin):
 
 @dataclass
 class NaukriFiltersConfig(JsonSchemaMixin):
-    keywords: str = "backend developer"
+    keywords: str = ""  # search keywords; set to your role/skills in config.yaml
     locations: list[str] = field(default_factory=list)  # empty = India-wide (no city in URL)
     experience_min: int | None = 3
     experience_max: int | None = 8
@@ -119,7 +119,7 @@ class NaukriFiltersConfig(JsonSchemaMixin):
 @dataclass
 class HiristFiltersConfig(JsonSchemaMixin):
     search_urls: list[str] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=lambda: ["python", "backend"])
+    keywords: list[str] = field(default_factory=list)  # set your role/skill keywords in config.yaml
     cities: list[str] = field(default_factory=list)  # empty = all India
     experience: str = "2-5"  # 0-2, 2-5, 5-10, 10+ when using keyword search UI
     experience_min: int | None = None  # minexp query param when building URLs
@@ -131,16 +131,26 @@ class HiristFiltersConfig(JsonSchemaMixin):
 class InstahyreFiltersConfig(JsonSchemaMixin):
     search_urls: list[str] = field(default_factory=list)
     feeds: list[dict[str, Any]] = field(default_factory=list)
-    job_functions: list[str] = field(
-        default_factory=lambda: [
-            "Backend Development",
-            "Full-Stack Development",
-            "Other Software Development",
-        ]
-    )
-    locations: list[str] = field(default_factory=lambda: ["Bengaluru", "Remote"])
-    experience_years: int | None = 5
+    # Job functions to target (human names like "Backend Development", or raw
+    # Instahyre "/api/v1/job_function/<id>" paths). Empty = use the built-in
+    # fallback in instahyre/feeds.py.
+    job_functions: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    experience_years: int | None = None
     company_size: str = "All"  # Small, Medium, Large, All
+    # --- Instahyre platform mappings (override/extend the built-in defaults so the
+    # tool works for any role family, not just backend/software) ---
+    # Fallback skills string used when a search feed doesn't specify its own skills.
+    default_skills: str = ""
+    # Map a human job-function name (case-insensitive) to its Instahyre API path,
+    # e.g. {"data science": "/api/v1/job_function/12"}. Merged over the built-ins.
+    job_function_aliases: dict[str, str] = field(default_factory=dict)
+    # Map a skill keyword (lowercase) to the Instahyre selectize chip data-value,
+    # e.g. {"node": "Nodejs", "golang": "Go"}. Merged over the built-ins.
+    skill_chip_values: dict[str, str] = field(default_factory=dict)
+    # Map a chip data-value to the text to type to surface it in the dropdown,
+    # e.g. {"Nodejs": "nodejs"}. Merged over the built-ins.
+    skill_type_queries: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -321,6 +331,8 @@ class PathsConfig(JsonSchemaMixin):
     pending_questions: str = "data/pending_questions.json"
     naukri_resume_sync: str = "data/naukri_resume_sync.json"
     hirist_resume_sync: str = "data/hirist_resume_sync.json"
+    # User-specific Q&A corrections used by scripts/cleanup_user_memory.py.
+    memory_corrections: str = "data/memory_corrections.json"
 
 
 @dataclass
@@ -421,10 +433,20 @@ class AppConfig(JsonSchemaMixin):
         return self.base_dir / self.paths.hirist_resume_sync
 
     @property
+    def memory_corrections_path(self) -> Path:
+        return self.base_dir / self.paths.memory_corrections
+
+    @property
     def whatsapp_profile_path(self) -> Path:
         p = self.base_dir / self.whatsapp.profile_dir
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def drop_keywords_path(self) -> Path:
+        # User-managed title blocklist (e.g. added by replying "drop <keyword>"
+        # over Telegram). Merged into profile.skip_role_keywords at load time.
+        return self.base_dir / "data" / "drop_keywords.json"
 
     @property
     def telegram_chat_path(self) -> Path:
@@ -515,7 +537,7 @@ def _uplers_filters(data: dict[str, Any]) -> UplersFiltersConfig:
 def _naukri_filters(data: dict[str, Any]) -> NaukriFiltersConfig:
     loc = data.get("locations")
     return NaukriFiltersConfig(
-        keywords=str(data.get("keywords", "backend developer")),
+        keywords=str(data.get("keywords", "")),
         locations=list(loc) if isinstance(loc, list) else [],
         experience_min=data.get("experience_min", 3),
         experience_max=data.get("experience_max"),
@@ -529,12 +551,12 @@ def _naukri_filters(data: dict[str, Any]) -> NaukriFiltersConfig:
 
 
 def _hirist_filters(data: dict[str, Any]) -> HiristFiltersConfig:
-    kw = data.get("keywords", ["python", "backend"])
+    kw = data.get("keywords", [])
     urls = data.get("search_urls", [])
     cities = data.get("cities")
     return HiristFiltersConfig(
         search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
-        keywords=list(kw) if isinstance(kw, list) else [str(kw)],
+        keywords=list(kw) if isinstance(kw, list) else [str(kw)] if kw else [],
         cities=list(cities) if isinstance(cities, list) else [],
         experience=str(data.get("experience", "2-5")),
         experience_min=data.get("experience_min"),
@@ -554,6 +576,12 @@ def _platform_delays(data: dict[str, Any]) -> PlatformDelaysConfig:
     )
 
 
+def _str_str_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): str(v) for k, v in value.items()}
+
+
 def _instahyre_filters(data: dict[str, Any]) -> InstahyreFiltersConfig:
     urls = data.get("search_urls", [])
     raw_feeds = data.get("feeds", [])
@@ -561,19 +589,14 @@ def _instahyre_filters(data: dict[str, Any]) -> InstahyreFiltersConfig:
     return InstahyreFiltersConfig(
         search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
         feeds=feeds,
-        job_functions=list(
-            data.get(
-                "job_functions",
-                [
-                    "Backend Development",
-                    "Full-Stack Development",
-                    "Other Software Development",
-                ],
-            )
-        ),
-        locations=list(data.get("locations", ["Bengaluru", "Remote"])),
-        experience_years=data.get("experience_years", 5),
+        job_functions=list(data.get("job_functions", [])),
+        locations=list(data.get("locations", [])),
+        experience_years=data.get("experience_years"),
         company_size=str(data.get("company_size", "All")),
+        default_skills=str(data.get("default_skills", "")),
+        job_function_aliases=_str_str_map(data.get("job_function_aliases")),
+        skill_chip_values=_str_str_map(data.get("skill_chip_values")),
+        skill_type_queries=_str_str_map(data.get("skill_type_queries")),
     )
 
 
@@ -749,6 +772,7 @@ def load_config(path: Path) -> AppConfig:
         pending_questions=str(paths_raw.get("pending_questions", "data/pending_questions.json")),
         naukri_resume_sync=str(paths_raw.get("naukri_resume_sync", "data/naukri_resume_sync.json")),
         hirist_resume_sync=str(paths_raw.get("hirist_resume_sync", "data/hirist_resume_sync.json")),
+        memory_corrections=str(paths_raw.get("memory_corrections", "data/memory_corrections.json")),
     )
     answers_policy = AnswersPolicyConfig(
         notice_join_threshold_days=int(answers_raw.get("notice_join_threshold_days", 15)),
@@ -868,4 +892,14 @@ def load_config(path: Path) -> AppConfig:
     )
     # Set base_dir explicitly
     config.base_dir = base_dir
+
+    # Merge the user's persisted drop-keyword blocklist (e.g. added by replying
+    # "drop <keyword>" over Telegram) into the role-skip keywords so every future
+    # run filters those titles out, exactly like config-defined skip_role_keywords.
+    from .drop_keywords import load_drop_keywords
+
+    extra_skip = load_drop_keywords(config)
+    if extra_skip:
+        existing = {k.strip().lower() for k in config.profile.skip_role_keywords}
+        config.profile.skip_role_keywords.extend(k for k in extra_skip if k.lower() not in existing)
     return config

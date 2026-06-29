@@ -23,6 +23,10 @@ ROW_WAIT_MS = 35000
 ROW_POLL_MS = 250
 PAGE_SETTLE_MS = 800
 
+# Built-in fallbacks used only when config.yaml supplies nothing. Everything here
+# can be overridden/extended from config (instahyre.filters.default_skills,
+# .job_function_aliases, .skill_chip_values, .skill_type_queries) so the tool is
+# not tied to a backend/software-engineering search.
 DEFAULT_SKILLS = "java,node,python"
 DEFAULT_JOB_FUNCTIONS = [
     "/api/v1/job_function/10",  # Backend Development
@@ -34,33 +38,145 @@ JOB_FUNCTIONS_SELECTIZE_INPUT = f"{JOB_FUNCTIONS_FILTER} .selectize-input input"
 JOB_FUNCTIONS_SELECTIZE_REMOVE = f"{JOB_FUNCTIONS_FILTER} .selectize-input .remove"
 JOB_FUNCTION_DROPDOWN_OPTIONS = f"{JOB_FUNCTIONS_FILTER} .selectize-dropdown .option.selectize-option[data-selectable]"
 
+# Human-name -> Instahyre API path map covering every job function (and the broader
+# job categories) Instahyre exposes via /api/v1/job_function/. Both the exact name
+# (e.g. "DevOps / Cloud") and a slash/ampersand-free variant ("devops cloud") are
+# accepted, case-insensitively. Raw "/api/v1/job_function/<id>" paths also work
+# directly (handled in normalize_job_functions). Extend/override via config
+# (instahyre.filters.job_function_aliases) for any custom naming.
 JOB_FUNCTION_ALIASES: dict[str, str] = {
-    "backend development": "/api/v1/job_function/10",
+    # --- Convenience short aliases ---
     "backend": "/api/v1/job_function/10",
-    "full-stack development": "/api/v1/job_function/1",
-    "full stack development": "/api/v1/job_function/1",
-    "fullstack development": "/api/v1/job_function/1",
-    "full-stack": "/api/v1/job_function/1",
     "full stack": "/api/v1/job_function/1",
-    "other software development": "/api/v1/job_function/76",
+    "full-stack": "/api/v1/job_function/1",
+    "fullstack": "/api/v1/job_function/1",
+    "fullstack development": "/api/v1/job_function/1",
+    "full stack development": "/api/v1/job_function/1",
     "software development": "/api/v1/job_category/1",
-    "/api/v1/job_function/10": "/api/v1/job_function/10",
-    "/api/v1/job_function/1": "/api/v1/job_function/1",
-    "/api/v1/job_function/76": "/api/v1/job_function/76",
+    # --- All Instahyre job functions (name -> resource_uri) ---
+    "full-stack development": "/api/v1/job_function/1",
+    "frontend development": "/api/v1/job_function/3",
+    "project management": "/api/v1/job_function/4",
+    "qa / sdet": "/api/v1/job_function/5",
+    "qa sdet": "/api/v1/job_function/5",
+    "ux / visual design": "/api/v1/job_function/7",
+    "ux visual design": "/api/v1/job_function/7",
+    "devops / cloud": "/api/v1/job_function/8",
+    "devops cloud": "/api/v1/job_function/8",
+    "data science / machine learning": "/api/v1/job_function/9",
+    "data science machine learning": "/api/v1/job_function/9",
+    "backend development": "/api/v1/job_function/10",
+    "product management": "/api/v1/job_function/11",
+    "engineering management": "/api/v1/job_function/12",
+    "big data / dwh / etl": "/api/v1/job_function/17",
+    "big data dwh etl": "/api/v1/job_function/17",
+    "graphic design / animation": "/api/v1/job_function/18",
+    "graphic design animation": "/api/v1/job_function/18",
+    "brand management": "/api/v1/job_function/20",
+    "online marketing": "/api/v1/job_function/22",
+    "customer service": "/api/v1/job_function/24",
+    "sales / business development": "/api/v1/job_function/25",
+    "sales business development": "/api/v1/job_function/25",
+    "operations management": "/api/v1/job_function/28",
+    "database admin / development": "/api/v1/job_function/30",
+    "database admin development": "/api/v1/job_function/30",
+    "content writing": "/api/v1/job_function/31",
+    "hr generalist": "/api/v1/job_function/32",
+    "talent acquisition": "/api/v1/job_function/33",
+    "general management / strategy": "/api/v1/job_function/34",
+    "general management strategy": "/api/v1/job_function/34",
+    "network administration": "/api/v1/job_function/35",
+    "systems administration": "/api/v1/job_function/36",
+    "it security": "/api/v1/job_function/37",
+    "data analysis / business intelligence": "/api/v1/job_function/39",
+    "data analysis business intelligence": "/api/v1/job_function/39",
+    "accounting & taxation": "/api/v1/job_function/40",
+    "accounting and taxation": "/api/v1/job_function/40",
+    "seo / sem": "/api/v1/job_function/42",
+    "seo sem": "/api/v1/job_function/42",
+    "pr / communications": "/api/v1/job_function/43",
+    "pr communications": "/api/v1/job_function/43",
+    "embedded / kernel development": "/api/v1/job_function/44",
+    "embedded kernel development": "/api/v1/job_function/44",
+    "it management / it support": "/api/v1/job_function/57",
+    "it management it support": "/api/v1/job_function/57",
+    "solution architecture": "/api/v1/job_function/58",
+    "mobile development": "/api/v1/job_function/60",
+    "event management": "/api/v1/job_function/61",
+    "photography / videography": "/api/v1/job_function/62",
+    "photography videography": "/api/v1/job_function/62",
+    "technical writing": "/api/v1/job_function/63",
+    "technical / production support": "/api/v1/job_function/75",
+    "technical production support": "/api/v1/job_function/75",
+    "other software development": "/api/v1/job_function/76",
+    "other design": "/api/v1/job_function/77",
+    "functional consulting": "/api/v1/job_function/78",
+    "presales": "/api/v1/job_function/79",
+    "technical consulting": "/api/v1/job_function/80",
+    "management consulting": "/api/v1/job_function/81",
+    "sales support & operations": "/api/v1/job_function/82",
+    "sales support and operations": "/api/v1/job_function/82",
+    "architecture / interior design": "/api/v1/job_function/83",
+    "architecture interior design": "/api/v1/job_function/83",
+    "fashion design": "/api/v1/job_function/84",
+    "advertising / creative": "/api/v1/job_function/85",
+    "advertising creative": "/api/v1/job_function/85",
+    "market research": "/api/v1/job_function/86",
+    "data entry / mis": "/api/v1/job_function/87",
+    "data entry mis": "/api/v1/job_function/87",
+    "payroll & transactions": "/api/v1/job_function/88",
+    "payroll and transactions": "/api/v1/job_function/88",
+    "company secretary & compliance": "/api/v1/job_function/89",
+    "company secretary and compliance": "/api/v1/job_function/89",
+    "finance": "/api/v1/job_function/90",
+    "audit & control": "/api/v1/job_function/91",
+    "audit and control": "/api/v1/job_function/91",
+    "hardware design and research": "/api/v1/job_function/92",
+    "asic / fpga engineering": "/api/v1/job_function/93",
+    "asic fpga engineering": "/api/v1/job_function/93",
+    "pcb / board engineering": "/api/v1/job_function/94",
+    "pcb board engineering": "/api/v1/job_function/94",
+    "hardware test & validation": "/api/v1/job_function/95",
+    "hardware test and validation": "/api/v1/job_function/95",
+    "other hardware": "/api/v1/job_function/96",
+    # --- Broader job categories (target a whole category instead of one function) ---
+    "software engineering": "/api/v1/job_category/1",
+    "product / project management": "/api/v1/job_category/2",
+    "product project management": "/api/v1/job_category/2",
+    "design and creative": "/api/v1/job_category/3",
+    "sales and business": "/api/v1/job_category/5",
+    "marketing": "/api/v1/job_category/6",
+    "data science and analysis": "/api/v1/job_category/8",
+    "it operations and support": "/api/v1/job_category/10",
+    "operations": "/api/v1/job_category/11",
+    "human resources": "/api/v1/job_category/12",
+    "consulting": "/api/v1/job_category/22",
+    "hardware engineering": "/api/v1/job_category/27",
+    "accounting and finance": "/api/v1/job_category/29",
 }
 
 
-def normalize_skills(skills: str | list[str] | None) -> str:
+def _alias_key(part: str) -> str:
+    return re.sub(r"\s+", " ", part.lower().replace("_", " ")).strip()
+
+
+def normalize_skills(skills: str | list[str] | None, default: str = DEFAULT_SKILLS) -> str:
     if not skills:
-        return DEFAULT_SKILLS
+        return default
     if isinstance(skills, str):
         return skills.strip()
     return ",".join(s.strip() for s in skills if s.strip())
 
 
-def normalize_job_functions(values: str | list[str] | None) -> list[str]:
+def normalize_job_functions(
+    values: str | list[str] | None,
+    aliases: dict[str, str] | None = None,
+    defaults: list[str] | None = None,
+) -> list[str]:
+    aliases = aliases or JOB_FUNCTION_ALIASES
+    defaults = list(defaults) if defaults is not None else list(DEFAULT_JOB_FUNCTIONS)
     if not values:
-        return list(DEFAULT_JOB_FUNCTIONS)
+        return list(defaults)
     raw_parts: list[str] = []
     raw_parts = [values] if isinstance(values, str) else [str(v).strip() for v in values if str(v).strip()]
     parts: list[str] = []
@@ -75,13 +191,12 @@ def normalize_job_functions(values: str | list[str] | None) -> list[str]:
             if part not in resolved:
                 resolved.append(part)
             continue
-        key = re.sub(r"\s+", " ", part.lower().replace("_", " ")).strip()
-        path = JOB_FUNCTION_ALIASES.get(key)
+        path = aliases.get(_alias_key(part))
         if path and path not in resolved:
             resolved.append(path)
         else:
             logger.warning("Unknown Instahyre job function: %s", part)
-    return resolved[:3] if resolved else list(DEFAULT_JOB_FUNCTIONS)
+    return resolved if resolved else list(defaults)
 
 
 @dataclass
@@ -94,6 +209,9 @@ class InstahyreFeedSpec:
     job_functions: list[str] = field(default_factory=lambda: list(DEFAULT_JOB_FUNCTIONS))
     company_size: int = 0
     job_type: int = 0
+    # Platform chip mappings carried per-spec so feeds.py needs no global config.
+    skill_chip_values: dict[str, str] = field(default_factory=lambda: dict(SKILL_DATA_VALUES))
+    skill_type_queries: dict[str, str] = field(default_factory=lambda: dict(SKILL_TYPE_QUERY))
 
     @property
     def feed_key(self) -> str:
@@ -105,7 +223,14 @@ class InstahyreFeedSpec:
         return "|".join(parts)
 
 
-def parse_feed_url(url: str) -> InstahyreFeedSpec:
+def parse_feed_url(
+    url: str,
+    *,
+    aliases: dict[str, str] | None = None,
+    default_skills: str = DEFAULT_SKILLS,
+    chip_values: dict[str, str] | None = None,
+    type_queries: dict[str, str] | None = None,
+) -> InstahyreFeedSpec:
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
 
@@ -116,10 +241,10 @@ def parse_feed_url(url: str) -> InstahyreFeedSpec:
     matching = first("matching").lower() == "true"
     search = first("search").lower() == "true"
     skills_raw = first("skills")
-    skills = normalize_skills(skills_raw or None)
+    skills = normalize_skills(skills_raw or None, default=default_skills)
     years_raw = first("years")
     years = int(years_raw) if years_raw.isdigit() else None
-    job_functions = normalize_job_functions(first("job_functions") or None)
+    job_functions = normalize_job_functions(first("job_functions") or None, aliases=aliases)
 
     if matching:
         name = "matching"
@@ -139,17 +264,30 @@ def parse_feed_url(url: str) -> InstahyreFeedSpec:
         job_functions=job_functions,
         company_size=int(first("company_size") or 0),
         job_type=int(first("job_type") or 0),
+        skill_chip_values=dict(chip_values or SKILL_DATA_VALUES),
+        skill_type_queries=dict(type_queries or SKILL_TYPE_QUERY),
     )
 
 
-def parse_feed_dict(data: dict[str, Any]) -> InstahyreFeedSpec:
+def parse_feed_dict(
+    data: dict[str, Any],
+    *,
+    aliases: dict[str, str] | None = None,
+    default_skills: str = DEFAULT_SKILLS,
+    chip_values: dict[str, str] | None = None,
+    type_queries: dict[str, str] | None = None,
+) -> InstahyreFeedSpec:
     matching = bool(data.get("matching", False))
     search = bool(data.get("search", False))
-    skills = "" if matching else normalize_skills(data.get("skills"))
+    skills = "" if matching else normalize_skills(data.get("skills"), default=default_skills)
     years = data.get("years")
     years = int(years) if years is not None else None
     raw_jf = data.get("job_functions")
-    job_functions = normalize_job_functions(raw_jf) if raw_jf is not None else list(DEFAULT_JOB_FUNCTIONS)
+    job_functions = (
+        normalize_job_functions(raw_jf, aliases=aliases)
+        if raw_jf is not None
+        else normalize_job_functions(None, aliases=aliases)
+    )
 
     if data.get("name"):
         name = str(data["name"])
@@ -169,14 +307,30 @@ def parse_feed_dict(data: dict[str, Any]) -> InstahyreFeedSpec:
         job_functions=job_functions,
         company_size=int(data.get("company_size", 0)),
         job_type=int(data.get("job_type", 0)),
+        skill_chip_values=dict(chip_values or SKILL_DATA_VALUES),
+        skill_type_queries=dict(type_queries or SKILL_TYPE_QUERY),
     )
 
 
-def default_search_feeds() -> list[InstahyreFeedSpec]:
+def default_search_feeds(
+    *,
+    default_skills: str = DEFAULT_SKILLS,
+    chip_values: dict[str, str] | None = None,
+    type_queries: dict[str, str] | None = None,
+) -> list[InstahyreFeedSpec]:
+    skills = default_skills or DEFAULT_SKILLS
+    chips = dict(chip_values or SKILL_DATA_VALUES)
+    queries = dict(type_queries or SKILL_TYPE_QUERY)
     return [
-        InstahyreFeedSpec(name="search-y3", search=True, skills=DEFAULT_SKILLS, years=3),
-        InstahyreFeedSpec(name="search-y4", search=True, skills=DEFAULT_SKILLS, years=4),
-        InstahyreFeedSpec(name="search-y5", search=True, skills=DEFAULT_SKILLS, years=5),
+        InstahyreFeedSpec(
+            name=f"search-y{y}",
+            search=True,
+            skills=skills,
+            years=y,
+            skill_chip_values=chips,
+            skill_type_queries=queries,
+        )
+        for y in (3, 4, 5)
     ]
 
 
@@ -185,19 +339,52 @@ def feeds_from_config(
     search_urls: list[str] | None = None,
     feed_dicts: list[dict[str, Any]] | None = None,
     default_job_functions: list[str] | None = None,
+    job_function_aliases: dict[str, str] | None = None,
+    default_skills: str | None = None,
+    skill_chip_values: dict[str, str] | None = None,
+    skill_type_queries: dict[str, str] | None = None,
 ) -> list[InstahyreFeedSpec]:
-    default_jf = normalize_job_functions(default_job_functions)
+    # Merge config-provided mappings over the built-in fallbacks.
+    aliases = dict(JOB_FUNCTION_ALIASES)
+    for key, val in (job_function_aliases or {}).items():
+        aliases[_alias_key(str(key))] = str(val)
+    chip_values = {**SKILL_DATA_VALUES, **{str(k).lower(): str(v) for k, v in (skill_chip_values or {}).items()}}
+    type_queries = {**SKILL_TYPE_QUERY, **{str(k): str(v) for k, v in (skill_type_queries or {}).items()}}
+    skills_default = default_skills or DEFAULT_SKILLS
+
+    default_jf = normalize_job_functions(default_job_functions, aliases=aliases)
     if feed_dicts:
         specs: list[InstahyreFeedSpec] = []
         for item in feed_dicts:
             merged = dict(item)
             if not merged.get("job_functions"):
                 merged["job_functions"] = default_jf
-            specs.append(parse_feed_dict(merged))
+            specs.append(
+                parse_feed_dict(
+                    merged,
+                    aliases=aliases,
+                    default_skills=skills_default,
+                    chip_values=chip_values,
+                    type_queries=type_queries,
+                )
+            )
         return specs
     if search_urls:
-        return [parse_feed_url(url) for url in search_urls]
-    return default_search_feeds()
+        return [
+            parse_feed_url(
+                url,
+                aliases=aliases,
+                default_skills=skills_default,
+                chip_values=chip_values,
+                type_queries=type_queries,
+            )
+            for url in search_urls
+        ]
+    return default_search_feeds(
+        default_skills=skills_default,
+        chip_values=chip_values,
+        type_queries=type_queries,
+    )
 
 
 async def _ui_click_matching(page: Page) -> bool:
@@ -232,22 +419,26 @@ SKILL_TYPE_QUERY: dict[str, str] = {
 _NODE_CHIP_DATA_VALUES = frozenset({"Nodejs", "Node.js", "nodejs"})
 
 
-def skill_entry_tokens(skills: str) -> list[str]:
-    """Instahyre data-value strings — order: Java, Nodejs, Python."""
-    order = ["java", "node", "python"]
-    requested = {part.strip().lower() for part in normalize_skills(skills).split(",") if part.strip()}
+def skill_entry_tokens(skills: str, chip_values: dict[str, str] | None = None) -> list[str]:
+    """Instahyre selectize data-value strings, preserving the configured skill order.
+
+    Each skill keyword maps to its chip data-value via ``chip_values`` (config-driven,
+    falling back to the built-in map); unknown skills pass through as-is.
+    """
+    chip_values = chip_values or SKILL_DATA_VALUES
     tokens: list[str] = []
-    for key in order:
-        if key in requested:
-            tokens.append(SKILL_DATA_VALUES[key])
-    for part in requested:
-        if part not in order:
-            tokens.append(SKILL_DATA_VALUES.get(part, part))
+    seen: set[str] = set()
+    for raw in normalize_skills(skills).split(","):
+        part = raw.strip().lower()
+        if not part or part in seen:
+            continue
+        seen.add(part)
+        tokens.append(chip_values.get(part, part))
     return tokens
 
 
-def _skill_type_query(data_value: str) -> str:
-    return SKILL_TYPE_QUERY.get(data_value, data_value)
+def _skill_type_query(data_value: str, type_queries: dict[str, str] | None = None) -> str:
+    return (type_queries or SKILL_TYPE_QUERY).get(data_value, data_value)
 
 
 def _is_node_skill(data_value: str) -> bool:
@@ -663,8 +854,8 @@ async def _click_first_skill_dropdown_item(page: Page) -> bool:
         return False
 
 
-async def _type_skill_query(page: Page, field, data_value: str) -> None:
-    query = _skill_type_query(data_value)
+async def _type_skill_query(page: Page, field, data_value: str, type_queries: dict[str, str] | None = None) -> None:
+    query = _skill_type_query(data_value, type_queries)
     await field.click(timeout=3000)
     with contextlib.suppress(PlaywrightTimeout):
         await field.fill("")
@@ -672,13 +863,15 @@ async def _type_skill_query(page: Page, field, data_value: str) -> None:
     await page.evaluate(_TRIGGER_SELECTIZE_SEARCH_JS, query)
 
 
-async def _ui_add_one_skill_chip(page: Page, field, data_value: str) -> bool:
+async def _ui_add_one_skill_chip(
+    page: Page, field, data_value: str, type_queries: dict[str, str] | None = None
+) -> bool:
     if await _selectize_chip_present(page, data_value):
         logger.info("Skill chip already present: %s", data_value)
         return True
 
     try:
-        await _type_skill_query(page, field, data_value)
+        await _type_skill_query(page, field, data_value, type_queries)
         await page.wait_for_timeout(400)
         if await _selectize_chip_present(page, data_value):
             logger.info("Added skill chip: %s", data_value)
@@ -837,7 +1030,7 @@ async def _sync_skills_years(page: Page, spec: InstahyreFeedSpec) -> bool:
         result = await page.evaluate(
             _SYNC_SKILLS_YEARS_JS,
             {
-                "skills": skill_entry_tokens(spec.skills),
+                "skills": skill_entry_tokens(spec.skills, spec.skill_chip_values),
                 "years": spec.years,
             },
         )
@@ -910,9 +1103,9 @@ async def _ensure_opportunities_page(page: Page) -> None:
     await page.wait_for_timeout(PAGE_SETTLE_MS)
 
 
-async def _ui_add_skills(page: Page, skills: str) -> None:
+async def _ui_add_skills(page: Page, spec: InstahyreFeedSpec) -> None:
     await _ui_ensure_search_panel(page)
-    tokens = skill_entry_tokens(skills)
+    tokens = skill_entry_tokens(spec.skills, spec.skill_chip_values)
     if not tokens:
         return
     field = page.locator(SKILLS_SELECTIZE_INPUT)
@@ -933,7 +1126,7 @@ async def _ui_add_skills(page: Page, skills: str) -> None:
 
     added: list[str] = []
     for data_value in tokens:
-        if await _ui_add_one_skill_chip(page, field.first, data_value):
+        if await _ui_add_one_skill_chip(page, field.first, data_value, spec.skill_type_queries):
             added.append(data_value)
         else:
             logger.warning("Stopped adding skills after failure on %s", data_value)
@@ -1131,7 +1324,7 @@ async def _ui_apply_search_filters(page: Page, spec: InstahyreFeedSpec) -> bool:
     """Apply skills/years first, job functions last; never push joined API paths into searchObj."""
     await _ui_ensure_search_panel(page)
     await _ui_clear_skill_chips(page)
-    await _ui_add_skills(page, spec.skills)
+    await _ui_add_skills(page, spec)
     if spec.years is not None:
         await _ui_set_experience_years(page, spec.years)
     await _ui_add_job_functions(page, spec.job_functions)

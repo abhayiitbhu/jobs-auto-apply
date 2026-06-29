@@ -2,6 +2,8 @@
 
 Automatically search, filter, and apply to jobs across **Wellfound**, **Uplers**, **Naukri**, **Hirist**, and **Instahyre** — including company ATS forms (Greenhouse, Lever, Workday, etc.) and recruiter screening questions, which are answered from your profile facts with an optional local LLM.
 
+Everything is **domain-agnostic**: the role filters, skill mappings, answer engine, and platform queries are all driven by your config/profile, so the same tool can target backend, frontend, data, design, sales, or any other role family — nothing is hard-coded to a particular profession.
+
 | Platform | Apply type |
 |----------|------------|
 | Wellfound | In-platform Easy Apply |
@@ -105,7 +107,10 @@ When answering (terminal, Telegram, or WhatsApp), you have three ways to decline
 |--------|----------|------------|--------|
 | **Skip for now** | `s` | `skip` | Question stays pending; job may come back on the next run |
 | **Drop job** | `d` | `drop` | Abandons the job(s) linked to this question — they won't be retried |
+| **Drop job + block title** | — | `drop <word>` | Drops the job(s) **and** adds `<word>` to your persisted title blocklist, so every future run skips jobs whose title matches it (e.g. `drop python intern`) |
 | **Ignore question** | `i` | `ignore` | Saves a default N/A answer (e.g. "No", "0 years") and never asks again |
+
+The `drop <word>` blocklist is stored in `data/drop_keywords.json` and merged into `profile.skip_role_keywords` at config load — using the same whole-word, case-insensitive matching as config-defined skip keywords.
 
 Both channels share the same flow and the same two modes:
 
@@ -155,7 +160,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 | Section | Purpose |
 |---------|---------|
 | `user` | Name, email, phone, LinkedIn/GitHub — used to fill ATS forms. `phone_country_code` (e.g. `+91`) formats the phone in cover-letter signatures; `expected_display_name` defaults to your first name. |
-| `profile` | Core skills, roles, headline used for matching and cover notes. |
+| `profile` | Core skills, roles, headline used for matching and cover notes, plus the role-filter keys (`keep_role_keywords`, `skip_role_keywords`, `skip_role_patterns`, `skip_no_experience_skills` — see "Role filtering"). |
 | `compensation` | Current/expected CTC (used for CTC questions and cover letter). |
 | `cover_letter` | Cover note mode (`dynamic` / `template`), reference letter path, and options. |
 | `auth`, `browser` | Login method and Chrome-profile / Playwright browser settings. |
@@ -173,15 +178,53 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 ### Platform filters
 
 - **Naukri** — `keywords`, `locations`, `experience_max` (Naukri uses the max; `experience_min` feeds other platforms), `salary_min_lakhs`, `remote_only`, `quick_apply_only`, `sort`, `max_job_age_days`, `max_pages`
-- **Hirist** — `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`)
-- **Instahyre** — `job_functions`, `locations`, `experience_years`, `company_size`
+- **Hirist** — `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`), `experience_min`/`experience_max`, or fully-formed `search_urls` (paste Hirist search links to drive the exact queries)
+- **Instahyre** — `job_functions`, `locations`, `experience_years`, `company_size`, plus a `feeds` list (see below) and optional mapping overrides (`default_skills`, `job_function_aliases`, `skill_chip_values`, `skill_type_queries`)
 - **Wellfound / Uplers** — keywords, skills, locations, roles
+
+#### Instahyre feeds
+
+Instahyre is searched through one or more **feeds**. Each entry is either the personalized matching page or a skill/experience search:
+
+```yaml
+instahyre:
+  filters:
+    job_functions: ["Backend Development", "Full-Stack Development"]
+    feeds:
+      - matching: true                 # personalized "matching opportunities" page
+      - search: true
+        skills: "java,node,python"
+        years: 3
+      - search: true
+        skills: "java,node,python"
+        years: 5
+    # Optional mapping overrides (only needed outside the built-in defaults):
+    # default_skills: "java,node,python"     # fallback skills for search feeds
+    # job_function_aliases: { "data science": "/api/v1/job_function/12" }
+    # skill_chip_values:   { golang: "Go" }  # skill keyword -> selectize chip value
+    # skill_type_queries:  { Go: "golang" }  # chip value -> text typed into the box
+```
+
+Human-readable `job_functions` names are mapped to Instahyre's internal `/api/v1/job_function/<id>` paths; you can also pass raw paths directly or add your own names via `job_function_aliases`.
+
+### Role filtering
+
+The role filter is **config-driven and domain-neutral** — it ships with no built-in profession bias. Set these under `profile`:
+
+| Key | Effect |
+|-----|--------|
+| `keep_role_keywords` | Titles matching any of these are **always kept**, even if they also match a skip rule (e.g. `backend`, `java developer`). |
+| `skip_role_keywords` | Titles matching any of these whole-word/phrase terms are skipped (case-insensitive). |
+| `skip_role_patterns` | Advanced: raw regex patterns matched against the title. |
+| `skip_no_experience_skills` | A title is skipped only when it is **about** one of these skills/domains **and** names no skill you have (`core_skills` / `skill_years > 0`). So "Salesforce Developer" is skipped, but "Java Developer (Salesforce integration)" is kept. |
+
+To retarget the tool to another role family, move that family's terms into `keep_role_keywords` and add the families you want to exclude to `skip_role_keywords` / `skip_no_experience_skills`.
 
 ### Profile facts (answer the screening questions)
 
 Two YAML files under `profile/` feed the answer engine. Copy the templates in `profile.example/` to `profile/` (`cp -r profile.example profile`), then add real values — never invent PAN/UAN; leave blank to defer to manual.
 
-- **`profile/application_facts.yaml`** — structured facts: `pan`, `uan`, `gender`, `notice_period_days`, `serving_notice`, `education` (bachelors/masters/etc.), `date_of_birth`, `pincode`, `current_location`, `willing_to_relocate`, `preferred_locations`, `past_employers`, and a `skill_years` map (explicit years per skill; `0` = none) plus free-text facts like `reason_for_change`.
+- **`profile/application_facts.yaml`** — structured facts: `pan`, `uan`, `gender`, `notice_period_days`, `serving_notice`, `education` (bachelors/masters/etc.), `date_of_birth`, `pincode`, `current_location`, `willing_to_relocate`, `preferred_locations`, `past_employers`, and a `skill_years` map (explicit years per skill; `0` = none) plus free-text facts like `reason_for_change`. `serving_notice` also gates "Last Working Day / LWD" questions — when it's `false`/unset there is no valid date, so those questions are skipped (or deferred) rather than filled with a stale value.
 - **`profile/resume_facts.yaml`** — your resume as structured data: headline, skills, work `experience`, education, `skip_companies`, and a profile summary. Used for RAG and cover-letter matching.
 
 ## Local LLM (Ollama)
@@ -304,6 +347,8 @@ Created under `data/` (paths configurable in `config.paths`):
 | `data/user_memory.json` | Confirmed Q&A answers, review decisions, preferences. |
 | `data/pending_questions.json` | Questions deferred for you to answer manually. |
 | `data/technical_failures.json` | Jobs that failed to fill (for retry/inspection). |
+| `data/drop_keywords.json` | User-managed title blocklist (added via `drop <word>` over chat); merged into `profile.skip_role_keywords`. |
+| `data/memory_corrections.json` | Domain-agnostic corrections applied by `scripts/cleanup_user_memory.py`: `manual_answers` (force an exact question to a fixed answer), `notice_question_templates` (re-seed notice-period questions from your facts), and `resume_dump_patterns` (regex marking accidental resume/cover-letter dumps). |
 | `data/naukri_resume_sync.json` | Timestamp of the last Naukri resume sync (`config.paths.naukri_resume_sync`). |
 | `data/hirist_resume_sync.json` | Timestamp of the last Hirist resume sync (`config.paths.hirist_resume_sync`). |
 | `data/telegram_chat.json` | Captured Telegram `chat_id` (written by `telegram-login`). |
@@ -318,7 +363,7 @@ Created under `data/` (paths configurable in `config.paths`):
 |--------|---------|
 | `scripts/setup_ollama_models.sh` | Pull base models and create `job-answers` / `job-verify`. |
 | `scripts/generate_config_schema.py` | Regenerate `config.schema.json` from the config dataclasses. |
-| `scripts/cleanup_user_memory.py` | Prune/repair entries in `user_memory.json`. |
+| `scripts/cleanup_user_memory.py` | Prune/repair entries in `user_memory.json` and apply `data/memory_corrections.json`. |
 | `scripts/migrate_memory_to_groups.py` | Migrate legacy memory to group-keyed answers. |
 | `scripts/test_single_naukri.py` | Apply to a single Naukri job for debugging. |
 | `scripts/test_single_hirist.py` | Apply to a single Hirist job for debugging. |

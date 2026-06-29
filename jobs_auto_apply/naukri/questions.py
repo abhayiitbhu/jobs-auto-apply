@@ -89,6 +89,8 @@ _DATE_FIELD = re.compile(
     re.I,
 )
 
+_LAST_WORKING_DAY_FIELD = re.compile(r"\b(last\s*working\s*day|lwd)\b", re.I)
+
 _CITY_ALIASES = {
     "bangalore": "bengaluru",
     "bengaluru": "bengaluru",
@@ -1823,6 +1825,31 @@ def _is_date_field(label: str) -> bool:
     return bool(_DATE_FIELD.search(label))
 
 
+def _is_last_working_day_field(label: str) -> bool:
+    return bool(_LAST_WORKING_DAY_FIELD.search(label))
+
+
+def _facts_serving_notice(config: AppConfig | None) -> bool:
+    """True only when application_facts explicitly says the user is serving notice.
+
+    A "Last Working Day" only exists while serving notice; when it is false (or
+    unset) there is no valid date to give, so conditional "if serving notice …"
+    date questions should be skipped rather than filled with a stale value.
+    """
+    if config is None:
+        return False
+    try:
+        from ..profile.application_facts import load_application_facts
+
+        facts = load_application_facts(config)
+    except Exception:
+        return False
+    val = facts.get("serving_notice")
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("true", "yes", "1")
+
+
 def _normalize_dob_answer(answer: str) -> str:
     text = answer.strip()
     if not text:
@@ -3132,6 +3159,22 @@ async def fill_naukri_chatbot_question(
         return await _advanced()
 
     if _is_date_field(label):
+        # A "Last Working Day" only applies while serving notice. When the user is
+        # not serving notice (serving_notice: false / unset), there is no valid date
+        # — skip the conditional/optional question instead of typing a stale one. If
+        # the field can't be skipped, decline honestly (queued for manual) rather
+        # than recording a technical failure for an unfillable phantom date.
+        if _is_last_working_day_field(label) and not _facts_serving_notice(config):
+            if await _click_skip_question(page):
+                logger.info(
+                    "Naukri chatbot: skipped last-working-day question (not serving notice): %s",
+                    label[:60],
+                )
+                return await _advanced()
+            raise CannotAnswerTruthfully(
+                label,
+                reason="last working day asked but user is not serving notice",
+            )
         if await _fill_date_field(page, label, answer):
             return await _advanced()
         logger.warning(
