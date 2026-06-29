@@ -6,7 +6,7 @@ import logging
 
 from .config import AppConfig
 from .limits import apply_cap
-from .role_filter import filter_no_experience_roles, filter_skipped_roles
+from .role_filter import filter_no_experience_roles, filter_skipped_roles, role_filter_kwargs
 from .run_issues import run_attempted_job_keys
 from .utils import JobListing, filter_skipped_companies, job_key
 
@@ -49,9 +49,7 @@ def filter_pending_jobs(
     skipped_applied = 0
     filtered = filter_skipped_roles(
         filter_skipped_companies(jobs, config.profile.skip_companies),
-        skip_frontend=config.profile.skip_frontend_roles,
-        skip_qa_test=config.profile.skip_qa_test_roles,
-        keywords=config.profile.skip_role_keywords,
+        **role_filter_kwargs(config.profile),
     )
     filtered = filter_no_experience_roles(
         filtered,

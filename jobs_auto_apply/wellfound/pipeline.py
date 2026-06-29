@@ -8,7 +8,7 @@ from playwright.async_api import BrowserContext, Page
 from ..config import AppConfig
 from ..job_selection import load_applied_companies
 from ..limits import apply_cap, scrape_limit
-from ..role_filter import filter_skipped_roles
+from ..role_filter import filter_skipped_roles, role_filter_kwargs
 from ..salary import is_job_salary_eligible, parse_salary_ranges
 from ..utils import JobListing, company_key, filter_skipped_companies, job_key
 from .apply import process_wellfound_job
@@ -73,12 +73,7 @@ def _quick_skip(job: JobListing, config: AppConfig, applied_ids: set[str]) -> bo
         return True
     if not filter_skipped_companies([job], config.profile.skip_companies):
         return True
-    if not filter_skipped_roles(
-        [job],
-        skip_frontend=config.profile.skip_frontend_roles,
-        skip_qa_test=config.profile.skip_qa_test_roles,
-        keywords=config.profile.skip_role_keywords,
-    ):
+    if not filter_skipped_roles([job], **role_filter_kwargs(config.profile)):
         return True
     if config.application.skip_ineligible_salary:
         card_text = "\n".join(

@@ -29,10 +29,6 @@ def effective_min_confidence(
     return config.llm.min_confidence
 
 
-def input_type_allows_rag_agree(config: AppConfig, input_type: str) -> bool:
-    return input_type in config.llm.rag_agree_input_types
-
-
 def derive_effective_confidence(
     config: AppConfig,
     decision: Any,

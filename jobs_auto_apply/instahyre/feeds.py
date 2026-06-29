@@ -15,12 +15,9 @@ from .auth import INSTAHYRE_OPPORTUNITIES
 logger = logging.getLogger("job_apply")
 
 EMPLOYER_ROW = "div.employer-row"
-EMPLOYER_BLOCK = "div.employer-block"
 SKILLS_FILTER = '#job-search-section div.filter:has(label:text-is("Skills"))'
 SKILLS_SELECTIZE_INPUT = f"{SKILLS_FILTER} .selectize-input input"
-SKILLS_SELECTIZE_ITEMS = f"{SKILLS_FILTER} .selectize-input .item"
 SKILLS_SELECTIZE_REMOVE = f"{SKILLS_FILTER} .selectize-input .remove"
-SKILLS_SELECTIZE_CONTROL = f"{SKILLS_FILTER} .selectize-control"
 SKILLS_DROPDOWN_ITEMS = f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
 ROW_WAIT_MS = 35000
 ROW_POLL_MS = 250
@@ -203,10 +200,6 @@ def feeds_from_config(
     return default_search_feeds()
 
 
-def feeds_from_urls(urls: list[str]) -> list[InstahyreFeedSpec]:
-    return feeds_from_config(search_urls=urls)
-
-
 async def _ui_click_matching(page: Page) -> bool:
     for pattern in (r"^matching$", r"matching jobs", r"jobs matching"):
         for role in ("link", "tab", "button"):
@@ -261,27 +254,18 @@ def _is_node_skill(data_value: str) -> bool:
     return data_value in _NODE_CHIP_DATA_VALUES or data_value.lower() in ("node", "node.js", "nodejs")
 
 
-def _option_matches_token(option_text: str, token: str) -> bool:
-    """Match display text — exact only (Java ≠ JavaFX)."""
-    opt = option_text.strip().lower()
-    tok = token.strip().lower()
-    if opt == tok:
-        return True
-    return bool(token == "Nodejs" and opt in ("node.js", "nodejs", "node"))
-
-
 async def _ui_ensure_search_panel(page: Page) -> None:
     filters = page.locator("#job-search-section .job-search-filters")
     if await filters.count() > 0 and await filters.first.is_visible():
         return
     heading = page.locator("#job-search-section .job-search-heading")
     if await heading.count() > 0:
-        await heading.first.click(timeout=3000)
+        # Search section renders asynchronously (Angular) after navigation; wait for the
+        # heading to actually become visible instead of racing the 3s click timeout.
+        with contextlib.suppress(PlaywrightTimeout):
+            await heading.first.wait_for(state="visible", timeout=15000)
+        await heading.first.click(timeout=5000)
         await page.wait_for_timeout(500)
-
-
-async def _skills_selectize_input(page: Page):
-    return page.locator(SKILLS_SELECTIZE_INPUT)
 
 
 async def _ui_clear_skill_chips(page: Page) -> None:
@@ -498,12 +482,6 @@ _SET_ALL_SKILLS_JS = """
 _CLICK_SELECTIZE_OPTION_JS = _ADD_SELECTIZE_SKILL_JS
 
 
-async def _clear_selectize_query(page: Page, field) -> None:
-    await field.click(timeout=3000)
-    await page.keyboard.press("ControlOrMeta+A")
-    await page.keyboard.press("Backspace")
-
-
 _LIST_SKILL_DROPDOWN_LABELS_JS = """
 () => {
   const filters = document.querySelectorAll("#job-search-section div.filter");
@@ -540,9 +518,6 @@ _LIST_SKILL_DROPDOWN_LABELS_JS = """
 async def _list_skill_dropdown_labels(page: Page) -> list[str]:
     result = await page.evaluate(_LIST_SKILL_DROPDOWN_LABELS_JS)
     return result if isinstance(result, list) else []
-
-
-VISIBLE_SELECTIZE_ITEMS = f"{SKILLS_FILTER} .selectize-dropdown .selectize-dropdown-content .item[data-selectable]"
 
 
 async def _pick_selectize_option(page: Page, data_value: str, *, log_on_fail: bool = True) -> bool:

@@ -68,7 +68,7 @@ def _format_ctc_line(config: AppConfig) -> str:
 
 def _skills_sentence(skills: list[str]) -> str:
     if not skills:
-        return "Java Spring Boot, Python FastAPI/Flask, AWS, Kafka, and modern DevOps practices"
+        return "my core technical skills"
     return ", ".join(skills[:5])
 
 
@@ -129,35 +129,50 @@ def strip_markdown_emphasis(text: str) -> str:
     return text
 
 
-def _format_phone_display(phone: str) -> str:
-    digits = re.sub(r"\D", "", phone)
-    if len(digits) == 10:
-        return f"+91 {digits[:5]} {digits[5:]}"
-    if digits.startswith("91") and len(digits) == 12:
-        return f"+91 {digits[2:7]} {digits[7:]}"
-    return phone
+def _format_phone_display(phone: str, country_code: str = "") -> str:
+    """Format a phone number for the signature, optionally prefixing a dialing code.
+
+    ``country_code`` (e.g. "+91", "+1") is applied only when configured. When it is
+    blank, the number is returned exactly as entered so no country is assumed.
+    """
+    raw = (phone or "").strip()
+    if not raw:
+        return raw
+    cc_digits = re.sub(r"\D", "", country_code or "")
+    if not cc_digits:
+        return raw
+    digits = re.sub(r"\D", "", raw)
+    if digits.startswith(cc_digits) and len(digits) > len(cc_digits):
+        national = digits[len(cc_digits) :]
+    elif raw.startswith("+"):
+        return raw  # already carries some country code — leave it untouched
+    else:
+        national = digits
+    if len(national) == 10:
+        return f"+{cc_digits} {national[:5]} {national[5:]}"
+    return f"+{cc_digits} {national}"
 
 
-def _signature_block(facts: ResumeFacts) -> str:
+def _signature_block(facts: ResumeFacts, country_code: str = "") -> str:
     lines = ["Best regards,", facts.name]
     if facts.phone:
-        lines.append(_format_phone_display(facts.phone))
+        lines.append(_format_phone_display(facts.phone, country_code))
     return "\n".join(lines)
 
 
-def _ensure_signature(text: str, facts: ResumeFacts) -> str:
+def _ensure_signature(text: str, facts: ResumeFacts, country_code: str = "") -> str:
     """Ensure cover letter ends with name and phone."""
     text = text.rstrip()
     phone = (facts.phone or "").strip()
     name = (facts.name or "").strip()
     if not name:
         return text
-    display_phone = _format_phone_display(phone) if phone else ""
+    display_phone = _format_phone_display(phone, country_code) if phone else ""
     if display_phone and (display_phone in text or phone in text):
         return text
     if name in text and display_phone:
         return f"{text}\n{display_phone}"
-    return f"{text}\n\n{_signature_block(facts)}"
+    return f"{text}\n\n{_signature_block(facts, country_code)}"
 
 
 def _adapt_reference_cover_letter(
@@ -208,7 +223,7 @@ def _adapt_reference_cover_letter(
         if closing in text:
             text = text.replace(f"\n{closing}", f"\n\n{ctc}\n\n{closing}", 1)
 
-    return _ensure_signature(text, facts)
+    return _ensure_signature(text, facts, config.user.phone_country_code)
 
 
 def _company_about_from_job(job: JobListing) -> str:
@@ -287,7 +302,7 @@ def generate_cover_letter_dynamic(config: AppConfig, *, job: JobListing, jd: str
             "I would welcome the opportunity to discuss how my experience aligns with your current goals. "
             "Thank you for considering my application—I look forward to the possibility of speaking with you soon.",
             "",
-            _signature_block(facts),
+            _signature_block(facts, config.user.phone_country_code),
         ]
     )
     return _trim_words("\n".join(paragraphs), config.cover_letter.max_words)
@@ -354,4 +369,6 @@ async def build_cover_letter(
             job.url,
         )
 
-    return _ensure_signature(generate_cover_letter_dynamic(config, job=job, jd=jd), facts)
+    return _ensure_signature(
+        generate_cover_letter_dynamic(config, job=job, jd=jd), facts, config.user.phone_country_code
+    )

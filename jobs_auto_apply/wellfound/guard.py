@@ -124,14 +124,6 @@ async def resolve_post_submit(page: Page) -> str:
     return "failed"
 
 
-async def assert_not_restricted(page: Page) -> None:
-    if await is_access_restricted(page):
-        raise WellfoundAccessRestrictedError(
-            "Wellfound shows 'Access is temporarily restricted' — "
-            "stop the run, wait 30-60 minutes, then retry with fewer workers and delays."
-        )
-
-
 async def job_delay_seconds(config) -> float:
     lo = max(0, config.application.delay_seconds_min)
     hi = max(lo, config.application.delay_seconds_max)

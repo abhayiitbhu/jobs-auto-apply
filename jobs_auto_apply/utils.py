@@ -296,11 +296,6 @@ def record_abandoned_apply(
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def render_cover_note(template: str, *, title: str, company: str) -> str:
-    """Legacy static template helper."""
-    return template.replace("{{title}}", title).replace("{{company}}", company).replace("{{job_title}}", title)
-
-
 def _normalize_company(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 

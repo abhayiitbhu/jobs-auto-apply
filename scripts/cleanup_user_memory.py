@@ -35,8 +35,17 @@ MEMORY_PATH = ROOT / "data" / "user_memory.json"
 # never be auto-flagged for review by the context-free acceptance heuristic.
 _HUMAN_SOURCES = {"manual", "confirmed", "interactive", "pending", "reviewed"}
 
+# Heuristic markers of a resume / cover-letter prose dump that was accidentally
+# stored as a short-field answer. These signals virtually never appear in a
+# legitimate short answer, so matching one means the entry is junk. Kept generic
+# (no personal data) so it works for any user's memory file.
 _RESUME_DUMP = re.compile(
-    r"results-driven|profile\b|@itbhu|senior backend developer /envel|" r"implemented ci/cd pipelines|founder\|",
+    r"results[- ]driven"
+    r"|proven track record"
+    r"|(?:implemented|spearheaded|architected|orchestrated|engineered)\s+\w+"
+    r"|ci/cd pipelines?"
+    r"|[\w.+-]+@[\w-]+\.[\w.-]+"  # email address
+    r"|\bcurriculum vitae\b",
     re.I,
 )
 

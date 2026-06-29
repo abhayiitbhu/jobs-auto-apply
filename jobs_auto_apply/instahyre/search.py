@@ -16,7 +16,6 @@ logger = logging.getLogger("job_apply")
 
 EMPLOYER_ROW = "div.employer-row"
 VIEW_BUTTON = f"{EMPLOYER_ROW} #interested-btn, {EMPLOYER_ROW} button.button-interested"
-ROW_LINK = f"{EMPLOYER_ROW} a#employer-profile-opportunity, {EMPLOYER_ROW} a.row.text-link"
 _VIEW_RE = re.compile(r"view\s*[»>]?", re.I)
 
 

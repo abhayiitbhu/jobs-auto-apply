@@ -1,0 +1,10 @@
+Dear Hiring Manager,
+
+I am excited to apply for the {{title}} position at **{{company}}**. I bring several years of hands-on experience building scalable, high-performance microservices and distributed systems.
+
+Most recently at **Current Company**, I owned a core backend service end-to-end, working across **Java Spring Boot**, **Python FastAPI/Flask**, **Redis**, **MySQL**, **MongoDB**, **AWS**, and **Docker**. Earlier, I built REST APIs and event-driven pipelines that improved reliability and reduced latency for key product flows.
+
+I am drawn to **{{company}}** for its emphasis on {{skills}}, and I am confident my track record of delivering reliable, low-latency systems would let me contribute from day one.
+
+Best regards,
+Your Name

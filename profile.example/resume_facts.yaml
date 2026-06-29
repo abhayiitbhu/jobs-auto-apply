@@ -1,0 +1,40 @@
+# Your resume as structured data — the RAG / cover-letter source.
+# Copy this directory to `profile/` and replace every value with your own.
+# Only add claims that are actually true; never invent employers, skills, or metrics.
+
+name: Your Name
+headline: Senior Backend Developer
+email: you@example.com
+phone: "1234567890"
+location: City, Country
+education: "B.Tech in Computer Science, Your University, 2014–2018, CGPA 8/10"
+
+technical_skills:
+  languages: ["Java (Spring Boot)", "Python (FastAPI, Flask)", "JavaScript (Node.js)"]
+  databases_messaging: ["MySQL", "MongoDB", "Redis", "Kafka"]
+  cloud_devops: ["AWS (EC2, Lambda, S3)", "Docker", "Kubernetes", "CI/CD"]
+
+experience:
+  - company: Current Company
+    title: Senior Backend Developer
+    location: City
+    period: "Jan 2023 – Present"
+    highlights:
+      - Designed and built scalable microservices handling high request volumes
+      - Owned a core service end-to-end (APIs, data model, deployment, on-call)
+  - company: Previous Company
+    title: Backend Developer
+    location: City
+    period: "Jul 2020 – Dec 2022"
+    highlights:
+      - Built REST APIs and event-driven pipelines on AWS
+      - Improved reliability and reduced latency of key endpoints
+
+# Employers to never apply to (substring match, case-insensitive) — e.g. your
+# current and past employers. Leave empty to apply everywhere.
+skip_companies: []
+
+profile_summary: >
+  Results-driven backend engineer experienced in designing and implementing scalable
+  microservices, distributed systems, and cloud-native services. Comfortable across the
+  stack from API design to deployment and observability.

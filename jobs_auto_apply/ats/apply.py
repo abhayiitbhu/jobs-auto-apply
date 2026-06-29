@@ -5,12 +5,12 @@ import re
 from pathlib import Path
 
 from playwright.async_api import Page
-from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ..config import AppConfig, UserConfig
 from ..cookies import split_name
 from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import ensure_page_ready, goto_settled
+from ..resume_upload import upload_resume
 from ..utils import JobListing
 from .detector import detect_ats
 from .workday import apply_workday
@@ -59,17 +59,7 @@ async def _fill_by_patterns(page: Page, patterns: list[str], value: str) -> bool
 
 
 async def _upload_resume(page: Page, resume_path: Path) -> bool:
-    file_input = page.locator('input[type="file"]')
-    if await file_input.count() == 0:
-        return False
-    for i in range(await file_input.count()):
-        inp = file_input.nth(i)
-        try:
-            await inp.set_input_files(str(resume_path))
-            return True
-        except PlaywrightTimeout:
-            continue
-    return False
+    return await upload_resume(page, resume_path)
 
 
 async def _fill_cover_letter(page: Page, note: str) -> None:
@@ -156,11 +146,16 @@ async def apply_on_company_site(
         return False
 
     await _fill_standard_fields(page, config.user)
-    await _upload_resume(page, config.resume_path)
+    resume_ok = await _upload_resume(page, config.resume_path)
     await _fill_cover_letter(page, note)
 
     # Some ATS use multi-step forms.
     for _ in range(3):
+        # Don't keep blindly submitting a form that wants a resume we never attached.
+        requires_resume = await page.locator('input[type="file"]').count() > 0
+        if requires_resume and not resume_ok:
+            logger.warning("Resume field present but upload not confirmed on %s", page.url)
+            break
         if await _submit_form(page):
             body = (await page.locator("body").inner_text()).lower()
             if any(word in body for word in ("thank you", "application received", "submitted", "success")):
@@ -168,7 +163,7 @@ async def apply_on_company_site(
             if await page.locator('input[type="file"]').count() == 0:
                 return True
         await _fill_standard_fields(page, config.user)
-        await _upload_resume(page, config.resume_path)
+        resume_ok = await _upload_resume(page, config.resume_path) or resume_ok
         await _fill_cover_letter(page, note)
 
     logger.warning("Could not confirm submission on %s", page.url)

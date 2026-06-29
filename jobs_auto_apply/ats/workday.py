@@ -11,6 +11,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 from ..config import AppConfig, WorkdayConfig
 from ..cookies import split_name
 from ..cover_letter import strip_markdown_emphasis
+from ..resume_upload import upload_resume
 from ..utils import JobListing
 
 logger = logging.getLogger("job_apply")
@@ -153,19 +154,16 @@ async def _handle_auth(page: Page, config: AppConfig) -> None:
 
 
 async def _upload_resume(page: Page, resume_path: Path) -> bool:
-    file_input = page.locator('input[data-automation-id="file-upload-input-ref"], input[type="file"]')
-    if await file_input.count() == 0:
-        return False
-    for i in range(await file_input.count()):
-        inp = file_input.nth(i)
+    # Workday's hidden input is the fast path; fall back to the shared helper otherwise.
+    wd_input = page.locator('input[data-automation-id="file-upload-input-ref"]')
+    if await wd_input.count() > 0:
         try:
-            if await inp.is_visible() or True:
-                await inp.set_input_files(str(resume_path))
-                await page.wait_for_timeout(2500)
-                return True
+            await wd_input.first.set_input_files(str(resume_path))
+            await page.wait_for_timeout(2500)
+            return True
         except PlaywrightTimeout:
-            continue
-    return False
+            pass
+    return await upload_resume(page, resume_path)
 
 
 async def _fill_address(page: Page, wd: WorkdayConfig) -> None:

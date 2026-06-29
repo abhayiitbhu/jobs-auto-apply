@@ -55,10 +55,6 @@ def record_skip(
     )
 
 
-def run_issues() -> list[RunIssue]:
-    return list(_issues)
-
-
 def run_issue_count() -> int:
     return len(_issues)
 

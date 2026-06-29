@@ -15,6 +15,7 @@ from ..cookies import is_external_career_url
 from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import goto_settled, prepare_interactive_page
 from ..pending_questions import queue_unanswered
+from ..resume_upload import upload_resume
 from ..salary import is_job_salary_eligible, job_eligibility
 from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
 from .company import (
@@ -191,14 +192,12 @@ async def process_wellfound_job(
 
     await _enrich_wellfound_job_on_page(page, job, config)
 
-    from ..role_filter import should_skip_role
+    from ..role_filter import role_filter_kwargs, should_skip_role
 
     skip_role, role_reason = should_skip_role(
         job.title,
-        skip_frontend=config.profile.skip_frontend_roles,
-        skip_qa_test=config.profile.skip_qa_test_roles,
-        keywords=config.profile.skip_role_keywords,
         jd=job.description,
+        **role_filter_kwargs(config.profile),
     )
     if skip_role:
         logger.info("%sSkipping role: %s — %s", prefix, job.title, role_reason)
@@ -304,6 +303,8 @@ async def process_wellfound_job(
     except PlaywrightTimeout:
         logger.debug("%sNo cover note field; continuing", prefix)
 
+    await _upload_resume_in_modal(page, config)
+
     if not await _resolve_and_fill_questions(page, job, config):
         await close_apply_modal(page)
         if company_gate is not None:
@@ -341,18 +342,9 @@ async def ensure_resume_on_profile(page: Page, resume_path) -> None:
     await page.goto("https://wellfound.com/profile/edit", wait_until="domcontentloaded")
     await page.wait_for_timeout(2000)
 
-    file_input = page.locator('input[type="file"][accept*="pdf"], input[type="file"]')
-    if await file_input.count() == 0:
+    if not await upload_resume(page, resume_path, save=True):
         logger.info("No resume upload field on profile; assuming resume already attached.")
         return
-
-    await file_input.first.set_input_files(str(resume_path))
-    await page.wait_for_timeout(2000)
-
-    save_btn = page.get_by_role("button", name=re.compile("Save|Upload|Update", re.I))
-    if await save_btn.count() > 0:
-        await save_btn.first.click()
-        await page.wait_for_timeout(2000)
     logger.info("Resume uploaded to profile from %s", resume_path)
 
 
@@ -361,6 +353,13 @@ async def _fill_cover_note(page: Page, note: str) -> None:
     textarea = page.locator('textarea[placeholder*="note" i], textarea[placeholder*="message" i], textarea')
     await textarea.first.wait_for(state="visible", timeout=10000)
     await textarea.first.fill(note)
+
+
+async def _upload_resume_in_modal(page: Page, config: AppConfig) -> None:
+    """Attach a resume inside the apply modal only when a file field is shown."""
+    if await page.locator('input[type="file"]').count() == 0:
+        return
+    await upload_resume(page, config.resume_path)
 
 
 async def _submit_application_modal(page: Page) -> bool:
@@ -432,14 +431,12 @@ async def apply_to_job(
         logger.info("Skipping external ATS job: %s @ %s", job.title, job.company)
         return None
 
-    from ..role_filter import should_skip_role
+    from ..role_filter import role_filter_kwargs, should_skip_role
 
     skip_role, role_reason = should_skip_role(
         job.title,
-        skip_frontend=config.profile.skip_frontend_roles,
-        skip_qa_test=config.profile.skip_qa_test_roles,
-        keywords=config.profile.skip_role_keywords,
         jd=job.description,
+        **role_filter_kwargs(config.profile),
     )
     if skip_role:
         logger.info("Skipping role: %s @ %s — %s", job.title, job.company, role_reason)
@@ -524,6 +521,8 @@ async def apply_to_job(
         await _fill_cover_note(page, note)
     except PlaywrightTimeout:
         logger.debug("No cover note field; continuing")
+
+    await _upload_resume_in_modal(page, config)
 
     if not await _resolve_and_fill_questions(page, job, config):
         await close_apply_modal(page)

@@ -55,10 +55,6 @@ def _location_like_answer_fits(label: str, answer: str, field: dict[str, Any] | 
     return len(text) >= 2
 
 
-def _location_answer_fits(answer: str) -> bool:
-    return _location_like_answer_fits("", answer)
-
-
 def _saved_location_answer_matches_question(question: str, answer: str) -> bool:
     if classify_question(question) != "preferred_location":
         return True

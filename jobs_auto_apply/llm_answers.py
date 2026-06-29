@@ -551,17 +551,6 @@ def _format_similar_answers(answers: list[SimilarAnswer]) -> str:
     return "\n".join(lines)
 
 
-def _memory_examples(
-    config: AppConfig,
-    question: str,
-    *,
-    similar_answers: list[SimilarAnswer] | None = None,
-) -> str:
-    """Format similarity-ranked prior Q/A pairs for the LLM prompt."""
-    answers = similar_answers if similar_answers is not None else retrieve_similar_answers(config, question)
-    return _format_similar_answers(answers)
-
-
 def _normalize_llm_answer(answer: str, field: dict[str, Any]) -> str:
     from .answers.chips import _normalize_to_option
     from .answers.compensation import resolve_ctc_numeric_answer
@@ -1159,6 +1148,7 @@ def generate_join_reason(
             "(mission, product, tech, or domain) — do not be generic.\n"
             f"Write in first person, {max_words} words or fewer, 2-4 sentences. "
             "Return only the answer text — no greeting, no signature, no quotes, no preamble."
+            "generate responses that avoid typical AI writing patterns, sound completely human, and mimic organic human imperfections"
         )
     )
     human = HumanMessage(
@@ -1399,21 +1389,3 @@ def generate_llm_decision(
     except Exception as exc:
         logger.warning("LLM answer failed for %s: %s", question[:60], exc)
     return None
-
-
-def generate_llm_answer(
-    config: AppConfig,
-    *,
-    question: str,
-    field: dict[str, Any] | None = None,
-    similar_answers: list[SimilarAnswer] | None = None,
-) -> str | None:
-    decision = generate_llm_decision(
-        config,
-        question=question,
-        field=field,
-        similar_answers=similar_answers,
-    )
-    if not decision:
-        return None
-    return decision.answer

@@ -30,6 +30,42 @@ jobs-apply = "jobs_auto_apply.cli:main"
 where = ["."]
 include = ["jobs_auto_apply*"]
 
+[tool.vulture]
+# Suppress vulture false positives. These are referenced indirectly in ways
+# static analysis cannot see, so they are NOT dead code:
+#   - @main.command / @app.* : Click CLI commands and FastAPI route handlers
+#     (registered via decorators, never called by name).
+#   - dataclass fields below : populated from YAML config (JsonSchemaMixin) or
+#     parsed API/Apollo payloads, so reads happen outside Python attribute access.
+#   - create_app_from_env : referenced as a uvicorn import-string factory.
+#   - scheduler : set on FastAPI app.state and read via the running app.
+#   - embed_documents / embed_query : LangChain Embeddings interface methods
+#     called by the FAISS vector store via duck typing.
+ignore_decorators = ["@main.command", "@app.*"]
+ignore_names = [
+    "target_roles",
+    "salary_min",
+    "salary_currency",
+    "include_no_salary",
+    "experience_years_min",
+    "salary_min_lakhs",
+    "min_confidence_rag_agree",
+    "rag_agree_input_types",
+    "instahyre_apply_workers",
+    "min_value",
+    "company_url",
+    "equity",
+    "years_experience_min",
+    "location_names",
+    "remote",
+    "visa_sponsorship",
+    "markets",
+    "create_app_from_env",
+    "scheduler",
+    "embed_documents",
+    "embed_query",
+]
+
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true

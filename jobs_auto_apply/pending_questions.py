@@ -19,12 +19,11 @@ from .answers.fields import (
     infer_field_for_question,
     infer_field_input_type,
 )
-from .answers.memory_store import memory_key, sanitize_user_answer
-from .answers.validation import answer_acceptable_for_field, answer_usable
+from .answers.memory_store import sanitize_user_answer
+from .answers.validation import answer_usable
 from .application_questions import (
     draft_answer_for_field,
     get_saved_answer,
-    is_chip_range_label,
     is_generic_question_label,
     is_plausible_application_question,
     is_skill_years_question,
@@ -87,38 +86,6 @@ def _field_for_pending_entry(label: str, entry: dict[str, Any], config: AppConfi
     return enrich_field_for_llm(infer_field_for_question(label, config))
 
 
-def _memory_has_user_answer(
-    base_dir: Path,
-    label: str,
-    field: dict[str, Any],
-    config: AppConfig | None,
-) -> bool:
-    saved = get_saved_answer(base_dir, label, field, config=config)
-    if saved and not is_chip_range_label(saved):
-        if answer_usable(label, saved, field, config):
-            return True
-        fill = resolve_fill_answer(saved, field, config)
-        if fill and answer_usable(label, fill, field, config):
-            return True
-    entry = load_memory(base_dir, config).get("question_answers", {}).get(memory_key(label))
-    if not isinstance(entry, dict) or entry.get("needs_review"):
-        return False
-    ans = str(entry.get("answer", "")).strip()
-    if not ans:
-        return False
-    if entry.get("reviewed") and str(entry.get("source", "")) in (
-        "manual",
-        "pending",
-        "confirmed",
-        "interactive",
-    ):
-        return answer_usable(label, ans, field, config) or bool(
-            resolve_fill_answer(ans, field, config)
-            and answer_usable(label, resolve_fill_answer(ans, field, config) or "", field, config)
-        )
-    return False
-
-
 def _coerce_pending_user_answer(
     label: str,
     user_answer: str,
@@ -174,34 +141,6 @@ def _coerce_pending_user_answer(
 
         return canonicalize_stored_answer(label, text, field, config)
     return text
-
-
-def _group_has_saved_answer(
-    base_dir: Path,
-    group_id: str,
-    config: AppConfig | None = None,
-) -> bool:
-    if group_id.startswith("unique:"):
-        return False
-    memory = load_memory(base_dir, config)
-    for entry in memory.get("question_answers", {}).values():
-        if not isinstance(entry, dict):
-            continue
-        stored_q = str(entry.get("question", "")).strip()
-        ans = str(entry.get("answer", "")).strip()
-        if not stored_q or not ans or is_chip_range_label(ans):
-            continue
-        if entry.get("needs_review"):
-            continue
-        if classify_question(stored_q) != group_id:
-            continue
-        field = enrich_field_for_llm(infer_field_for_question(stored_q, config))
-        if answer_acceptable_for_field(stored_q, ans, field):
-            return True
-        fill = resolve_fill_answer(ans, field, config)
-        if fill and answer_acceptable_for_field(stored_q, fill, field):
-            return True
-    return False
 
 
 def _save_pending_group_answers(
@@ -404,11 +343,6 @@ def mark_group_notified(
 def pending_count(base_dir: Path, config: AppConfig | None = None) -> int:
     prune_answered(base_dir, config)
     return len(pending_question_list(base_dir, config))
-
-
-def remove_answered(base_dir: Path, label: str) -> None:
-    group_id = classify_question(label)
-    _remove_group(base_dir, group_id)
 
 
 def _remove_group(base_dir: Path, group_id: str) -> None:
@@ -1290,12 +1224,6 @@ def _dedupe_retry_jobs(refs: list[PendingJobRef]) -> list[PendingJobRef]:
             seen.add(ref.url)
             out.append(ref)
     return out
-
-
-def answer_pending_interactive(base_dir: Path, config: AppConfig | None = None) -> int:
-    """Prompt for pending questions grouped by topic."""
-    answered, _jobs = answer_pending_groups_interactive(base_dir, config=config)
-    return answered
 
 
 def summary_for_run(base_dir: Path, *, platform: str | None = None, config: AppConfig | None = None) -> str:

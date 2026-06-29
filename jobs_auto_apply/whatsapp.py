@@ -264,10 +264,6 @@ class WhatsAppClient:
         count, _ = await self._read_messages()
         return count
 
-    async def _latest_message_text(self) -> str:
-        _, last = await self._read_messages()
-        return last
-
     async def wait_for_reply(self, *, baseline: int, timeout: int | None = None) -> str | None:
         """Poll until a new message bubble appears after ours; return its text."""
         timeout = timeout or self.reply_timeout_seconds

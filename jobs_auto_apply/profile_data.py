@@ -19,22 +19,6 @@ class ResumeFacts:
     experience: list[dict[str, Any]]
     profile_summary: str
 
-    def all_skills_flat(self) -> list[str]:
-        skills: list[str] = []
-        for group in self.technical_skills.values():
-            skills.extend(group)
-        return skills
-
-    def recent_role_blurb(self) -> str:
-        if not self.experience:
-            return self.profile_summary.strip()
-        latest = self.experience[0]
-        company = latest.get("company", "")
-        title = latest.get("title", "")
-        highlights = latest.get("highlights", [])
-        hl = highlights[0] if highlights else ""
-        return f"Most recently {title} at {company} ({latest.get('period', '')}), where I {hl.lower().rstrip('.')}."
-
 
 def build_resume_context(facts: ResumeFacts) -> str:
     """Structured resume context from profile/resume_facts.yaml."""

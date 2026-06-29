@@ -8,50 +8,6 @@ from typing import Any
 import yaml
 from dataclasses_jsonschema import JsonSchemaMixin
 
-# Skills/domains the candidate has no experience in — titles centered on these
-# (and not also naming a known skill) are skipped before apply. Override via
-# profile.skip_no_experience_skills in config.yaml.
-DEFAULT_NO_EXPERIENCE_SKILLS: tuple[str, ...] = (
-    "salesforce",
-    "wordpress",
-    "shopify",
-    "drupal",
-    "magento",
-    "sharepoint",
-    "data engineer",
-    "data engineering",
-    "data scientist",
-    "data science",
-    "data analyst",
-    "scala",
-    "snowflake",
-    "databricks",
-    "tableau",
-    "power bi",
-    "sap",
-    "abap",
-    "servicenow",
-    "sailpoint",
-    "mulesoft",
-    "pega",
-    "blue prism",
-    "uipath",
-    "automation anywhere",
-    "rpa",
-    "blockchain",
-    "web3",
-    "solidity",
-    ".net",
-    "dotnet",
-    "php",
-    "ruby on rails",
-    "mainframe",
-    "cobol",
-    "embedded",
-    "firmware",
-    "vlsi",
-)
-
 
 @dataclass
 class UserConfig(JsonSchemaMixin):
@@ -61,33 +17,44 @@ class UserConfig(JsonSchemaMixin):
     linkedin: str
     expected_display_name: str
     github: str = ""
+    # Dialing code for the candidate's phone (e.g. "+91", "+1"). Used only to format
+    # the phone number in cover-letter signatures. Leave blank to print the number
+    # exactly as entered (no country code assumed).
+    phone_country_code: str = ""
 
 
 @dataclass
 class CompensationConfig(JsonSchemaMixin):
-    current_ctc_lpa: float = 38.0
-    current_fixed_lpa: float = 30.0
-    current_variable_lpa: float = 2.0
-    current_esops_lpa: float = 6.0
-    expected_ctc_lpa: float = 45.0
+    current_ctc_lpa: float = 0.0
+    current_fixed_lpa: float = 0.0
+    current_variable_lpa: float = 0.0
+    current_esops_lpa: float = 0.0
+    expected_ctc_lpa: float = 0.0
 
 
 @dataclass
 class ProfileConfig(JsonSchemaMixin):
-    headline: str = "Senior Backend / Platform Engineer"
-    years_experience: int = 5
+    headline: str = ""
+    years_experience: int = 0
     core_skills: list[str] = field(default_factory=list)
     target_roles: list[str] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
-    skip_companies: list[str] = field(default_factory=lambda: ["Decentro", "Savein", "WECP"])
-    skip_frontend_roles: bool = True
-    skip_qa_test_roles: bool = True
+    skip_companies: list[str] = field(default_factory=list)
+    # Role filters are fully config-driven and domain-neutral so the tool works for
+    # any field (law, finance, design, engineering, …). Define what to skip via
+    # skip_role_keywords / skip_role_patterns and what to keep via keep_role_keywords.
     skip_role_keywords: list[str] = field(default_factory=list)
+    # "Keep" anchors — a title matching any of these is kept even if it also matches a
+    # skip rule. Empty by default; set to the terms that define your target roles
+    # (e.g. "attorney", "counsel" for law; "backend", "platform" for engineering).
+    keep_role_keywords: list[str] = field(default_factory=list)
+    # Extra raw regex patterns to skip (full power, matched against the title,
+    # case-insensitive). Use for anything the keyword/built-in groups can't express.
+    skip_role_patterns: list[str] = field(default_factory=list)
     # Skills/domains you have NO experience in. A job is skipped when its TITLE is
     # about one of these AND does not also name a skill you do have (core_skills /
-    # skill_years > 0) — i.e. "Salesforce Developer" is skipped, "Java Developer
-    # (Salesforce integration)" is kept.
-    skip_no_experience_skills: list[str] = field(default_factory=lambda: list(DEFAULT_NO_EXPERIENCE_SKILLS))
+    # skill_years > 0). Empty by default; populate it for your own field.
+    skip_no_experience_skills: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -378,10 +345,10 @@ class StateConfig(JsonSchemaMixin):
 @dataclass
 class WorkdayAddressConfig(JsonSchemaMixin):
     line1: str = ""
-    city: str = "Bengaluru"
-    state: str = "Karnataka"
+    city: str = ""
+    state: str = ""
     postal_code: str = ""
-    country: str = "India"
+    country: str = ""
 
 
 @dataclass
@@ -499,6 +466,23 @@ def _section(data: dict[str, Any], key: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _user_config(data: dict[str, Any]) -> UserConfig:
+    name = str(data.get("name", "")).strip()
+    # Default the Wellfound nav display name to the first name when not provided.
+    display = str(data.get("expected_display_name", "")).strip()
+    if not display and name:
+        display = name.split()[0]
+    return UserConfig(
+        name=name,
+        email=str(data.get("email", "")),
+        phone=str(data.get("phone", "")),
+        linkedin=str(data.get("linkedin", "")),
+        expected_display_name=display,
+        github=str(data.get("github", "")),
+        phone_country_code=str(data.get("phone_country_code", "")).strip(),
+    )
+
+
 def _wellfound_filters(data: dict[str, Any]) -> WellfoundFiltersConfig:
     return WellfoundFiltersConfig(
         use_profile_filters=bool(data.get("use_profile_filters", True)),
@@ -613,71 +597,26 @@ def _platform_config(
 
 def _profile_config(data: dict[str, Any]) -> ProfileConfig:
     return ProfileConfig(
-        headline=str(data.get("headline", "Senior Backend / Platform Engineer")),
-        years_experience=int(data.get("years_experience", 5)),
-        core_skills=list(
-            data.get(
-                "core_skills",
-                [
-                    "Java",
-                    "Spring Boot",
-                    "Python",
-                    "FastAPI",
-                    "Flask",
-                    "AWS",
-                    "Kafka",
-                    "Redis",
-                    "MySQL",
-                    "MongoDB",
-                    "Docker",
-                    "Microservices",
-                    "System Design",
-                ],
-            )
-        ),
-        target_roles=list(
-            data.get(
-                "target_roles",
-                [
-                    "Backend Engineer",
-                    "Java Developer",
-                    "Python Developer",
-                    "Platform Engineer",
-                    "System Architect",
-                    "Forward Deployed Engineer",
-                ],
-            )
-        ),
-        locations=list(
-            data.get(
-                "locations",
-                [
-                    "India",
-                    "Bengaluru",
-                    "Mumbai",
-                    "Delhi NCR",
-                    "Hyderabad",
-                    "Pune",
-                    "Chennai",
-                    "Remote",
-                ],
-            )
-        ),
-        skip_companies=list(data.get("skip_companies", ["Decentro", "Savein", "WECP"])),
-        skip_frontend_roles=bool(data.get("skip_frontend_roles", True)),
-        skip_qa_test_roles=bool(data.get("skip_qa_test_roles", True)),
+        headline=str(data.get("headline", "")),
+        years_experience=int(data.get("years_experience", 0)),
+        core_skills=list(data.get("core_skills", [])),
+        target_roles=list(data.get("target_roles", [])),
+        locations=list(data.get("locations", [])),
+        skip_companies=list(data.get("skip_companies", [])),
         skip_role_keywords=list(data.get("skip_role_keywords", [])),
-        skip_no_experience_skills=list(data.get("skip_no_experience_skills", DEFAULT_NO_EXPERIENCE_SKILLS)),
+        keep_role_keywords=list(data.get("keep_role_keywords", [])),
+        skip_role_patterns=list(data.get("skip_role_patterns", [])),
+        skip_no_experience_skills=list(data.get("skip_no_experience_skills", [])),
     )
 
 
 def _compensation_config(data: dict[str, Any]) -> CompensationConfig:
     return CompensationConfig(
-        current_ctc_lpa=float(data.get("current_ctc_lpa", 38)),
-        current_fixed_lpa=float(data.get("current_fixed_lpa", 30)),
-        current_variable_lpa=float(data.get("current_variable_lpa", 2)),
-        current_esops_lpa=float(data.get("current_esops_lpa", 6)),
-        expected_ctc_lpa=float(data.get("expected_ctc_lpa", 45)),
+        current_ctc_lpa=float(data.get("current_ctc_lpa", 0)),
+        current_fixed_lpa=float(data.get("current_fixed_lpa", 0)),
+        current_variable_lpa=float(data.get("current_variable_lpa", 0)),
+        current_esops_lpa=float(data.get("current_esops_lpa", 0)),
+        expected_ctc_lpa=float(data.get("expected_ctc_lpa", 0)),
     )
 
 
@@ -699,10 +638,10 @@ def _workday_config(data: dict[str, Any]) -> WorkdayConfig:
         max_form_pages=int(data.get("max_form_pages", 10)),
         address=WorkdayAddressConfig(
             line1=str(addr.get("line1", "")),
-            city=str(addr.get("city", "Bengaluru")),
-            state=str(addr.get("state", "Karnataka")),
+            city=str(addr.get("city", "")),
+            state=str(addr.get("state", "")),
             postal_code=str(addr.get("postal_code", "")),
-            country=str(addr.get("country", "India")),
+            country=str(addr.get("country", "")),
         ),
     )
 
@@ -857,14 +796,7 @@ def load_config(path: Path) -> AppConfig:
         )
 
     config = AppConfig(
-        user=UserConfig(
-            name=str(user.get("name", "Abhay Jain")),
-            email=str(user.get("email", "")),
-            phone=str(user.get("phone", "")),
-            linkedin=str(user.get("linkedin", "")),
-            expected_display_name=str(user.get("expected_display_name", "abhay")),
-            github=str(user.get("github", "")),
-        ),
+        user=_user_config(user),
         resume=ResumeConfig(
             path=str(resume.get("path", "resume.pdf")),
             sync_to_wellfound=bool(resume.get("sync_to_wellfound", False)),

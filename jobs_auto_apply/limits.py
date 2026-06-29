@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-UNLIMITED = 0
 SCRAPE_CAP = 2000
 
 

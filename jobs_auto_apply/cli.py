@@ -78,7 +78,12 @@ from .review import (
     review_summary,
     save_review_queue,
 )
-from .role_filter import auto_reject_skipped_roles, filter_skipped_roles, should_skip_role
+from .role_filter import (
+    auto_reject_skipped_roles,
+    filter_skipped_roles,
+    role_filter_kwargs,
+    should_skip_role,
+)
 from .run_issues import (
     clear_run_issues,
     run_issue_count,
@@ -620,13 +625,7 @@ async def _apply_reviewed(config: AppConfig, platform: str) -> None:
             for item in items
             if job_key(item.source, item.job_id) not in applied_ids
             and not should_skip_company(item.company, config.profile.skip_companies)
-            and not should_skip_role(
-                item.title,
-                skip_frontend=config.profile.skip_frontend_roles,
-                skip_qa_test=config.profile.skip_qa_test_roles,
-                keywords=config.profile.skip_role_keywords,
-                jd=item.jd_excerpt,
-            )[0]
+            and not should_skip_role(item.title, jd=item.jd_excerpt, **role_filter_kwargs(config.profile))[0]
             and (not config.application.one_job_per_company or company_key(item.company) not in applied_companies)
         ]
         if config.application.skip_ineligible_salary:
@@ -689,12 +688,7 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
         items = items_from_payload(payload)
         by_key = {item.job_key: item for item in items}
 
-        rejected_roles = auto_reject_skipped_roles(
-            items,
-            skip_frontend=config.profile.skip_frontend_roles,
-            skip_qa_test=config.profile.skip_qa_test_roles,
-            keywords=config.profile.skip_role_keywords,
-        )
+        rejected_roles = auto_reject_skipped_roles(items, **role_filter_kwargs(config.profile))
         if rejected_roles:
             save_review_queue(config.base_dir, name, build_review_payload(name, items), review_dir)
             console.print(f"[yellow]{name}: auto-rejected {rejected_roles} frontend/skipped roles.[/yellow]")
@@ -740,12 +734,7 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
                     await _collect_jobs_for_platform(name, config, page),
                     config.profile.skip_companies,
                 )
-                raw_jobs = filter_skipped_roles(
-                    raw_jobs,
-                    skip_frontend=config.profile.skip_frontend_roles,
-                    skip_qa_test=config.profile.skip_qa_test_roles,
-                    keywords=config.profile.skip_role_keywords,
-                )
+                raw_jobs = filter_skipped_roles(raw_jobs, **role_filter_kwargs(config.profile))
                 candidates: list[JobListing] = []
                 for job in raw_jobs:
                     key = job_key(job.source, job.job_id)
@@ -774,13 +763,7 @@ async def _review(config_path: Path, platform: str, no_prompt: bool, re_enrich: 
 
                 new_items: list[ReviewItem] = []
                 for item in enriched_items:
-                    if should_skip_role(
-                        item.title,
-                        skip_frontend=config.profile.skip_frontend_roles,
-                        skip_qa_test=config.profile.skip_qa_test_roles,
-                        keywords=config.profile.skip_role_keywords,
-                        jd=item.jd_excerpt,
-                    )[0]:
+                    if should_skip_role(item.title, jd=item.jd_excerpt, **role_filter_kwargs(config.profile))[0]:
                         console.print(f"  Skip frontend/skipped role: {item.title} @ {item.company}")
                         continue
                     if config.application.skip_ineligible_salary and not item.meta.get("salary_eligible", True):
@@ -842,13 +825,7 @@ def _interactive_review(config: AppConfig, platform: str, items: list[ReviewItem
         for item in items
         if item.status == "pending"
         and not should_skip_company(item.company, skip)
-        and not should_skip_role(
-            item.title,
-            skip_frontend=config.profile.skip_frontend_roles,
-            skip_qa_test=config.profile.skip_qa_test_roles,
-            keywords=config.profile.skip_role_keywords,
-            jd=item.jd_excerpt,
-        )[0]
+        and not should_skip_role(item.title, jd=item.jd_excerpt, **role_filter_kwargs(config.profile))[0]
     ]
     if not pending:
         console.print(f"[green]{platform}: nothing pending to review.[/green]")
@@ -1053,9 +1030,7 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
                 await wellfound_collect_jobs(page, scrape_limit(config.application.max_jobs_per_run, multiplier=1)),
                 config.profile.skip_companies,
             ),
-            skip_frontend=config.profile.skip_frontend_roles,
-            skip_qa_test=config.profile.skip_qa_test_roles,
-            keywords=config.profile.skip_role_keywords,
+            **role_filter_kwargs(config.profile),
         )
         console.print(f"[cyan]Collected {len(raw_jobs)} listings from Wellfound search[/cyan]")
         candidates: list[JobListing] = []
@@ -1079,13 +1054,7 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
         pending: list[JobListing] = []
         skipped_role = skipped_salary = 0
         for item in enriched:
-            if should_skip_role(
-                item.title,
-                skip_frontend=config.profile.skip_frontend_roles,
-                skip_qa_test=config.profile.skip_qa_test_roles,
-                keywords=config.profile.skip_role_keywords,
-                jd=item.jd_excerpt,
-            )[0]:
+            if should_skip_role(item.title, jd=item.jd_excerpt, **role_filter_kwargs(config.profile))[0]:
                 skipped_role += 1
                 continue
             if config.application.skip_ineligible_salary and not is_job_salary_eligible(

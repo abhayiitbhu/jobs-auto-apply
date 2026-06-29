@@ -31,7 +31,6 @@ from .search import (
 
 logger = logging.getLogger("job_apply")
 
-INSTAHYRE_DELAY_MS = 400  # default; overridden by application.platform_delays.instahyre_ms
 APPLY_MODAL = ".application-modal.candidate-apply-modal, .modal.in, .modal.show, [role='dialog'], .apply-modal"
 
 

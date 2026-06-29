@@ -7,59 +7,68 @@ from .utils import JobListing
 
 logger = logging.getLogger("job_apply")
 
-# Titles that are clearly backend/platform even if they mention a UI stack.
-# NOTE: deliberately excludes devops/sre/infra so those can be skipped via keywords.
-BACKEND_TITLE_HINT = re.compile(
-    r"\b(backend|back[\s-]?end|platform|" r"python developer|java developer|node\.?js backend)\b",
-    re.I,
+# Example "keep" anchors for a backend/platform engineering search. NOT applied by
+# default — the filter is domain-neutral unless you set profile.keep_role_keywords.
+# Copy any of these into config.yaml (or write your own, e.g. legal/finance terms).
+# Matched as whole words/phrases, case-insensitively.
+DEFAULT_KEEP_ROLE_KEYWORDS: tuple[str, ...] = (
+    "backend",
+    "back end",
+    "back-end",
+    "platform",
+    "python developer",
+    "java developer",
+    "nodejs backend",
+    "node.js backend",
 )
-
-DEFAULT_FRONTEND_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"front[\s-]?end", re.I),
-    re.compile(r"\bui\s*/?\s*ux\b", re.I),
-    re.compile(r"\bui\s+engineer\b", re.I),
-    re.compile(r"\b(react|angular|vue|svelte|next\.?js)\s+(developer|engineer|dev)\b", re.I),
-    re.compile(r"\b(developer|engineer|dev|sde|architect)\s*/\s*(react|angular|vue)\b", re.I),
-    re.compile(r"\breact\s+native\b", re.I),
-    re.compile(r"\bfrontend\s+(developer|engineer|dev)\b", re.I),
-    re.compile(r"\bfull[\s-]?stack\b.{0,50}\b(react|angular|vue)\b", re.I),
-    re.compile(r"\b(react|angular|vue)\s*/\s*\w+", re.I),
-    re.compile(r"\bangular\s+developer\b", re.I),
-]
-
-DEFAULT_QA_TEST_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"\bqa\b", re.I),
-    re.compile(r"\bquality assurance\b", re.I),
-    re.compile(r"\bqae?\b", re.I),
-    re.compile(r"\bsdet\b", re.I),
-    re.compile(r"\bste\b", re.I),
-    re.compile(r"\btester\b", re.I),
-    re.compile(r"\btest\s+(engineer|lead|manager|analyst|specialist|architect)\b", re.I),
-    re.compile(r"\b(engineer|developer|analyst)\s*/\s*test(ing)?\b", re.I),
-    re.compile(r"\bautomation\s+test", re.I),
-    re.compile(r"\btest\s+automation\b", re.I),
-    re.compile(r"\bmanual\s+test", re.I),
-    re.compile(r"\btesting\s+engineer\b", re.I),
-]
 
 
 def _title_patterns(
     keywords: list[str],
     *,
-    skip_frontend: bool,
-    skip_qa_test: bool,
+    skip_patterns: list[str] | None = None,
 ) -> list[re.Pattern[str]]:
     patterns: list[re.Pattern[str]] = []
-    if skip_frontend:
-        patterns.extend(DEFAULT_FRONTEND_PATTERNS)
-    if skip_qa_test:
-        patterns.extend(DEFAULT_QA_TEST_PATTERNS)
+    for raw in skip_patterns or []:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        try:
+            patterns.append(re.compile(text, re.I))
+        except re.error as exc:
+            logger.warning("Ignoring invalid skip_role_patterns regex %r: %s", raw, exc)
     for kw in keywords:
         text = kw.strip()
         if not text:
             continue
         patterns.append(re.compile(_keyword_regex(text), re.I))
     return patterns
+
+
+def _keep_regex(keep_keywords: list[str] | tuple[str, ...] | None) -> re.Pattern[str] | None:
+    """Build a single case-insensitive regex from the keep keywords (or None).
+
+    No implicit defaults: when no keep keywords are configured, there are no keep
+    anchors (returns None) so the filter stays domain-neutral.
+    """
+    source = keep_keywords or []
+    parts = [_keyword_regex(str(k).strip()) for k in source if str(k).strip()]
+    if not parts:
+        return None
+    return re.compile("|".join(parts), re.I)
+
+
+def role_filter_kwargs(profile) -> dict[str, object]:
+    """Bundle a profile's role-filter settings for should_skip_role / filter_skipped_roles.
+
+    Lets every call site stay in sync with config via a single ``**role_filter_kwargs(...)``
+    instead of repeating each keyword argument.
+    """
+    return {
+        "keywords": profile.skip_role_keywords,
+        "keep_keywords": profile.keep_role_keywords,
+        "skip_patterns": profile.skip_role_patterns,
+    }
 
 
 def _keyword_regex(text: str) -> str:
@@ -74,42 +83,34 @@ def _keyword_regex(text: str) -> str:
 def should_skip_role(
     title: str,
     *,
-    skip_frontend: bool = True,
-    skip_qa_test: bool = True,
     keywords: list[str] | None = None,
+    keep_keywords: list[str] | None = None,
+    skip_patterns: list[str] | None = None,
     jd: str = "",
 ) -> tuple[bool, str]:
-    """Return (skip, reason). Skips frontend/UI and QA/test roles; keeps backend/platform titles."""
+    """Return (skip, reason).
+
+    A title matching any ``keep_keywords`` anchor is kept; otherwise it is skipped
+    when it matches any custom ``skip_patterns`` regex or any ``keywords`` term.
+    All inputs are config-driven, so the same machinery can target backend,
+    frontend, or any other role family in any domain.
+    """
     title = (title or "").strip()
     if not title:
         return False, ""
 
-    if BACKEND_TITLE_HINT.search(title) and not re.search(r"front[\s-]?end", title, re.I):
+    keep_re = _keep_regex(keep_keywords)
+
+    # A keep-anchor rescues the title from all skip rules.
+    if keep_re and keep_re.search(title):
         return False, ""
 
-    for pat in _title_patterns(keywords or [], skip_frontend=skip_frontend, skip_qa_test=skip_qa_test):
+    for pat in _title_patterns(
+        keywords or [],
+        skip_patterns=skip_patterns,
+    ):
         if pat.search(title):
             return True, f"role filter: {title!r}"
-
-    # Strong frontend signal in JD when title is generic
-    if skip_frontend and jd and not BACKEND_TITLE_HINT.search(title):
-        jd_head = jd[:1200].lower()
-        if (
-            re.search(r"front[\s-]?end", jd_head)
-            and re.search(r"\b(react|angular|vue|typescript|ui/ux)\b", jd_head)
-            and not re.search(r"\b(backend|python|java|fastapi|spring)\b", jd_head)
-        ):
-            return True, "role filter: JD is frontend-focused"
-
-    if skip_qa_test and jd and not BACKEND_TITLE_HINT.search(title):
-        jd_head = jd[:1500]
-        if re.search(
-            r"\b(quality assurance|test automation|manual testing|automation testing|"
-            r"software testing|qa engineer|sdet)\b",
-            jd_head,
-            re.I,
-        ):
-            return True, "role filter: JD is QA/test-focused"
 
     return False, ""
 
@@ -167,19 +168,19 @@ def filter_no_experience_roles(
 def filter_skipped_roles(
     jobs: list[JobListing],
     *,
-    skip_frontend: bool = True,
-    skip_qa_test: bool = True,
     keywords: list[str] | None = None,
+    keep_keywords: list[str] | None = None,
+    skip_patterns: list[str] | None = None,
 ) -> list[JobListing]:
-    if not skip_frontend and not skip_qa_test and not keywords:
+    if not keywords and not skip_patterns:
         return jobs
     kept: list[JobListing] = []
     for job in jobs:
         skip, reason = should_skip_role(
             job.title,
-            skip_frontend=skip_frontend,
-            skip_qa_test=skip_qa_test,
             keywords=keywords,
+            keep_keywords=keep_keywords,
+            skip_patterns=skip_patterns,
             jd=job.description,
         )
         if skip:
@@ -189,36 +190,12 @@ def filter_skipped_roles(
     return kept
 
 
-def filter_skipped_review_titles(
-    items,
-    *,
-    skip_frontend: bool = True,
-    skip_qa_test: bool = True,
-    keywords: list[str] | None = None,
-):
-    """Filter review items by title/JD."""
-    kept = []
-    for item in items:
-        skip, reason = should_skip_role(
-            item.title,
-            skip_frontend=skip_frontend,
-            skip_qa_test=skip_qa_test,
-            keywords=keywords,
-            jd=getattr(item, "jd_excerpt", "") or "",
-        )
-        if skip:
-            logger.info("Skipping role: %s — %s", item.title, reason)
-            continue
-        kept.append(item)
-    return kept
-
-
 def auto_reject_skipped_roles(
     items,
     *,
-    skip_frontend: bool = True,
-    skip_qa_test: bool = True,
     keywords: list[str] | None = None,
+    keep_keywords: list[str] | None = None,
+    skip_patterns: list[str] | None = None,
 ) -> int:
     """Mark pending review items as rejected when they match skip rules. Returns count rejected."""
     count = 0
@@ -227,9 +204,9 @@ def auto_reject_skipped_roles(
             continue
         skip, reason = should_skip_role(
             item.title,
-            skip_frontend=skip_frontend,
-            skip_qa_test=skip_qa_test,
             keywords=keywords,
+            keep_keywords=keep_keywords,
+            skip_patterns=skip_patterns,
             jd=getattr(item, "jd_excerpt", "") or "",
         )
         if skip:

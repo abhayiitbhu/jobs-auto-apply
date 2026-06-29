@@ -1,14 +1,16 @@
 # Copy to config.yaml and customize.
 
 user:
-  name: "Abhay Jain"
-  email: "abhay.jain.cse11@itbhu.ac.in"
-  phone: "9358161425"
-  linkedin: "https://www.linkedin.com/in/abhay-jain-74587584/"
-  github: "https://github.com/abhayiitbhu"
-  expected_display_name: "abhay"
+  name: "Your Name"
+  email: "you@example.com"
+  phone: "1234567890"
+  phone_country_code: ""          # e.g. "+91", "+1" — used to format the phone in cover-letter signatures; blank = print as entered
+  linkedin: "https://www.linkedin.com/in/your-handle/"
+  github: "https://github.com/your-handle"
+  expected_display_name: ""       # first name as shown in the Wellfound nav; blank = derived from `name`
 
 profile:
+  # Everything below is an example backend profile — replace with your own.
   headline: "Senior Backend Developer"
   years_experience: 5
   core_skills:
@@ -47,32 +49,40 @@ profile:
     - Gurgaon
     - Noida
     - Remote
-  skip_companies:
-    - Decentro
-    - Savein
-    - WECP
-  # Skip frontend/UI titles (Senior Frontend Engineer, React Developer, etc.)
-  skip_frontend_roles: true
-  skip_qa_test_roles: true   # QA, SDET, test engineer, tester, etc.
-  # Extra titles to skip (matched on whole words, case-insensitive),
-  # e.g. data science / devops / mlops roles outside your backend focus.
-  skip_role_keywords:
-    - data scientist
-    - data science
-    - devops
-    - dev ops
-    - sre
-    - site reliability
-    - mlops
-    - ml ops
-    - machine learning ops
+  # Companies you never want to apply to (your current/past employers, etc.).
+  skip_companies: []
+  # --- Role filtering (domain-agnostic; works for any field) ---
+  # The filter KEEPS any title matching keep_role_keywords and SKIPS titles matching
+  # skip_role_keywords or skip_role_patterns. Everything is empty by default, so
+  # configure it for YOUR field — e.g. a lawyer might keep ["attorney", "counsel",
+  # "legal"] and skip ["paralegal", "intern"].
+  #
+  # "Keep" anchors — kept even if they also match a skip rule (whole words/phrases,
+  # case-insensitive). Empty = no anchors. Backend example:
+  keep_role_keywords: []
+    # - backend
+    # - platform
+    # - python developer
+  # Titles to skip (whole words, case-insensitive). Backend example:
+  skip_role_keywords: []
+    # - data scientist
+    # - sales
+  # Advanced: raw regex patterns to skip (matched against the title, case-insensitive).
+  # Use for anything plain keywords can't express. Invalid regexes are ignored.
+  skip_role_patterns: []
+    # - '\bintern(ship)?\b'
+  # Skills/domains you have NO experience in: a title about one of these is skipped
+  # unless it also names a skill you have. Empty by default. Backend example:
+  skip_no_experience_skills: []
+    # - salesforce
+    # - wordpress
 
-compensation:
-  current_ctc_lpa: 48
-  current_fixed_lpa: 40
-  current_variable_lpa: 2
-  current_esops_lpa: 6
-  expected_ctc_lpa: 55
+compensation:                  # all in LPA (lakhs per annum); set your own figures
+  current_ctc_lpa: 0
+  current_fixed_lpa: 0
+  current_variable_lpa: 0
+  current_esops_lpa: 0
+  expected_ctc_lpa: 0
 
 cover_letter:
   mode: dynamic          # dynamic | template
@@ -101,7 +111,7 @@ answers:
     - "8+ years"
 
 resume:
-  path: "abhay_resume_2026.pdf"
+  path: "resume.pdf"
   # Upload resume to Wellfound profile/edit before each run (first-time setup only)
   sync_to_wellfound: false
   # Upload resume to Naukri profile before each Naukri run (keeps profile fresh for recruiters)
@@ -115,7 +125,7 @@ resume:
 cover_note: |
   Hi {{company}} team,
   I am applying for {{title}}. Open to roles across India.
-  Best, Abhay Jain
+  Best, Your Name
 
 wellfound:
   enabled: true
@@ -313,9 +323,11 @@ workday:
   skip_voluntary_disclosures: true
   max_form_pages: 10
   address:
-    city: "Bengaluru"
-    state: "Karnataka"
-    country: "India"
+    line1: ""
+    city: ""
+    state: ""
+    postal_code: ""
+    country: ""
 
 browser:
   headless: false

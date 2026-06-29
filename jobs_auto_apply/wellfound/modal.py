@@ -235,10 +235,6 @@ def _finalize_page_jd(text: str) -> str:
     return ""
 
 
-def _accept_page_jd(text: str) -> bool:
-    return bool(_finalize_page_jd(text))
-
-
 async def _extract_page_listing_meta(page: Page) -> str:
     """Salary / location / policy strip on the job page (not the Apply modal)."""
     try:
@@ -540,29 +536,6 @@ async def _extract_wellfound_page_jd(page: Page) -> str:
     return ""
 
 
-def _merge_jd(modal_jd: str, page_jd: str) -> str:
-    if page_jd and is_apply_metadata_only(modal_jd):
-        return page_jd
-    if page_jd and len(page_jd) > len(modal_jd) + 200:
-        return page_jd
-    if modal_jd and not is_apply_metadata_only(modal_jd):
-        return modal_jd
-    return page_jd or modal_jd
-
-
-def _extract_jd_from_modal_text(text: str) -> str:
-    m = JD_START.search(text)
-    if m and m.start() > 0:
-        text = text[m.start() :]
-    elif is_apply_metadata_only(text):
-        return ""
-    jd = clean_jd_text(text)
-    tail = re.search(r"\nYOUR APPLICATION\b", jd, re.I)
-    if tail:
-        jd = jd[: tail.start()].strip()
-    return jd
-
-
 async def _collect_modal_text(container) -> str:
     await _scroll_container(container)
     chunks: list[str] = []
@@ -633,8 +606,3 @@ async def open_and_inspect_apply_modal(page: Page, *, min_inr_lpa: float = 25.0)
     info = await inspect_apply_modal(page, min_inr_lpa=min_inr_lpa)
     info.jd = page_info.jd or info.jd
     return info
-
-
-async def extract_jd_via_apply_modal(page: Page, *, min_inr_lpa: float = 25.0) -> WellfoundApplyModal:
-    """Backward-compatible alias — JD from job page only, no Apply click."""
-    return await extract_wellfound_job_page(page, min_inr_lpa=min_inr_lpa)

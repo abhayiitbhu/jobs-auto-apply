@@ -1,0 +1,76 @@
+# Facts for auto-answering recruiter screening questions (RAG retrieval source).
+# Copy this directory to `profile/` and fill in your own values.
+# Never invent identifiers (PAN/UAN/etc.) — leave a field blank to queue it for a
+# manual answer instead of guessing.
+
+# Government / payroll identifiers (India-specific; leave blank if not applicable).
+pan: ""
+uan: ""
+
+gender: ""                 # e.g. "Male", "Female", "Prefer not to say"
+date_of_birth: ""          # e.g. "01/01/1995"
+
+# Notice period / availability.
+notice_period_days: 30
+serving_notice: false
+last_working_day: ""       # e.g. "31/12/2026" if you are serving notice
+reason_for_change: >
+  Looking for a role with broader ownership, strong engineering culture, and the
+  opportunity to build and scale systems end-to-end.
+
+# Interview availability (Yes/No).
+f2f_interview_available: "Yes"
+interview_available: "Yes"
+
+# Prior history with the hiring company.
+previously_applied_to_employer: false
+has_job_offers: false
+# Employers you HAVE worked at. Used to answer "have you been associated with /
+# worked at <company>?" — answers "No" by default, "Yes" only when the question
+# names one of these (or a company in your resume experience). Add brands/acronyms
+# not already in your resume (e.g. "TCS"); leave empty to rely on resume experience.
+past_employers: []
+
+# Education — used to deterministically answer degree/qualification questions
+# (e.g. "Have you done your masters?", "Highest qualification?", "Year of passing?").
+education:
+  highest: "B.Tech in Computer Science, Your University"
+  has_bachelors: true
+  has_masters: false
+  has_phd: false
+  has_mba: false
+  graduation_year: 2018
+  cgpa: 8.0
+  cgpa_scale: 10
+  percentage: ""           # leave blank to send "percentage" questions to manual
+
+# Location.
+pincode: ""                # 6-digit postal code (required for Naukri pincode questions)
+current_location: "City"
+native_location: ""
+willing_to_relocate: "Yes"
+preferred_locations:
+  - Remote
+  - Anywhere in India
+
+# Explicit years per skill (0 = none). Overrides auto-inference from the resume.
+# List every skill recruiters ask about so "years of X" questions don't go to manual.
+skill_years:
+  java: 4
+  python: 4
+  backend: 4
+  spring: 4
+  sql: 4
+  mysql: 4
+  mongodb: 4
+  kafka: 4
+  redis: 4
+  docker: 4
+  kubernetes: 2
+  rest_apis: 4
+  aws: 4
+  javascript: 2
+  # Skills you do NOT have — keep at 0 so they are answered correctly.
+  dotnet: 0
+  php: 0
+  salesforce: 0

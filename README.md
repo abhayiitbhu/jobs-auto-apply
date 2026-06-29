@@ -40,7 +40,9 @@ pip install -r requirements.txt
 playwright install chromium
 
 cp config.example.yaml config.yaml
+cp -r profile.example profile
 # Edit config.yaml + profile/*.yaml, add your resume.pdf
+# (config.yaml and profile/ are gitignored — they hold your personal data)
 
 # (optional) set up the local LLM — see "Local LLM" below
 bash scripts/setup_ollama_models.sh
@@ -152,7 +154,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 
 | Section | Purpose |
 |---------|---------|
-| `user` | Name, email, phone, LinkedIn — used to fill ATS forms. |
+| `user` | Name, email, phone, LinkedIn/GitHub — used to fill ATS forms. `phone_country_code` (e.g. `+91`) formats the phone in cover-letter signatures; `expected_display_name` defaults to your first name. |
 | `profile` | Core skills, roles, headline used for matching and cover notes. |
 | `compensation` | Current/expected CTC (used for CTC questions and cover letter). |
 | `cover_letter` | Cover note mode (`dynamic` / `template`), reference letter path, and options. |
@@ -177,7 +179,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 
 ### Profile facts (answer the screening questions)
 
-Two YAML files under `profile/` feed the answer engine. Add real values — never invent PAN/UAN; leave blank to defer to manual.
+Two YAML files under `profile/` feed the answer engine. Copy the templates in `profile.example/` to `profile/` (`cp -r profile.example profile`), then add real values — never invent PAN/UAN; leave blank to defer to manual.
 
 - **`profile/application_facts.yaml`** — structured facts: `pan`, `uan`, `gender`, `notice_period_days`, `serving_notice`, `education` (bachelors/masters/etc.), `date_of_birth`, `pincode`, `current_location`, `willing_to_relocate`, `preferred_locations`, `past_employers`, and a `skill_years` map (explicit years per skill; `0` = none) plus free-text facts like `reason_for_change`.
 - **`profile/resume_facts.yaml`** — your resume as structured data: headline, skills, work `experience`, education, `skip_companies`, and a profile summary. Used for RAG and cover-letter matching.
@@ -336,11 +338,12 @@ Created under `data/` (paths configurable in `config.paths`):
 ```
 jobs-auto-apply/
 ├── main.py                     # entry point -> jobs_auto_apply.cli:main
-├── config.example.yaml
+├── config.example.yaml          # copy to config.yaml and edit (gitignored)
 ├── requirements.txt
-├── profile/
+├── profile.example/             # copy to profile/ and edit (gitignored)
 │   ├── application_facts.yaml   # structured facts for answering questions
-│   └── resume_facts.yaml        # resume as structured data (RAG source)
+│   ├── resume_facts.yaml        # resume as structured data (RAG source)
+│   └── cover_letter_reference.txt
 ├── ollama/
 │   ├── Modelfile.job-answers    # generator model
 │   └── Modelfile.job-verify     # verifier model

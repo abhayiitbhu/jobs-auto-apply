@@ -45,10 +45,6 @@ async def _click_filter_button(page: Page, label: str) -> None:
 NAV_JOB_SLUGS = frozenset({"home", "applications", "messages", "profile", "discover", "search", "saved", "settings"})
 
 
-def _slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-
-
 def is_wellfound_job_url(url: str) -> bool:
     if re.search(r"/company/[^/]+/jobs/", url):
         return True
@@ -368,39 +364,6 @@ async def _merge_jobs_on_page(page: Page, jobs: dict[str, JobListing], limit: in
         )
 
     return len(jobs) - before
-
-
-async def _collect_links_from_dom(page: Page, jobs: list[JobListing], limit: int) -> None:
-    seen = {j.job_id for j in jobs}
-    anchors = page.locator('a[href*="/jobs/"], a[href*="/company/"][href*="/jobs/"]')
-    count = await anchors.count()
-    for i in range(count):
-        if len(jobs) >= limit:
-            break
-        href = await anchors.nth(i).get_attribute("href")
-        if not href:
-            continue
-        full_url = f"https://wellfound.com{href}" if href.startswith("/") else href
-        if not is_wellfound_job_url(full_url):
-            continue
-        job_id = _job_id_from_url(full_url)
-        if job_id in seen:
-            continue
-        text = (await anchors.nth(i).inner_text()).strip()
-        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-        title = lines[0] if lines else job_id
-        seen.add(job_id)
-        jobs.append(
-            JobListing(
-                job_id=job_id,
-                title=title,
-                company="",
-                url=full_url,
-                source="wellfound",
-                easy_apply="easy apply" in text.lower(),
-                external_ats=False,
-            )
-        )
 
 
 async def collect_job_listings(page: Page, limit: int) -> list[JobListing]:

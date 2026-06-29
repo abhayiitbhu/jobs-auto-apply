@@ -119,9 +119,13 @@
         "github": {
           "type": "string",
           "default": ""
+        },
+        "phone_country_code": {
+          "type": "string",
+          "default": ""
         }
       },
-      "description": "UserConfig(name: 'str', email: 'str', phone: 'str', linkedin: 'str', expected_display_name: 'str', github: 'str' = '')"
+      "description": "UserConfig(name: 'str', email: 'str', phone: 'str', linkedin: 'str', expected_display_name: 'str', github: 'str' = '', phone_country_code: 'str' = '')"
     },
     "ResumeConfig": {
       "type": "object",
@@ -160,11 +164,11 @@
       "properties": {
         "headline": {
           "type": "string",
-          "default": "Senior Backend / Platform Engineer"
+          "default": ""
         },
         "years_experience": {
           "type": "integer",
-          "default": 5
+          "default": 0
         },
         "core_skills": {
           "type": "array",
@@ -192,21 +196,23 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "Decentro",
-            "Savein",
-            "WECP"
-          ]
-        },
-        "skip_frontend_roles": {
-          "type": "boolean",
-          "default": true
-        },
-        "skip_qa_test_roles": {
-          "type": "boolean",
-          "default": true
+          "default": []
         },
         "skip_role_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "keep_role_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "skip_role_patterns": {
           "type": "array",
           "items": {
             "type": "string"
@@ -218,75 +224,36 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "salesforce",
-            "wordpress",
-            "shopify",
-            "drupal",
-            "magento",
-            "sharepoint",
-            "data engineer",
-            "data engineering",
-            "data scientist",
-            "data science",
-            "data analyst",
-            "scala",
-            "snowflake",
-            "databricks",
-            "tableau",
-            "power bi",
-            "sap",
-            "abap",
-            "servicenow",
-            "sailpoint",
-            "mulesoft",
-            "pega",
-            "blue prism",
-            "uipath",
-            "automation anywhere",
-            "rpa",
-            "blockchain",
-            "web3",
-            "solidity",
-            ".net",
-            "dotnet",
-            "php",
-            "ruby on rails",
-            "mainframe",
-            "cobol",
-            "embedded",
-            "firmware",
-            "vlsi"
-          ]
+          "default": []
         }
       },
-      "description": "ProfileConfig(headline: 'str' = 'Senior Backend / Platform Engineer', years_experience: 'int' = 5, core_skills: 'list[str]' = <factory>, target_roles: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, skip_companies: 'list[str]' = <factory>, skip_frontend_roles: 'bool' = True, skip_qa_test_roles: 'bool' = True, skip_role_keywords: 'list[str]' = <factory>, skip_no_experience_skills: 'list[str]' = <factory>)"
+      "description": "ProfileConfig(headline: 'str' = '', years_experience: 'int' = 0, core_skills: 'list[str]' = <factory>, target_roles: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, skip_companies: 'list[str]' = <factory>, skip_role_keywords: 'list[str]' = <factory>, keep_role_keywords: 'list[str]' = <factory>, skip_role_patterns: 'list[str]' = <factory>, skip_no_experience_skills: 'list[str]' = <factory>)"
     },
     "CompensationConfig": {
       "type": "object",
       "properties": {
         "current_ctc_lpa": {
           "type": "number",
-          "default": 38.0
+          "default": 0.0
         },
         "current_fixed_lpa": {
           "type": "number",
-          "default": 30.0
+          "default": 0.0
         },
         "current_variable_lpa": {
           "type": "number",
-          "default": 2.0
+          "default": 0.0
         },
         "current_esops_lpa": {
           "type": "number",
-          "default": 6.0
+          "default": 0.0
         },
         "expected_ctc_lpa": {
           "type": "number",
-          "default": 45.0
+          "default": 0.0
         }
       },
-      "description": "CompensationConfig(current_ctc_lpa: 'float' = 38.0, current_fixed_lpa: 'float' = 30.0, current_variable_lpa: 'float' = 2.0, current_esops_lpa: 'float' = 6.0, expected_ctc_lpa: 'float' = 45.0)"
+      "description": "CompensationConfig(current_ctc_lpa: 'float' = 0.0, current_fixed_lpa: 'float' = 0.0, current_variable_lpa: 'float' = 0.0, current_esops_lpa: 'float' = 0.0, expected_ctc_lpa: 'float' = 0.0)"
     },
     "CoverLetterConfig": {
       "type": "object",
@@ -620,10 +587,10 @@
           "$ref": "#/definitions/WorkdayAddressConfig",
           "default": {
             "line1": "",
-            "city": "Bengaluru",
-            "state": "Karnataka",
+            "city": "",
+            "state": "",
             "postal_code": "",
-            "country": "India"
+            "country": ""
           }
         }
       },
@@ -638,11 +605,11 @@
         },
         "city": {
           "type": "string",
-          "default": "Bengaluru"
+          "default": ""
         },
         "state": {
           "type": "string",
-          "default": "Karnataka"
+          "default": ""
         },
         "postal_code": {
           "type": "string",
@@ -650,10 +617,10 @@
         },
         "country": {
           "type": "string",
-          "default": "India"
+          "default": ""
         }
       },
-      "description": "WorkdayAddressConfig(line1: 'str' = '', city: 'str' = 'Bengaluru', state: 'str' = 'Karnataka', postal_code: 'str' = '', country: 'str' = 'India')"
+      "description": "WorkdayAddressConfig(line1: 'str' = '', city: 'str' = '', state: 'str' = '', postal_code: 'str' = '', country: 'str' = '')"
     },
     "LLMConfig": {
       "type": "object",
