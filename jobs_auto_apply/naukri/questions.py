@@ -24,21 +24,6 @@ from ..config import AppConfig
 
 logger = logging.getLogger("job_apply")
 
-_DBG_LEVELS = {"D": logging.DEBUG, "I": logging.INFO, "W": logging.WARNING, "E": logging.ERROR}
-
-
-def _dbg_log(level: str, location: str, message: str, data: dict[str, Any] | None = None) -> None:
-    """Lightweight structured debug logger used by the Naukri apply flow.
-
-    Emits through the shared "job_apply" logger so the temporary
-    `# region agent log` instrumentation has a single, no-op-safe sink.
-    """
-    log_level = _DBG_LEVELS.get(level.upper(), logging.DEBUG)
-    if data:
-        logger.log(log_level, "[%s] %s | %s", location, message, data)
-    else:
-        logger.log(log_level, "[%s] %s", location, message)
-
 
 class CannotAnswerTruthfully(Exception):
     """The question's only options would overstate experience the user lacks.
@@ -105,6 +90,24 @@ _DATE_FIELD = re.compile(
 )
 
 _LAST_WORKING_DAY_FIELD = re.compile(r"\b(last\s*working\s*day|lwd)\b", re.I)
+
+_RECRUITER_INFO_MESSAGE = re.compile(
+    r"\b("
+    r"pan\s*card|passport[- ]?size|photograph|mandatory|"
+    r"please\s+note|disclaimer|before\s+you\s+(?:proceed|continue)|"
+    r"important\s+information|required\s+document"
+    r")\b",
+    re.I,
+)
+
+_ELIGIBILITY_DISCLAIMER = re.compile(
+    r"\b("
+    r"kindly\s+do\s+not\s+apply|do\s+not\s+apply\s+if|"
+    r"minimum\s+\d+\s+years?\s+of\s+experience\s+is\s+mandatory|"
+    r"only\s+apply\s+if\s+you\s+have"
+    r")\b",
+    re.I,
+)
 
 _CITY_ALIASES = {
     "bangalore": "bengaluru",
@@ -1508,6 +1511,8 @@ def _options_plausible_for_question(label: str, options: list[str]) -> bool:
     if exp_years_q and not _looks_like_notice_period_question(label):
         if all(is_notice_chip_option(o) for o in opts):
             return False
+    if _is_date_field(label) and _is_yes_no_options(opts):
+        return False
     return True
 
 
@@ -1847,22 +1852,13 @@ def _is_last_working_day_field(label: str) -> bool:
 def _facts_serving_notice(config: AppConfig | None) -> bool:
     """True only when application_facts explicitly says the user is serving notice.
 
-    A "Last Working Day" only exists while serving notice; when it is false (or
-    unset) there is no valid date to give, so conditional "if serving notice …"
-    date questions should be skipped rather than filled with a stale value.
+    Delegates to the shared :func:`facts_serving_notice` so the fill-time guard and
+    the saved-answer usability check (which decides whether to queue for Telegram)
+    always agree.
     """
-    if config is None:
-        return False
-    try:
-        from ..profile.application_facts import load_application_facts
+    from ..answers.config_answers import facts_serving_notice
 
-        facts = load_application_facts(config)
-    except Exception:
-        return False
-    val = facts.get("serving_notice")
-    if isinstance(val, bool):
-        return val
-    return str(val).strip().lower() in ("true", "yes", "1")
+    return facts_serving_notice(config)
 
 
 def _normalize_dob_answer(answer: str) -> str:
@@ -2814,6 +2810,9 @@ async def discover_naukri_chatbot_questions(
     if _is_chatbot_terminal_message(question):
         logger.info("Naukri chatbot: terminal screen (%s)", question[:50])
         return []
+    if _is_recruiter_info_message(question):
+        logger.debug("Skipping recruiter disclaimer (handled via acknowledge): %s", question[:80])
+        return []
     if not _is_naukri_chatbot_question(question):
         # A long recruiter statement can still be answerable when the panel renders
         # real, selectable options (e.g. "This role needs 5-9 yrs … [Yes][No]").
@@ -2875,6 +2874,116 @@ async def discover_naukri_chatbot_questions(
         f" — options: {opt_preview}" if options else "",
     )
     return [field]
+
+
+def _is_recruiter_info_message(label: str) -> bool:
+    """Recruiter disclaimer / document-requirement text — not an application question."""
+    text = label.strip()
+    if not text or "?" in text:
+        return False
+    if _ELIGIBILITY_DISCLAIMER.search(text) or _RECRUITER_INFO_MESSAGE.search(text):
+        return True
+    if _is_naukri_chatbot_question(text):
+        return False
+    return False
+
+
+def _minimum_years_from_disclaimer(text: str) -> int | None:
+    match = re.search(r"minimum\s+(\d+)\s+years?", text, re.I)
+    return int(match.group(1)) if match else None
+
+
+async def _latest_chatbot_bot_text(page: Page) -> str:
+    try:
+        raw = await page.evaluate(_DISCOVER_JS)
+    except Exception:
+        return ""
+    if not raw:
+        return ""
+    return normalize_question_label(str(raw.get("question") or "").strip())
+
+
+def _info_ack_succeeded(question: str, latest: str, bot_before: int, bot_after: int) -> bool:
+    norm_q = normalize_question_label(question).lower()
+    norm_latest = normalize_question_label(latest).lower()
+    if not norm_latest:
+        return False
+    if norm_latest != norm_q:
+        return True
+    return bot_after > bot_before and norm_latest != norm_q
+
+
+def _ack_texts_for_disclaimer(question: str, config: AppConfig | None) -> list[str]:
+    texts = ["OK", "Acknowledged", "Noted", "Yes", "I understand", "Understood"]
+    if _ELIGIBILITY_DISCLAIMER.search(question) and config is not None:
+        years = int(getattr(config.profile, "years_experience", 0) or 0)
+        minimum = _minimum_years_from_disclaimer(question)
+        if years > 0:
+            texts.insert(0, str(years))
+        if minimum and years >= minimum:
+            texts.insert(0, f"{years} years")
+    return texts
+
+
+async def _try_acknowledge_chatbot_info(page: Page, *, config: AppConfig | None = None) -> bool:
+    """Dismiss recruiter info/disclaimer bubbles blocking real chatbot questions."""
+    try:
+        raw = await page.evaluate(_DISCOVER_JS)
+    except Exception:
+        return False
+    if not raw:
+        return False
+
+    question = normalize_question_label(str(raw.get("question") or "").strip())
+    if not question:
+        return False
+
+    choice_opts, checkbox_opts, _ = _split_discovered_options(raw)
+    if _filter_meaningful_options(choice_opts + checkbox_opts):
+        return False
+    if not _is_recruiter_info_message(question):
+        return False
+
+    bot_before = await _chatbot_bot_message_count(page)
+
+    ack_js = (
+        _CHATBOT_HELPERS_JS
+        + """
+() => {
+  const scope = chatbotScope();
+  if (!scope) return false;
+  for (const btn of scope.querySelectorAll('button, .chatbot_Chip, .chipItem, [role="button"]')) {
+    const t = (btn.innerText || '').replace(/\\s+/g, ' ').trim();
+    if (/^(ok|okay|got it|continue|proceed|i understand|noted|acknowledge|yes)$/i.test(t)) {
+      btn.click();
+      return true;
+    }
+  }
+  return false;
+}
+"""
+    )
+    try:
+        if await page.evaluate(ack_js):
+            await page.wait_for_timeout(800)
+            latest = await _latest_chatbot_bot_text(page)
+            bot_after = await _chatbot_bot_message_count(page)
+            if _info_ack_succeeded(question, latest, bot_before, bot_after):
+                logger.info("Naukri chatbot: acknowledged recruiter info via button: %s", question[:60])
+                return True
+    except Exception:
+        pass
+
+    for ack in _ack_texts_for_disclaimer(question, config):
+        bot_try = await _chatbot_bot_message_count(page)
+        if await _fill_text_playwright(page, ack, question=question):
+            await page.wait_for_timeout(800)
+            latest = await _latest_chatbot_bot_text(page)
+            bot_after = await _chatbot_bot_message_count(page)
+            if _info_ack_succeeded(question, latest, bot_try, bot_after):
+                logger.info("Naukri chatbot: acknowledged recruiter info via text %r: %s", ack, question[:60])
+                return True
+    return False
 
 
 async def _click_skip_question(page: Page) -> bool:
@@ -3182,12 +3291,21 @@ async def fill_naukri_chatbot_question(
         return await _advanced()
 
     if _is_date_field(label):
+        # Stale echo: date was already submitted but the chatbot re-shows the label
+        # with phantom yes/no chips scraped from an adjacent control.
+        if answer_options and _is_yes_no_options(answer_options) and not (raw and raw.get("hasDobInput")):
+            logger.info(
+                "Naukri chatbot: stale date echo with phantom yes/no for %s — advancing",
+                label[:60],
+            )
+            return await _advanced()
         # A "Last Working Day" only applies while serving notice. When the user is
-        # not serving notice (serving_notice: false / unset), there is no valid date
-        # — skip the conditional/optional question instead of typing a stale one. If
-        # the field can't be skipped, decline honestly (queued for manual) rather
-        # than recording a technical failure for an unfillable phantom date.
-        if _is_last_working_day_field(label) and not _facts_serving_notice(config):
+        # not serving notice (serving_notice: false / unset), there is normally no
+        # valid date — skip the conditional/optional question instead of typing a
+        # stale one. BUT if resolve already produced a non-empty answer (manual /
+        # Telegram / confirmed), take the user's word and fill it — auto-derived
+        # facts dates are rejected earlier and never reach fill when not serving.
+        if _is_last_working_day_field(label) and not _facts_serving_notice(config) and not answer.strip():
             if await _click_skip_question(page):
                 logger.info(
                     "Naukri chatbot: skipped last-working-day question (not serving notice): %s",

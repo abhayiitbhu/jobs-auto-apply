@@ -426,6 +426,7 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
 
 
 _server_listener_channel: str | None = None
+_listener_wake_evt: asyncio.Event | None = None
 
 
 def set_server_listener_channel(channel: str | None) -> None:
@@ -436,6 +437,108 @@ def set_server_listener_channel(channel: str | None) -> None:
 
 def server_listener_channel() -> str | None:
     return _server_listener_channel
+
+
+def _listener_wake_event() -> asyncio.Event:
+    global _listener_wake_evt
+    if _listener_wake_evt is None:
+        _listener_wake_evt = asyncio.Event()
+    return _listener_wake_evt
+
+
+def signal_listener_pending_work() -> None:
+    """Wake the in-process messenger listener when a run defers pending questions."""
+    _listener_wake_event().set()
+
+
+async def _wait_idle_or_listener_wake(idle: float) -> None:
+    """Sleep up to ``idle`` seconds, or return early when pending work is signaled."""
+    wake = _listener_wake_event()
+    sleep_task = asyncio.create_task(asyncio.sleep(idle))
+    wake_task = asyncio.create_task(wake.wait())
+    try:
+        _, pending = await asyncio.wait(
+            {sleep_task, wake_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+    finally:
+        wake.clear()
+
+
+def _normalize_chat_command(text: str) -> str:
+    """Lowercase a chat message and strip a leading ``/`` so ``/pending`` == ``pending``."""
+    return (text or "").strip().lstrip("/").strip().lower()
+
+
+async def _idle_wait_handling_commands(
+    client,
+    idle: float,
+    *,
+    config: AppConfig | None = None,
+    base_dir: Path | None = None,
+) -> None:
+    """Idle between listener cycles, but still answer the ``pending`` command.
+
+    When pending questions exist on disk, ``pending`` re-sends them and wakes the
+    listener so it can collect replies. Otherwise the user gets a short ack.
+    Returns early when a run signals new pending work.
+    """
+    from .pending_questions import (
+        pending_count,
+        pending_group_for_notified_message_id,
+        resend_pending_questions_via_messenger,
+    )
+
+    pending_kw = _normalize_chat_command(getattr(client, "pending_keyword", "") or "")
+    can_route = getattr(client, "supports_reply_routing", False) and hasattr(client, "wait_for_reply_routed")
+    if not (pending_kw and can_route):
+        await _wait_idle_or_listener_wake(idle)
+        return
+    if config and base_dir and pending_count(base_dir, config) > 0:
+        # Pending questions exist — re-enter the reply-routing session quickly
+        # instead of idling while draining (and discarding) Telegram replies.
+        return
+    wake = _listener_wake_event()
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + idle
+    try:
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0 or wake.is_set():
+                return
+            upd = await client.wait_for_reply_routed(timeout=min(remaining, 2.0))
+            if upd is None:
+                continue
+            command = _normalize_chat_command(upd.get("text") or "")
+            if command == pending_kw:
+                count = pending_count(base_dir, config) if config and base_dir else 0
+                if count > 0 and config and base_dir:
+                    await resend_pending_questions_via_messenger(base_dir, config, client)
+                    signal_listener_pending_work()
+                    return
+                with contextlib.suppress(Exception):
+                    await client.send(
+                        "You have no pending questions right now — " "I'll message you as soon as any need answering."
+                    )
+                continue
+            reply_to = upd.get("reply_to")
+            if (
+                reply_to is not None
+                and config
+                and base_dir
+                and pending_group_for_notified_message_id(base_dir, int(reply_to), config)
+            ):
+                requeue = getattr(client, "requeue_routed_reply", None)
+                if requeue is not None:
+                    await requeue(upd)
+                signal_listener_pending_work()
+                return
+    finally:
+        wake.clear()
 
 
 def _active_messenger(config: AppConfig) -> str | None:
@@ -517,6 +620,7 @@ async def _finish_pending_questions(
             console.print(
                 f"[dim]Questions deferred to the {_messenger_label(channel)} listener (running with serve).[/dim]"
             )
+            signal_listener_pending_work()
         else:
             listen_cmd = "telegram-listen" if channel == "telegram" else "whatsapp-listen"
             console.print(
@@ -1494,6 +1598,7 @@ async def _messenger_listen(
     # on a reply while it's running.
     per_question_timeout = max(msg_cfg.reply_timeout_seconds, 86400)
     idle = max(5, msg_cfg.listen_idle_seconds)
+    refresh_event = _listener_wake_event()
 
     # WhatsApp's QR link can genuinely expire (needs re-linking); a Telegram bot
     # token never does, so for Telegram a failing login check is just a transient
@@ -1501,8 +1606,29 @@ async def _messenger_listen(
     async with _messenger_client_cm(config, channel) as client:
         session_can_expire = getattr(client, "session_can_expire", True)
         console.print(f"[green]{label} listener running. Press Ctrl+C to stop.[/green]")
+        retry_tasks: set[asyncio.Task[None]] = set()
+
+        async def _retry_answered_jobs(jobs_to_retry: list, total: int, titles: str) -> None:
+            try:
+                with contextlib.suppress(Exception):
+                    await client.send(f"⏳ Applying to {total} job(s) with your answer(s): {titles}")
+                if apply_lock is not None:
+                    async with apply_lock:
+                        retried = await retry_pending_jobs(config, jobs_to_retry)
+                else:
+                    retried = await retry_pending_jobs(config, jobs_to_retry)
+                await client.send(_format_apply_result(retried, total, titles))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Listener retry failed: %s", exc)
+                with contextlib.suppress(Exception):
+                    await client.send(f"⚠️ Could not apply ({titles}): {exc}")
+
         while True:
             if stop_event is not None and stop_event.is_set():
+                for task in list(retry_tasks):
+                    task.cancel()
                 break
             try:
                 if not await client.is_logged_in():
@@ -1523,6 +1649,7 @@ async def _messenger_listen(
                     client,
                     send_heads_up=False,
                     per_question_timeout=per_question_timeout,
+                    refresh_event=refresh_event,
                 )
                 if answered and jobs and config.llm.retry_pending_jobs and not config.application.dry_run:
                     clear_deferred_applies(config.applied_jobs_path)
@@ -1530,26 +1657,22 @@ async def _messenger_listen(
                     titles = ", ".join(
                         (ref.title or ref.url) + (f" @ {ref.company}" if ref.company else "") for ref in jobs
                     )
-                    with contextlib.suppress(Exception):
-                        await client.send(f"⏳ Applying to {total} job(s) with your answer(s): {titles}")
-                    try:
-                        if apply_lock is not None:
-                            async with apply_lock:
-                                retried = await retry_pending_jobs(config, jobs)
-                        else:
-                            retried = await retry_pending_jobs(config, jobs)
-                        await client.send(_format_apply_result(retried, total, titles))
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        logger.exception("Listener retry failed: %s", exc)
-                        with contextlib.suppress(Exception):
-                            await client.send(f"⚠️ Could not apply ({titles}): {exc}")
+                    retry_task = asyncio.create_task(
+                        _retry_answered_jobs(jobs, total, titles),
+                        name="messenger-listener-retry",
+                    )
+                    retry_tasks.add(retry_task)
+                    retry_task.add_done_callback(retry_tasks.discard)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.exception("%s listener iteration failed: %s", label, exc)
-            await asyncio.sleep(idle)
+            await _idle_wait_handling_commands(
+                client,
+                idle,
+                config=config,
+                base_dir=config.base_dir,
+            )
 
 
 @main.command("whatsapp-listen")

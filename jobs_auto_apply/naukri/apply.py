@@ -23,6 +23,7 @@ from ..utils import (
 from .questions import (
     CannotAnswerTruthfully,
     _chatbot_flow_complete,
+    _try_acknowledge_chatbot_info,
     chatbot_is_open,
     discover_naukri_chatbot_questions,
     fill_naukri_chatbot_question,
@@ -593,6 +594,10 @@ async def _handle_chatbot_questions(
                 return True
             if await _chatbot_flow_complete(page):
                 return True
+            if await _try_acknowledge_chatbot_info(page, config=config):
+                stable_empty = 0
+                await page.wait_for_timeout(step_delay)
+                continue
             stable_empty += 1
             if stable_empty >= 4:
                 logger.warning(
@@ -622,6 +627,10 @@ async def _handle_chatbot_questions(
                     job.title,
                 )
                 return True
+            # Echoed question while apply is still submitting — don't re-fill.
+            stable_empty = 0
+            await page.wait_for_timeout(step_delay)
+            continue
 
         stable_empty = 0
         logger.info(

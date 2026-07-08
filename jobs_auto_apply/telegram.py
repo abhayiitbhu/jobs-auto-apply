@@ -4,6 +4,11 @@ Official, free, and safe: sends questions to your Telegram bot and reads your
 replies via long polling (``getUpdates``). No server, webhook, or tunnel — the
 app just calls Telegram's HTTPS API — and no ToS/ban risk.
 
+A dedicated background task runs ``getUpdates`` continuously and enqueues
+incoming messages. Apply / listener logic consumes replies from that queue, so
+polling never blocks on waiting for a specific answer and replies sent while a
+browser apply is running are not lost.
+
 Setup:
   1. Create a bot with @BotFather and copy the token into ``telegram.bot_token``.
   2. Run ``python main.py telegram-login`` and send /start to your bot.
@@ -15,6 +20,7 @@ WhatsApp client so the pending-question flow can use either transport.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import urllib.parse
@@ -70,6 +76,7 @@ class TelegramClient:
         skip_keyword: str = "skip",
         drop_keyword: str = "drop",
         ignore_keyword: str = "ignore",
+        pending_keyword: str = "pending",
     ) -> None:
         self.token = (token or "").strip()
         self.chat_id = str(chat_id or "").strip()
@@ -79,7 +86,10 @@ class TelegramClient:
         self.skip_keyword = (skip_keyword or "skip").strip().lower()
         self.drop_keyword = (drop_keyword or "drop").strip().lower()
         self.ignore_keyword = (ignore_keyword or "ignore").strip().lower()
+        self.pending_keyword = (pending_keyword or "pending").strip().lower()
         self._offset: int | None = None
+        self._incoming: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._poll_task: asyncio.Task[None] | None = None
 
     # ── low-level ────────────────────────────────────────────────────────────
     async def _api(self, method: str, params: dict[str, Any] | None = None, *, timeout: int = 30) -> dict[str, Any]:
@@ -142,9 +152,15 @@ class TelegramClient:
             await self._drain_updates()
             if self._offset is not None:
                 self._save_offset(self._offset)
+        self._poll_task = asyncio.create_task(self._poll_loop(), name="telegram-poll")
 
     async def close(self) -> None:  # symmetry with WhatsAppClient
-        return None
+        task = self._poll_task
+        self._poll_task = None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def is_logged_in(self) -> bool:
         try:
@@ -186,37 +202,53 @@ class TelegramClient:
                 return chat
         return None
 
-    async def _next_update(self, *, long_poll: int) -> dict[str, Any] | None:
-        """Return the next text message as ``{text, chat, reply_to}`` or None.
+    @staticmethod
+    def _parse_text_update(upd: dict[str, Any]) -> dict[str, Any] | None:
+        """Parse a Telegram update into ``{text, chat, reply_to}`` or None."""
+        msg = upd.get("message") or upd.get("edited_message") or {}
+        text = msg.get("text")
+        if not text:
+            return None
+        chat = str((msg.get("chat") or {}).get("id", "")).strip()
+        reply_to_raw = (msg.get("reply_to_message") or {}).get("message_id")
+        return {
+            "text": str(text).strip(),
+            "chat": chat,
+            "reply_to": int(reply_to_raw) if reply_to_raw else None,
+        }
 
-        ``reply_to`` is the ``message_id`` this message quotes (Telegram's native
-        reply feature), or None when the user typed a fresh message.
-        """
-        params = {"timeout": long_poll}
-        if self._offset is not None:
-            params["offset"] = self._offset
+    async def _poll_loop(self) -> None:
+        """Dedicated ``getUpdates`` loop — runs until ``close()`` cancels it."""
+        long_poll = 45
         try:
-            res = await self._api("getUpdates", params, timeout=long_poll + 15)
-        except Exception as exc:
-            logger.debug("telegram getUpdates failed: %s", exc)
-            await asyncio.sleep(2)
+            while True:
+                params: dict[str, Any] = {"timeout": long_poll}
+                if self._offset is not None:
+                    params["offset"] = self._offset
+                try:
+                    res = await self._api("getUpdates", params, timeout=long_poll + 15)
+                except Exception as exc:
+                    logger.debug("telegram poll loop getUpdates failed: %s", exc)
+                    await asyncio.sleep(2)
+                    continue
+                if not res.get("ok"):
+                    await asyncio.sleep(2)
+                    continue
+                for upd in res.get("result", []):
+                    self._offset = int(upd["update_id"]) + 1
+                    self._save_offset(self._offset)
+                    parsed = self._parse_text_update(upd)
+                    if parsed is not None:
+                        await self._incoming.put(parsed)
+        except asyncio.CancelledError:
+            raise
+
+    async def _next_update(self, *, long_poll: int) -> dict[str, Any] | None:
+        """Dequeue the next text message from the background poll task."""
+        try:
+            return await asyncio.wait_for(self._incoming.get(), timeout=long_poll)
+        except asyncio.TimeoutError:
             return None
-        if not res.get("ok"):
-            return None
-        for upd in res.get("result", []):
-            self._offset = int(upd["update_id"]) + 1
-            self._save_offset(self._offset)
-            msg = upd.get("message") or upd.get("edited_message") or {}
-            text = msg.get("text")
-            chat = str((msg.get("chat") or {}).get("id", "")).strip()
-            reply_to_raw = (msg.get("reply_to_message") or {}).get("message_id")
-            if text:
-                return {
-                    "text": str(text).strip(),
-                    "chat": chat,
-                    "reply_to": int(reply_to_raw) if reply_to_raw else None,
-                }
-        return None
 
     async def _next_message(self, *, long_poll: int) -> tuple[str | None, str]:
         upd = await self._next_update(long_poll=long_poll)
@@ -232,19 +264,30 @@ class TelegramClient:
         """Like ``wait_for_reply`` but also reports which message was replied to.
 
         Returns ``{text, reply_to}`` (``reply_to`` may be None) or None on timeout.
+        Reads from the background poll queue so apply work and polling stay concurrent.
         """
         timeout = timeout or self.reply_timeout_seconds
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
-            remaining = int(deadline - asyncio.get_event_loop().time())
-            long_poll = max(1, min(45, remaining))
-            upd = await self._next_update(long_poll=long_poll)
-            if upd is None:
-                continue
+            remaining = deadline - asyncio.get_event_loop().time()
+            try:
+                upd = await asyncio.wait_for(self._incoming.get(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return None
             if self.chat_id and upd["chat"] and upd["chat"] != self.chat_id:
                 continue  # message from a different chat — ignore
             return {"text": upd["text"], "reply_to": upd["reply_to"]}
         return None
+
+    async def requeue_routed_reply(self, upd: dict[str, Any]) -> None:
+        """Put a routed reply back on the poll queue for the active listener session."""
+        await self._incoming.put(
+            {
+                "text": upd.get("text", ""),
+                "chat": self.chat_id or "",
+                "reply_to": upd.get("reply_to"),
+            }
+        )
 
     # ── messaging ────────────────────────────────────────────────────────────
     async def send(self, text: str, *, reply_to_message_id: int | None = None) -> int | None:
@@ -296,6 +339,7 @@ async def telegram_client(config) -> AsyncIterator[TelegramClient]:
         skip_keyword=config.telegram.skip_keyword,
         drop_keyword=config.telegram.drop_keyword,
         ignore_keyword=config.telegram.ignore_keyword,
+        pending_keyword=config.telegram.pending_keyword,
     )
     await client.start()
     try:

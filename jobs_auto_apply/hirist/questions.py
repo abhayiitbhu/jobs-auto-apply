@@ -730,7 +730,8 @@ _FILL_JS = (
         ".screening-question-container, .multi-answer-question-container"
       )];
       const wants = parseMultiAnswer(answer);
-      const isSingleSelect = /\\b(cctc|ectc|np)\\b/i.test(label);
+      const isSingleSelect = /\\b(cctc|ectc|np)\\b/i.test(label)
+        || /notice\\s*period/i.test(label);
       for (const container of containers) {
         const mq = container.querySelector(".mandatory-question");
         const qt = container.querySelector(".question-text");
@@ -809,7 +810,8 @@ _FORM_STATE_JS = (
     _HIRIST_DOM_HELPERS
     + """
 () => {
-  const btn = document.querySelector(
+  const root = screeningRoot();
+  const btn = (root || document).querySelector(
     ".submission-btn button, button.black-round, button.a-button"
   );
   const containerSelector =
@@ -819,7 +821,8 @@ _FORM_STATE_JS = (
     + ".single-answer-question-container, .multi-answer-question-container";
   const empty = [];
   const fields = [];
-  for (const container of document.querySelectorAll(containerSelector)) {
+  const emptySeen = new Set();
+  for (const container of (root || document).querySelectorAll(containerSelector)) {
     const mq = container.querySelector(".mandatory-question");
     const qt = container.querySelector(".question-text");
     if (!mq && !qt) continue;
@@ -849,10 +852,17 @@ _FORM_STATE_JS = (
       ? clean(input.value)
       : (checkboxLabel || radioLabel);
     fields.push({ label, domValue, hasRadio: radios.length > 0, radioLabel, checkboxLabel });
-    if (ta && !clean(ta.value)) empty.push(label);
-    if (num && !ta && !clean(num.value)) empty.push(label);
-    if (radios.length && !radios.some((r) => r.checked)) empty.push(label);
-    if (checkboxes.length && !checkboxes.some((c) => c.checked)) empty.push(label);
+    const labelKey = label.toLowerCase();
+    function markEmpty() {
+      if (!emptySeen.has(labelKey)) {
+        emptySeen.add(labelKey);
+        empty.push(label);
+      }
+    }
+    if (ta && !clean(ta.value)) markEmpty();
+    if (num && !ta && !clean(num.value)) markEmpty();
+    if (radios.length && !radios.some((r) => r.checked)) markEmpty();
+    if (checkboxes.length && !checkboxes.some((c) => c.checked)) markEmpty();
   }
   return {
     nextDisabled: !!(btn && btn.disabled),
@@ -1161,10 +1171,12 @@ def _label_in_empty(label: str, empties: list[str]) -> bool:
     return False
 
 
-async def _locate_hirist_question_box(page: Page, label: str):
-    """Find the screening question container for a label."""
+async def _locate_hirist_question_boxes(page: Page, label: str) -> list:
+    """Find all screening question containers for a label (Hirist often renders duplicates)."""
     pat = _hirist_label_regex(label)
     text_loc = page.locator(".question-text, .mandatory-question").filter(has_text=pat)
+    boxes: list = []
+    seen_ids: set[str] = set()
     for sel in (
         ".yes-no-answer-question-container",
         ".short-answer-question-container",
@@ -1175,55 +1187,59 @@ async def _locate_hirist_question_box(page: Page, label: str):
         ".screening-question-container",
     ):
         loc = page.locator(sel).filter(has=text_loc)
-        if await loc.count() > 0:
-            return loc.first
-    loc = page.locator(".screening-question-container").filter(has_text=pat)
-    if await loc.count() > 0:
-        return loc.first
-    return None
+        count = await loc.count()
+        for i in range(count):
+            box = loc.nth(i)
+            cid = (await box.get_attribute("id")) or ""
+            if cid and cid in seen_ids:
+                continue
+            if cid:
+                seen_ids.add(cid)
+            boxes.append(box)
+    if not boxes:
+        loc = page.locator(".screening-question-container").filter(has_text=pat)
+        count = await loc.count()
+        for i in range(count):
+            boxes.append(loc.nth(i))
+    return boxes
 
 
-async def _playwright_fill_hirist_field(
+async def _locate_hirist_question_box(page: Page, label: str):
+    """Find the first screening question container for a label."""
+    boxes = await _locate_hirist_question_boxes(page, label)
+    return boxes[0] if boxes else None
+
+
+def _coerce_hirist_notice_text_answer(label: str, answer: str) -> str:
+    """Map canonical notice answers to text Hirist textareas accept."""
+    text = answer.strip()
+    if not text:
+        return text
+    if not (_looks_like_np_question(label) or _looks_like_notice_period_question(label)):
+        return text
+    low = text.lower()
+    if low in ("0", "0 days", "0 day") or re.search(r"\b(immediate|immediately|available now)\b", low):
+        return "Immediately available"
+    if re.fullmatch(r"\d+", text):
+        return f"{text} days"
+    return text
+
+
+async def _playwright_fill_one_hirist_box(
     page: Page,
+    box,
     field: dict[str, Any],
     answer: str,
     *,
     slow: bool = False,
     config: AppConfig | None = None,
+    label: str = "",
+    kind: str = "text",
+    options: list[str] | None = None,
 ) -> bool:
-    """Playwright fill fallback when React ignores programmatic DOM updates."""
-    label = str(field.get("label", "")).strip()
-    kind = str(field.get("kind", "text"))
-    if not label or not answer:
-        return False
-
-    options = [str(o).strip() for o in field.get("options", []) if str(o).strip()]
-    if options and (
-        _CCTC_LABEL.search(label)
-        or _ECTC_LABEL.search(label)
-        or _looks_like_np_question(label)
-        or _looks_like_notice_period_question(label)
-    ):
-        answer = _coerce_hirist_chip_answer(label, answer, options, config)
-
-    snippet = _hirist_label_regex(label, max_chars=40)
-    box = await _locate_hirist_question_box(page, label)
-    if box is None:
-        container = page.locator(
-            ".short-answer-question-container, .long-answer-question-container, "
-            ".yes-no-answer-question-container, "
-            ".numeric-question-container, .single-answer-question-container, "
-            ".multi-answer-question-container"
-        ).filter(has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet))
-        if await container.count() == 0:
-            container = page.locator(".screening-question-container").filter(
-                has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet)
-            )
-        if await container.count() == 0:
-            return False
-        box = container.first
-
-    await box.scroll_into_view_if_needed()
+    """Fill a single Hirist question container."""
+    if options is None:
+        options = []
 
     # DOM decides the control type. Discovery / language inference may tag a question
     # as radio/checkbox, but Hirist frequently renders it as a plain textarea with no
@@ -1239,6 +1255,12 @@ async def _playwright_fill_hirist_field(
         # Free-text control: keep a clean Yes/No-ish value, then text-fill below.
         answer = _coerce_hirist_radio_answer(label, answer, options or ["Yes", "No"], config)
         kind = "text"
+
+    if has_checks and (
+        kind in ("checkbox", "checkbox_group")
+        or (_looks_like_np_question(label) or _looks_like_notice_period_question(label))
+    ):
+        kind = "checkbox_group"
 
     if choice_in_dom and (kind == "radio" or _YES_NO_QUESTION.search(label)):
         if not has_radios and has_checks:
@@ -1367,6 +1389,10 @@ async def _playwright_fill_hirist_field(
         return False
 
     if kind in ("checkbox", "checkbox_group") and has_checks:
+        if _looks_like_np_question(label) or _looks_like_notice_period_question(label):
+            chip_opts = options or [str(o).strip() for o in (field.get("options") or []) if str(o).strip()]
+            if chip_opts:
+                answer = _coerce_hirist_chip_answer(label, answer, chip_opts, config)
         want = answer.strip().lower()
         is_single_select = _CCTC_LABEL.search(label) or _ECTC_LABEL.search(label) or _looks_like_np_question(label)
 
@@ -1435,6 +1461,7 @@ async def _playwright_fill_hirist_field(
     inp = box.locator("textarea, input[type=text], input[type=number], input:not([type])").first
     if await inp.count() == 0:
         return False
+    answer = _coerce_hirist_notice_text_answer(label, answer)
     await inp.scroll_into_view_if_needed()
     await inp.click()
     numeric_answer = answer
@@ -1452,7 +1479,13 @@ async def _playwright_fill_hirist_field(
         else:
             numeric_answer = re.sub(r"[^\d.]", "", numeric_answer.split()[0] if numeric_answer else "")
     await inp.fill("")
-    use_slow = slow or kind == "number" or infer_field_input_type(label, field) in ("years_numeric", "ctc_numeric")
+    is_textarea = await box.locator("textarea").count() > 0
+    use_slow = (
+        slow
+        or is_textarea
+        or kind == "number"
+        or infer_field_input_type(label, field) in ("years_numeric", "ctc_numeric")
+    )
     if use_slow:
         await inp.press_sequentially(numeric_answer, delay=25)
     else:
@@ -1468,7 +1501,9 @@ async def _playwright_fill_hirist_field(
     try:
         await inp.evaluate(
             """(el, value) => {
-              const proto = window.HTMLInputElement.prototype;
+              const proto = el.tagName === "TEXTAREA"
+                ? window.HTMLTextAreaElement.prototype
+                : window.HTMLInputElement.prototype;
               const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
               if (setter) setter.call(el, value);
               else el.value = value;
@@ -1484,7 +1519,69 @@ async def _playwright_fill_hirist_field(
         current = (await inp.input_value()).strip()
     except Exception:
         current = ""
-    return bool(current)
+    result = bool(current)
+    return result
+
+
+async def _playwright_fill_hirist_field(
+    page: Page,
+    field: dict[str, Any],
+    answer: str,
+    *,
+    slow: bool = False,
+    config: AppConfig | None = None,
+) -> bool:
+    """Playwright fill fallback when React ignores programmatic DOM updates."""
+    label = str(field.get("label", "")).strip()
+    kind = str(field.get("kind", "text"))
+    if not label or not answer:
+        return False
+
+    options = [str(o).strip() for o in field.get("options", []) if str(o).strip()]
+    if options and (
+        _CCTC_LABEL.search(label)
+        or _ECTC_LABEL.search(label)
+        or _looks_like_np_question(label)
+        or _looks_like_notice_period_question(label)
+    ):
+        answer = _coerce_hirist_chip_answer(label, answer, options, config)
+
+    snippet = _hirist_label_regex(label, max_chars=40)
+    boxes = await _locate_hirist_question_boxes(page, label)
+    if not boxes:
+        container = page.locator(
+            ".short-answer-question-container, .long-answer-question-container, "
+            ".yes-no-answer-question-container, "
+            ".numeric-question-container, .single-answer-question-container, "
+            ".multi-answer-question-container"
+        ).filter(has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet))
+        if await container.count() == 0:
+            container = page.locator(".screening-question-container").filter(
+                has=page.locator(".mandatory-question, .question-text").filter(has_text=snippet)
+            )
+        count = await container.count()
+        boxes = [container.nth(i) for i in range(count)]
+
+    if not boxes:
+        return False
+
+    results: list[bool] = []
+    for box in boxes:
+        await box.scroll_into_view_if_needed()
+        results.append(
+            await _playwright_fill_one_hirist_box(
+                page,
+                box,
+                field,
+                answer,
+                slow=slow,
+                config=config,
+                label=label,
+                kind=kind,
+                options=options,
+            )
+        )
+    return all(results)
 
 
 async def discover_hirist_questions(page: Page, *, prepped: bool = False) -> list[dict[str, Any]]:
@@ -1854,11 +1951,8 @@ async def fill_hirist_questions(
                     for q in still_empty:
                         if q not in failed:
                             failed.append(q)
-                else:
-                    for field, pair in pairs:
-                        label = str(pair["label"])
-                        if label not in failed:
-                            failed.append(label)
+                # DOM shows values but React did not enable Next — not a per-field
+                # fill failure; apply.py handles Next-disabled separately.
 
     await page.wait_for_timeout(150)
     return failed

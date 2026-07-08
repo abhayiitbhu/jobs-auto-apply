@@ -853,6 +853,10 @@
         "ignore_keyword": {
           "type": "string",
           "default": "ignore"
+        },
+        "pending_keyword": {
+          "type": "string",
+          "default": "pending"
         }
       },
       "description": "Send pending questions to a Telegram bot and read your replies.\n\nOfficial, free Bot API via long polling \u2014 no server, webhook, or tunnel, and\nno ToS/ban risk. Create a bot with @BotFather, paste the token here, then run\n`python main.py telegram-login` and send /start to your bot once.\n"

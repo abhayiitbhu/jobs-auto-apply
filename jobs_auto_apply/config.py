@@ -312,7 +312,7 @@ class TelegramConfig(JsonSchemaMixin):
     """
 
     enabled: bool = False
-    # inline   = ask questions at the end of each run (run does the polling)
+    # inline   = ask questions at the end of each run
     # listener = `serve` runs Telegram in-process; or run `telegram-listen` standalone
     mode: str = "inline"
     bot_token: str = ""
@@ -322,6 +322,9 @@ class TelegramConfig(JsonSchemaMixin):
     skip_keyword: str = "skip"
     drop_keyword: str = "drop"
     ignore_keyword: str = "ignore"
+    # Message this word any time (not as a reply to a question) to have the bot
+    # re-send all currently open pending questions so you can answer them now.
+    pending_keyword: str = "pending"
 
 
 @dataclass
@@ -753,6 +756,7 @@ def _telegram_config(data: dict[str, Any]) -> TelegramConfig:
         skip_keyword=str(data.get("skip_keyword", "skip")),
         drop_keyword=str(data.get("drop_keyword", "drop")),
         ignore_keyword=str(data.get("ignore_keyword", "ignore")),
+        pending_keyword=str(data.get("pending_keyword", "pending")),
     )
 
 

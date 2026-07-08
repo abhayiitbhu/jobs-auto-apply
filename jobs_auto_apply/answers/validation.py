@@ -13,7 +13,7 @@ from .compensation import (
     looks_like_compensation_question,
     resolve_ctc_numeric_answer,
 )
-from .config_answers import ctc_want_kind
+from .config_answers import ctc_want_kind, facts_serving_notice
 from .experience import is_skill_years_question
 from .fields import (
     OPTIONAL_NAME_FIELD,
@@ -267,11 +267,22 @@ def saved_answer_fits_field(
             if len(answer.strip()) > 12:
                 return False
     if is_last_working_day_question(label):
-        if re.search(r"\b\d+\s*days?\b", answer, re.I) and not re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", answer):
-            return False
         if re.search(r"serving_notice\s*:|last_working_day\s*:", answer, re.I):
             return False
-        return bool(re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", answer))
+        has_date = bool(re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", answer))
+        if not facts_serving_notice(config):
+            # Not serving notice: a concrete/future LWD date overstates reality and
+            # the fill-time guard rejects it. So a saved date does NOT cover this
+            # field — force it back into the pending queue (Telegram) instead of
+            # silently retrying. Only a truthful "not serving / NA / immediate"
+            # style answer is usable here.
+            if has_date:
+                return False
+            return bool(re.search(r"\b(no|not\s+serving|na|n/?a|immediate|immediately|none)\b", answer, re.I))
+        # Serving notice: a concrete date is required (a bare "N days" is not one).
+        if re.search(r"\b\d+\s*days?\b", answer, re.I) and not has_date:
+            return False
+        return has_date
     if re.search(r"\bnotice\s*period\b|\bnp\b", label, re.I):
         if re.fullmatch(r"\d+(?:\s*days?)?", answer.strip(), re.I):
             return True

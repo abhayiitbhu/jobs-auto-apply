@@ -19,6 +19,26 @@ from .fields import infer_field_input_type, is_numeric_ctc_question
 from .location import is_location_value_question, is_relocation_yesno_question
 
 
+def facts_serving_notice(config: AppConfig | None) -> bool:
+    """True only when application_facts explicitly says the user is serving notice.
+
+    A "Last Working Day" only exists while serving notice; when it is false (or
+    unset) there is no valid future date to give. Shared source of truth for both
+    the fill-time guard (naukri chatbot) and the saved-answer usability check so
+    they never disagree (a stale LWD date must not be treated as a usable answer).
+    """
+    if config is None:
+        return False
+    try:
+        facts = load_application_facts(config)
+    except Exception:
+        return False
+    val = facts.get("serving_notice")
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("true", "yes", "1")
+
+
 def compensation_answer(config: AppConfig, question: str, field: dict[str, Any] | None = None) -> str | None:
     if not looks_like_compensation_question(question):
         return None

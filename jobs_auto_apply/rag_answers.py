@@ -446,6 +446,10 @@ def generate_rag_answer(
         return _current_ctc_answer(config, question)
 
     if group_id == "last_working_day" or re.search(r"\b(last working day|lwd)\b", norm):
+        if not app_facts.get("serving_notice"):
+            if re.search(r"\belse\b|\bn/?a\b|\bright\s+na\b", norm, re.I):
+                return "NA"
+            return "Not serving notice"
         lwd = str(app_facts.get("last_working_day", "")).strip()
         if lwd:
             return lwd

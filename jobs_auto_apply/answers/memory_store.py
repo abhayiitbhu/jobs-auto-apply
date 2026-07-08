@@ -23,6 +23,7 @@ from .experience import is_skill_years_question
 from .fields import (
     enrich_field_for_llm,
     infer_field_input_type,
+    is_last_working_day_question,
     is_numeric_ctc_question,
 )
 from .labels import normalize_question_label
@@ -113,6 +114,16 @@ def resolve_fill_answer(
         return text
 
     label = str(field.get("label", ""))
+    if is_last_working_day_question(label):
+        from .config_answers import facts_serving_notice
+
+        if not facts_serving_notice(config) and re.search(
+            r"\belse\b|\bn/?a\b|\bright\s+na\b",
+            label,
+            re.I,
+        ):
+            return "NA"
+
     if is_location_value_question(label) and re.fullmatch(r"\d+(?:\.\d+)?", text):
         return ""
 
@@ -216,16 +227,25 @@ def resolve_fill_answer(
         return "Yes" if re.search(r"\byes\b", text, re.I) else "No"
 
     input_type = infer_field_input_type(label, field)
-    platform = str(field.get("platform", "")).lower()
-    if input_type == "years_numeric" and platform == "naukri":
+    if input_type == "years_numeric" or is_skill_years_question(label):
+        from .chips import coerce_yes_no_to_years_count
+
         num = parse_years_numeric_value(text)
         if num is not None:
             return str(int(num)) if num == int(num) else str(num)
+        coerced = coerce_yes_no_to_years_count(text)
+        if coerced is not None:
+            return coerced
 
     # Text fields: append "years" when question asks for years and answer is numeric only
     if kind in ("input", "text", "textarea") and re.search(r"\byears?\b", label, re.I):
         if re.fullmatch(r"\d+", text):
             return f"{text} years"
+
+    if re.search(r"\bnotice\s*period\b", label, re.I) or infer_field_input_type(label, field) == "notice_period":
+        if re.fullmatch(r"0(?:\s*days?)?", text.strip(), re.I):
+            if kind not in ("radio", "checkbox_group") or not options:
+                return "Immediately available"
 
     return text
 
@@ -385,11 +405,12 @@ def _try_saved_entry(
 
         if is_placeholder_answer(ans):
             return None
-        # Never trust a Yes/No answer for a numeric field, even if reviewed — it is
-        # always a cross-question reuse bug (e.g. "Yes" landing on a years field).
-        if is_hard_type_mismatch(question, ans, enriched, config):
-            return None
         fill = resolve_fill_answer(ans, enriched, config)
+        if is_hard_type_mismatch(question, ans, enriched, config):
+            # User may have answered "Yes"/"No" to a years field phrased as experience.
+            if fill and answer_usable(question, fill, enriched, config):
+                return fill
+            return None
         return fill or ans
     return None
 

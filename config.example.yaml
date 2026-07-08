@@ -205,6 +205,7 @@ hirist:
       - "https://www.hirist.tech/k/java-jobs?minexp=4&maxexp=6&posting=3"
       - "https://www.hirist.tech/k/nodejs-jobs?minexp=4&maxexp=6&posting=3"
       - "https://www.hirist.tech/k/spring-jobs?minexp=4&maxexp=6&posting=3"
+      - "https://www.hirist.tech/k/restful-api-jobs?minexp=4&maxexp=6&posting=3"
     # Answers from data/user_memory.json; unknown questions → data/pending_questions.json
     # Legacy keyword search (used when search_urls is empty):
     keywords: ["python", "backend"]
@@ -370,6 +371,7 @@ telegram:
   skip_keyword: "skip"
   drop_keyword: "drop"
   ignore_keyword: "ignore"
+  pending_keyword: "pending"      # message this any time (e.g. /pending) to re-send all open questions
 
 state:
   applied_jobs_file: "data/applied_jobs.json"

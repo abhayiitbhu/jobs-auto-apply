@@ -25,6 +25,16 @@ def is_chip_range_label(answer: str) -> bool:
     return bool(_YEAR_CHIP_LABEL.search(answer.strip()))
 
 
+def coerce_yes_no_to_years_count(text: str) -> str | None:
+    """Map a bare yes/no reply to a years count for numeric experience fields."""
+    low = text.strip().lower()
+    if re.match(r"^(yes|y|yeah|yep|yup|true)\b", low):
+        return "1"
+    if re.match(r"^(no|n|none|nope|false)\b", low):
+        return "0"
+    return None
+
+
 def parse_years_numeric_value(answer: str) -> float | None:
     """Extract a years count from answers like '5', '5 years', or '0 years of X'."""
     text = answer.strip()

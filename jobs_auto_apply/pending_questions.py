@@ -60,7 +60,18 @@ def _load(base_dir: Path, config: AppConfig | None = None) -> dict[str, Any]:
     path = pending_questions_path(base_dir, config)
     if not path.exists():
         return {"questions": {}}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {"questions": {}}
+        data = json.loads(raw)
+        if isinstance(data, dict) and isinstance(data.get("questions"), dict):
+            return data
+    except json.JSONDecodeError:
+        logger.warning("Invalid %s — resetting to empty state", path.name)
+    except OSError:
+        logger.warning("Could not read %s — resetting to empty state", path.name, exc_info=True)
+    return {"questions": {}}
 
 
 def _save(base_dir: Path, data: dict[str, Any], config: AppConfig | None = None) -> None:
@@ -121,6 +132,13 @@ def _coerce_pending_user_answer(
     )
     if years is not None and wants_years:
         return str(int(years)) if years == int(years) else str(years)
+
+    if wants_years and years is None:
+        from .answers.chips import coerce_yes_no_to_years_count
+
+        coerced = coerce_yes_no_to_years_count(text)
+        if coerced is not None:
+            return coerced
 
     if is_numeric_ctc_question(label) or input_type == "ctc_numeric":
         num = re.search(r"(\d+(?:\.\d+)?)", text)
@@ -317,6 +335,18 @@ def group_notified_message_id(
             mid = entry.get("notified_message_id")
             if isinstance(mid, int):
                 return mid
+    return None
+
+
+def pending_group_for_notified_message_id(
+    base_dir: Path,
+    message_id: int,
+    config: AppConfig | None = None,
+) -> PendingQuestionGroup | None:
+    """Return the pending group that was sent as ``message_id``, if any."""
+    for group in pending_groups(base_dir, config):
+        if group_notified_message_id(base_dir, group, config) == message_id:
+            return group
     return None
 
 
@@ -1056,7 +1086,7 @@ async def _process_messenger_reply(
     )
     if not stored_values:
         with contextlib.suppress(Exception):
-            await client.send("Could not save that answer (failed validation). Try again.", **send_kw)
+            await client.send("Could not save that answer. Try again.", **send_kw)
         return "retry", []
 
     _remove_group(base_dir, group.group_id)
@@ -1073,6 +1103,7 @@ async def answer_pending_groups_via_messenger(
     applied_count: int | None = None,
     send_heads_up: bool = True,
     per_question_timeout: int | None = None,
+    refresh_event: asyncio.Event | None = None,
 ) -> tuple[int, list[PendingJobRef]]:
     """Ask each pending question over a messenger and save the routed replies.
 
@@ -1103,6 +1134,7 @@ async def answer_pending_groups_via_messenger(
     skip_keyword = getattr(client, "skip_keyword", "skip")
     drop_keyword = getattr(client, "drop_keyword", "drop")
     ignore_keyword = getattr(client, "ignore_keyword", "ignore")
+    pending_keyword = (getattr(client, "pending_keyword", "pending") or "").strip().lower()
 
     new_groups = sum(1 for g in groups if group_notified_message_id(base_dir, g, config) is None)
     if send_heads_up and new_groups:
@@ -1130,7 +1162,9 @@ async def answer_pending_groups_via_messenger(
         skip_keyword=skip_keyword,
         drop_keyword=drop_keyword,
         ignore_keyword=ignore_keyword,
+        pending_keyword=pending_keyword,
         per_question_timeout=per_question_timeout,
+        refresh_event=refresh_event,
     )
 
 
@@ -1173,6 +1207,224 @@ async def _close_states_for_dropped_urls(
     return closed
 
 
+def _normalize_command(text: str) -> str:
+    """Lowercase a message and strip a leading ``/`` so ``/pending`` == ``pending``."""
+    return (text or "").strip().lstrip("/").strip().lower()
+
+
+async def resend_pending_questions_via_messenger(
+    base_dir: Path,
+    config: AppConfig,
+    client,
+) -> int:
+    """Re-send every pending question from disk (``pending`` command).
+
+    Used when the listener is idle or blocked waiting for the apply lock — not
+    only while an in-flight reply-routing session is open.
+    """
+    prune_answered(base_dir, config)
+    groups = pending_groups(base_dir, config)
+    if not groups:
+        with contextlib.suppress(Exception):
+            await client.send(
+                "You have no pending questions right now — " "I'll message you as soon as any need answering."
+            )
+        return 0
+
+    total = len(groups)
+    use_llm_draft = bool(config.llm.enabled)
+    skip_keyword = getattr(client, "skip_keyword", "skip")
+    drop_keyword = getattr(client, "drop_keyword", "drop")
+    ignore_keyword = getattr(client, "ignore_keyword", "ignore")
+    sent = 0
+    for index, group in enumerate(groups, 1):
+        prep = _prepare_group_question(
+            base_dir,
+            config,
+            group,
+            index,
+            total,
+            use_llm_draft=use_llm_draft,
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+        )
+        try:
+            message_id = await client.send(prep["message"])
+        except Exception as exc:
+            logger.warning("Re-send of pending question failed for %s: %s", prep["primary"][:60], exc)
+            continue
+        if message_id is not None:
+            mark_group_notified(base_dir, group, message_id, config)
+        sent += 1
+        await asyncio.sleep(0.3)
+    return sent
+
+
+async def _resend_open_questions(
+    base_dir: Path,
+    config: AppConfig,
+    client,
+    order: list[dict[str, Any]],
+    states_by_msg_id: dict[int, dict[str, Any]],
+    *,
+    use_llm_draft: bool,
+    skip_keyword: str,
+    drop_keyword: str,
+    ignore_keyword: str,
+) -> None:
+    """Re-send every still-open question (in response to the ``pending`` command).
+
+    Each question goes out as a fresh message; the state's ``message_id`` is
+    rebound to the new message so replies quoting it still route correctly, and
+    the group's saved ``notified_message_id`` is updated to match.
+    """
+    open_states = [s for s in order if not s["done"]]
+    if not open_states:
+        with contextlib.suppress(Exception):
+            await client.send("You have no open questions right now — everything's answered.")
+        return
+
+    total_open = len(open_states)
+    for index, state in enumerate(open_states, 1):
+        group = state["group"]
+        prep = _prepare_group_question(
+            base_dir,
+            config,
+            group,
+            index,
+            total_open,
+            use_llm_draft=use_llm_draft,
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+        )
+        try:
+            new_message_id = await client.send(prep["message"])
+        except Exception as exc:
+            logger.warning("Re-send of pending question failed for %s: %s", prep["primary"][:60], exc)
+            continue
+        old_message_id = state.get("message_id")
+        if old_message_id is not None:
+            states_by_msg_id.pop(old_message_id, None)
+        state["primary"] = prep["primary"]
+        state["company"] = prep["company"]
+        state["job_title"] = prep["job_title"]
+        state["message_id"] = new_message_id
+        if new_message_id is not None:
+            states_by_msg_id[new_message_id] = state
+            mark_group_notified(base_dir, group, new_message_id, config)
+        await asyncio.sleep(0.3)  # gentle pacing so we don't trip Telegram rate limits
+
+
+async def _wait_reply_or_refresh(
+    client,
+    *,
+    timeout: int | None,
+    refresh_event: asyncio.Event | None,
+) -> dict[str, Any] | None:
+    """Wait for a routed reply, or return ``{"_refresh": True}`` when woken."""
+    if refresh_event is None:
+        return await client.wait_for_reply_routed(timeout=timeout)
+    if refresh_event.is_set():
+        refresh_event.clear()
+        return {"_refresh": True}
+
+    reply_task = asyncio.create_task(client.wait_for_reply_routed(timeout=timeout))
+    refresh_task = asyncio.create_task(refresh_event.wait())
+    try:
+        done, still_pending = await asyncio.wait(
+            {reply_task, refresh_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        # A user reply beats a refresh signal — never discard a reply that already
+        # arrived because the apply cycle woke the listener at the same moment.
+        if reply_task in done and not reply_task.cancelled():
+            try:
+                reply_result = reply_task.result()
+                if reply_result is not None:
+                    for task in still_pending:
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
+                    refresh_event.clear()
+                    return reply_result
+            except Exception:
+                pass
+        for task in still_pending:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        if refresh_task in done:
+            refresh_event.clear()
+            return {"_refresh": True}
+        return reply_task.result()
+    except asyncio.CancelledError:
+        reply_task.cancel()
+        refresh_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reply_task
+            await refresh_task
+        raise
+
+
+async def _append_new_pending_groups(
+    base_dir: Path,
+    config: AppConfig,
+    client,
+    order: list[dict[str, Any]],
+    states_by_msg_id: dict[int, dict[str, Any]],
+    *,
+    use_llm_draft: bool,
+    skip_keyword: str,
+    drop_keyword: str,
+    ignore_keyword: str,
+) -> int:
+    """Send any newly deferred questions into an in-flight reply-routing session."""
+    known = {state["group"].group_id for state in order}
+    groups = pending_groups(base_dir, config)
+    new_groups = [g for g in groups if g.group_id not in known]
+    if not new_groups:
+        return 0
+
+    added = 0
+    open_count = sum(1 for s in order if not s["done"])
+    pending_total = open_count + len(new_groups)
+    for group in new_groups:
+        index = open_count + added + 1
+        prep = _prepare_group_question(
+            base_dir,
+            config,
+            group,
+            index,
+            pending_total,
+            use_llm_draft=use_llm_draft,
+            skip_keyword=skip_keyword,
+            drop_keyword=drop_keyword,
+            ignore_keyword=ignore_keyword,
+        )
+        try:
+            message_id = await client.send(prep["message"])
+        except Exception as exc:
+            logger.warning("Messenger send failed for new pending %s: %s", prep["primary"][:60], exc)
+            continue
+        mark_group_notified(base_dir, group, message_id, config)
+        state = {
+            "group": group,
+            "primary": prep["primary"],
+            "company": prep["company"],
+            "job_title": prep["job_title"],
+            "message_id": message_id,
+            "done": False,
+        }
+        order.append(state)
+        if message_id is not None:
+            states_by_msg_id[message_id] = state
+        added += 1
+        await asyncio.sleep(0.3)
+    return added
+
+
 async def _answer_pending_groups_reply_routed(
     base_dir: Path,
     config: AppConfig,
@@ -1184,7 +1436,9 @@ async def _answer_pending_groups_reply_routed(
     skip_keyword: str,
     drop_keyword: str,
     ignore_keyword: str,
+    pending_keyword: str = "",
     per_question_timeout: int | None,
+    refresh_event: asyncio.Event | None = None,
 ) -> tuple[int, list[PendingJobRef]]:
     """Send all questions, then route each reply to the question it quotes.
 
@@ -1244,7 +1498,11 @@ async def _answer_pending_groups_reply_routed(
     remaining = sum(1 for s in order if not s["done"])
 
     while remaining > 0:
-        upd = await client.wait_for_reply_routed(timeout=per_question_timeout)
+        upd = await _wait_reply_or_refresh(
+            client,
+            timeout=per_question_timeout,
+            refresh_event=refresh_event,
+        )
         if upd is None:
             logger.info("No messenger reply within timeout — leaving remaining questions pending.")
             with contextlib.suppress(Exception):
@@ -1253,6 +1511,37 @@ async def _answer_pending_groups_reply_routed(
                     "Run again or use: python main.py answer-questions"
                 )
             break
+        if upd.get("_refresh"):
+            remaining += await _append_new_pending_groups(
+                base_dir,
+                config,
+                client,
+                order,
+                states_by_msg_id,
+                use_llm_draft=use_llm_draft,
+                skip_keyword=skip_keyword,
+                drop_keyword=drop_keyword,
+                ignore_keyword=ignore_keyword,
+            )
+            continue
+
+        # An on-demand "pending" command (a plain message, or even one sent as a
+        # reply) re-sends every still-open question so the user can answer now —
+        # handled before routing so it's never mistaken for an answer.
+        command = _normalize_command(upd.get("text") or "")
+        if pending_keyword and command == pending_keyword:
+            await _resend_open_questions(
+                base_dir,
+                config,
+                client,
+                order,
+                states_by_msg_id,
+                use_llm_draft=use_llm_draft,
+                skip_keyword=skip_keyword,
+                drop_keyword=drop_keyword,
+                ignore_keyword=ignore_keyword,
+            )
+            continue
 
         reply_to = upd.get("reply_to")
         state = states_by_msg_id.get(reply_to) if reply_to is not None else None
