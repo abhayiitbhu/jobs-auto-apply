@@ -22,6 +22,7 @@ _DETERMINISTIC_FACT_GROUPS = frozenset(
         "join_availability",
         "uan",
         "current_location",
+        "preferred_location",
     }
 )
 

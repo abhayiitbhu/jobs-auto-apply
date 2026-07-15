@@ -98,6 +98,12 @@ def infer_field_input_type(label: str, field: dict[str, Any] | None = None) -> s
         return "location"
     if is_last_working_day_question(label):
         return "date"
+    if re.search(
+        r"\b(desired start date|start date|date of joining|joining date|earliest start|available from)\b",
+        label,
+        re.I,
+    ):
+        return "date"
     if is_numeric_ctc_question(label) or (placeholder and re.search(r"lakh|lac", placeholder, re.I)):
         return "ctc_numeric"
     if re.search(r"\b(date of birth|dob|birth date)\b", label, re.I) or field.get("hasDobInput"):

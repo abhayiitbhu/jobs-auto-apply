@@ -80,6 +80,23 @@ _CANONICAL_SKILL_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"full\s*stack|fullstack"), "fullstack"),
     (re.compile(r"architecture"), "architecture"),
     (re.compile(r"oops|object oriented"), "oops"),
+    (re.compile(r"\bcursor\b"), "cursor"),
+    (re.compile(r"rabbit\s*mq|\brabbitmq\b"), "rabbitmq"),
+    (re.compile(r"hugging\s*face|\bhuggingface\b"), "huggingface"),
+    (re.compile(r"\bsagemaker\b"), "sagemaker"),
+    (re.compile(r"\bhtml\b|\bcss\b"), "html"),
+    (re.compile(r"\bgrpc\b|g\s*rpc"), "grpc"),
+    (re.compile(r"open\s*shift|\bopenshift\b"), "openshift"),
+    (re.compile(r"credit\s*risk"), "credit_risk"),
+    (re.compile(r"\bcalypso\b"), "calypso"),
+    (re.compile(r"\bautosar\b"), "autosar"),
+    (re.compile(r"agent\s*framework"), "agent_frameworks"),
+    (re.compile(r"\binfrastructure\b"), "infrastructure"),
+    (re.compile(r"\bqa\b|\bqe\b|quality\s*assurance|quality\s*engineering"), "qa_qe"),
+    (re.compile(r"big\s*data"), "big_data"),
+    (re.compile(r"\bsitecore\b"), "sitecore"),
+    (re.compile(r"supply\s*chain"), "supply_chain"),
+    (re.compile(r"\bsql\b"), "sql"),
 )
 
 
@@ -127,6 +144,19 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
         ),
     ),
     QuestionGroupDef(
+        "desired_start_date",
+        "Desired start / joining date",
+        "Date as DD/MM/YYYY — derived from notice period or last working day",
+        (
+            re.compile(r"desired\s*start\s*date"),
+            re.compile(r"\bstart\s*date\b"),
+            re.compile(r"date\s*of\s*joining"),
+            re.compile(r"joining\s*date"),
+            re.compile(r"earliest\s*(?:start|join)"),
+            re.compile(r"available\s*from"),
+        ),
+    ),
+    QuestionGroupDef(
         "last_working_day",
         "Last working day (LWD)",
         "Date as DD/MM/YYYY — e.g. 12/06/2026 from application_facts",
@@ -145,8 +175,12 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
         (
             re.compile(r"\bf2f\b"),
             re.compile(r"face[\s-]?to[\s-]?face"),
+            re.compile(r"walk[\s-]?in"),
             re.compile(r"final.{0,24}(f2f|face)"),
             re.compile(r"(f2f|face).{0,24}final"),
+            re.compile(r"in[\s-]?person.{0,48}(?:interview|discussion|round|meet|visit)"),
+            re.compile(r"(?:interview|discussion|round|meet|available|visit).{0,48}in[\s-]?person"),
+            re.compile(r"\binperson\b"),
         ),
     ),
     QuestionGroupDef(
@@ -156,6 +190,11 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
         (
             re.compile(r"notice period"),
             re.compile(r"serving.{0,20}notice"),
+            re.compile(r"how soon.{0,24}join"),
+            re.compile(r"when can you join"),
+            re.compile(r"how early.{0,16}join"),
+            re.compile(r"earliest (?:you can )?join"),
+            re.compile(r"how quickly.{0,16}join"),
         ),
     ),
     QuestionGroupDef(
@@ -164,6 +203,9 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
         "City you are based in — e.g. Bengaluru",
         (
             re.compile(r"current location"),
+            re.compile(r"present location"),
+            re.compile(r"present.{0,12}work location"),
+            re.compile(r"current.{0,12}work location"),
             re.compile(r"current.{0,16}native.{0,16}location"),
             re.compile(r"native location"),
             re.compile(r"what is your location"),
@@ -173,12 +215,16 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
             re.compile(r"your city"),
             re.compile(r"where are you.{0,20}located"),
             re.compile(r"where.{0,10}you located"),
+            re.compile(r"currently located"),
+            re.compile(r"current city"),
+            re.compile(r"city you are currently"),
+            re.compile(r"currently where are you staying"),
         ),
     ),
     QuestionGroupDef(
         "preferred_location",
         "Preferred location / relocation",
-        "Preferred city or Yes/No for relocation",
+        "Preferred city or Yes/No for relocation / WFO",
         (
             re.compile(r"select.{0,30}(city|cities)"),
             re.compile(r"preferred location"),
@@ -189,6 +235,16 @@ GROUP_DEFS: tuple[QuestionGroupDef, ...] = (
             re.compile(r"currently residing"),
             re.compile(r"currently living in"),
             re.compile(r"ready to relocate"),
+            re.compile(r"mandatory to relocate"),
+            re.compile(r"work[\s-]?from[\s-]?office|\bwfo\b"),
+            re.compile(r"comfortable (?:with|to).{0,40}(?:location|office|wfo|relocat)"),
+            re.compile(r"(?:okay|ok) with.{0,40}(?:location|office|wfo|relocat)"),
+            re.compile(r"open for.{0,40}location"),
+            re.compile(r"relocate to"),
+            re.compile(r"job location"),
+            re.compile(r"work from.{0,40}location"),
+            re.compile(r"willing to work from"),
+            re.compile(r"interested in working.{0,40}(?:office|location|wfo)"),
         ),
     ),
     QuestionGroupDef(
@@ -301,7 +357,7 @@ def classify_question(label: str) -> str:
     ):
         return f"unique:{question_key(label)}"
 
-    if re.search(r"do (you|u) have experience", norm) or (
+    if re.search(r"do (you|u) have (?:any )?experience", norm) or (
         re.search(r"experience.{0,20}\?", norm) and not re.search(r"\byears?\b", norm)
     ):
         for pattern, skill_id in _CANONICAL_SKILL_RULES:
@@ -333,7 +389,7 @@ def classify_question(label: str) -> str:
         norm,
     ):
         skill_match = re.search(
-            r"experience.{0,40}(?:in|with|developing|deploying)\s+([a-z0-9+#./\s&-]+?)(?:\s*\(|years|\?|$)",
+            r"experience.{0,40}(?:in|with|as|developing|deploying)\s+([a-z0-9+#./\s&-]+?)(?:\s*\(|years|\?|$)",
             norm,
         )
         if not skill_match and re.search(r"backend", norm):

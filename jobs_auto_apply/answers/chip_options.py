@@ -6,7 +6,11 @@ import re
 
 _LPA_CHIP = re.compile(r"lpa|lac", re.I)
 _NOTICE_CHIP = re.compile(
-    r"\b(week|weeks|day|days|month|months|serving|immediate|above)\b",
+    r"\b(week|weeks|day|days|month|months|serving|above)\b",
+    re.I,
+)
+_IMMEDIATE_NOTICE_CHIP = re.compile(
+    r"\bimmediate(?:ly)?\b|join\s*immediately|available\s*now",
     re.I,
 )
 
@@ -21,6 +25,9 @@ def is_notice_chip_option(option: str) -> bool:
     text = option.strip()
     if not text:
         return False
+    # Hirist renders "Immediately Available" — \bimmediate\b does not match "Immediately".
+    if _IMMEDIATE_NOTICE_CHIP.search(text):
+        return True
     if _NOTICE_CHIP.search(text):
         return True
     return bool(re.search(r"\d+\s*(days?|weeks?|months?)", text, re.I))

@@ -17,7 +17,7 @@ from ..page_load import goto_settled, prepare_interactive_page
 from ..pending_questions import queue_unanswered
 from ..resume_upload import upload_resume
 from ..salary import is_job_salary_eligible, job_eligibility
-from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
+from ..utils import JobListing, defer_job_for_run, job_key, record_abandoned_apply, save_applied_job
 from .company import (
     extract_wellfound_company,
     extract_wellfound_company_about,
@@ -56,6 +56,21 @@ def _unanswered_labels(questions: list[dict], answers: dict[str, str]) -> list[s
         if label and not str(answers.get(label, "")).strip():
             missing.append(label)
     return missing
+
+
+def _record_location_blocked(config: AppConfig, job: JobListing) -> None:
+    """Persist a location-blocked job so future runs do not reopen it."""
+    record_abandoned_apply(
+        config.applied_jobs_path,
+        job_key(job.source, job.job_id),
+        {
+            "source": "wellfound",
+            "title": job.title,
+            "company": job.company,
+            "url": job.url,
+        },
+        reason="location blocked",
+    )
 
 
 def _queue_missing(
@@ -204,6 +219,8 @@ async def process_wellfound_job(
         return None
 
     if job.meta.get("eligible_to_apply") is False:
+        if config.application.skip_location_blocked and job.meta.get("location_blocked"):
+            _record_location_blocked(config, job)
         logger.info(
             "%sSkipping ineligible: %s — %s",
             prefix,
@@ -278,6 +295,7 @@ async def process_wellfound_job(
     elig = job.meta
     if config.application.skip_location_blocked and elig.get("location_blocked"):
         logger.info("%sSkipping location-blocked: %s @ %s", prefix, job.title, job.company)
+        _record_location_blocked(config, job)
         await close_apply_modal(page)
         if company_gate is not None:
             company_gate.release(job.company)
@@ -443,6 +461,8 @@ async def apply_to_job(
         return None
 
     if job.meta.get("eligible_to_apply") is False:
+        if config.application.skip_location_blocked and job.meta.get("location_blocked"):
+            _record_location_blocked(config, job)
         logger.info(
             "Skipping ineligible job: %s — %s",
             job.title,
@@ -500,6 +520,7 @@ async def apply_to_job(
     elig = job.meta
     if config.application.skip_location_blocked and elig.get("location_blocked"):
         logger.info("Skipping location-blocked: %s @ %s", job.title, job.company)
+        _record_location_blocked(config, job)
         await close_apply_modal(page)
         return None
     if config.application.skip_ineligible_salary and not elig.get("salary_eligible"):

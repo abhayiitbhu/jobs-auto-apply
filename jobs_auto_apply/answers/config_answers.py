@@ -63,7 +63,7 @@ def compensation_answer(config: AppConfig, question: str, field: dict[str, Any] 
 _EMAIL_Q = re.compile(r"\be-?mail\b", re.I)
 _PHONE_Q = re.compile(
     r"\b(?:mobile|phone|whats\s*app|whatsapp|cell|contact|alternate|alternative)\b"
-    r".{0,16}\b(?:number|no\.?|num|id)\b|\bmobile\b",
+    r".{0,16}\b(?:number|no\.?|num|nbr|id)\b|\bmobile\b",
     re.I,
 )
 # A skill/experience question that merely mentions email/phone (rare) must not be
@@ -106,6 +106,43 @@ def location_answer(config: AppConfig, question: str) -> str | None:
     facts = load_resume_facts(config.base_dir)
     city = facts.location.split(",")[0].strip() if facts.location else ""
     return city or None
+
+
+def relocation_yesno_answer(config: AppConfig, question: str) -> str | None:
+    """WFO / relocate / comfortable-with-location Yes/No from application_facts."""
+    if classify_question(question) != "preferred_location":
+        return None
+    if not is_relocation_yesno_question(question):
+        return None
+    app_facts = load_application_facts(config)
+    return str(app_facts.get("willing_to_relocate", "Yes")).strip() or "Yes"
+
+
+def f2f_interview_answer(config: AppConfig, question: str) -> str | None:
+    if classify_question(question) != "f2f_interview":
+        return None
+    app_facts = load_application_facts(config)
+    return str(app_facts.get("f2f_interview_available", "No")).strip() or "No"
+
+
+def notice_period_config_answer(config: AppConfig, question: str) -> str | None:
+    if classify_question(question) != "notice_period":
+        return None
+    app_facts = load_application_facts(config)
+    days = app_facts.get("notice_period_days")
+    if days is None:
+        return None
+    if int(days) == 0:
+        if re.search(r"how soon|when can you join|how early|how quickly", question, re.I):
+            return "Immediately"
+        if re.search(r"notice period|notice in days|\bdays\b", question, re.I):
+            return "0"
+        return "Immediately available"
+    if re.search(r"how soon|when can you join|how early|how quickly", question, re.I):
+        return f"{days} days"
+    if "days" in question.lower():
+        return str(days)
+    return f"{days} days"
 
 
 def gender_answer(config: AppConfig) -> str | None:
@@ -533,12 +570,15 @@ def authoritative_config_answer(
     question: str,
     field: dict[str, Any] | None = None,
 ) -> str | None:
-    """Contact → compound → compensation → location → profile links → skill years → prior association → education."""
+    """Contact → compound → compensation → location → relocate/F2F/notice → profile links → skill years → prior association → education."""
     for answer in (
         contact_info_answer(config, question),
         compound_config_answer(config, question, field),
         compensation_answer(config, question, field),
         location_answer(config, question),
+        relocation_yesno_answer(config, question),
+        f2f_interview_answer(config, question),
+        notice_period_config_answer(config, question),
         profile_link_config_answer(config, question),
         multi_skill_years_answer(config, question, field),
         skill_years_config_answer(config, question),

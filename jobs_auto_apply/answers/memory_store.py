@@ -30,6 +30,7 @@ from .labels import normalize_question_label
 from .location import (
     is_location_value_question,
     is_relocation_yesno_question,
+    map_city_to_location_chip,
     saved_location_answer_matches_question,
 )
 from .validation import (
@@ -195,6 +196,9 @@ def resolve_fill_answer(
                 for opt in options:
                     if re.search(r"\bimmediate", opt, re.I):
                         return opt.strip()
+        location_chip = map_city_to_location_chip(text, options)
+        if location_chip:
+            return location_chip
         years_field = is_skill_years_question(label) or infer_field_input_type(label, field) == "years_numeric"
         if years_field:
             years = parse_years_numeric_value(text)
@@ -385,6 +389,11 @@ def _try_saved_entry(
     enriched = enrich_field_for_llm({**(field or {}), "label": question})
     if answer_usable(question, ans, enriched, config):
         return ans
+    # City → Bangalore/Outside Bangalore (and similar) chip remaps: stored
+    # canonical may not literally equal an option, but resolve_fill can map it.
+    fill = resolve_fill_answer(ans, enriched, config)
+    if fill and answer_usable(question, fill, enriched, config):
+        return ans
     if (
         exact_match
         and entry.get("reviewed")
@@ -405,7 +414,6 @@ def _try_saved_entry(
 
         if is_placeholder_answer(ans):
             return None
-        fill = resolve_fill_answer(ans, enriched, config)
         if is_hard_type_mismatch(question, ans, enriched, config):
             # User may have answered "Yes"/"No" to a years field phrased as experience.
             if fill and answer_usable(question, fill, enriched, config):

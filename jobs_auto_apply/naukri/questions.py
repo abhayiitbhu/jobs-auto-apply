@@ -85,7 +85,9 @@ _BLOB_ANSWER = re.compile(
 )
 
 _DATE_FIELD = re.compile(
-    r"\b(date\s*of\s*birth|dob|d\.o\.b|birth\s*date|last\s*working\s*day|lwd)\b",
+    r"\b(date\s*of\s*birth|dob|d\.o\.b|birth\s*date|last\s*working\s*day|lwd|"
+    r"desired\s*start\s*date|start\s*date|date\s*of\s*joining|joining\s*date|"
+    r"earliest\s*(?:start|join)|available\s*from)\b",
     re.I,
 )
 
@@ -1513,6 +1515,18 @@ def _options_plausible_for_question(label: str, options: list[str]) -> bool:
             return False
     if _is_date_field(label) and _is_yes_no_options(opts):
         return False
+    # Relocation/location-only chips on a non-location question (e.g. competencies).
+    if not is_location_q and not _looks_like_city_select_question(label):
+        if all(re.search(r"\b(bangalore|outside|relocat|city|office)\b", o, re.I) for o in opts):
+            if not re.search(r"\b(relocat|location|city|office|based|willing)\b", norm):
+                return False
+    # Phantom Yes/No scraped from an adjacent control after a text answer was sent.
+    if _is_yes_no_options(opts) and not _looks_like_yes_no_question(label):
+        if re.search(
+            r"\b(organization|competenc|skill|describe|list|mention|name of|payroll|employer|" r"primary|competenc)\b",
+            norm,
+        ):
+            return False
     return True
 
 
@@ -1873,6 +1887,31 @@ def _normalize_dob_answer(answer: str) -> str:
     return text
 
 
+def _coerce_date_answer(label: str, answer: str, config: AppConfig | None) -> str:
+    """Map prose availability answers onto DD/MM/YYYY for date pickers."""
+    text = _normalize_dob_answer(answer.strip())
+    if _parse_dob_parts(text):
+        return text
+    if config is None:
+        return text
+    from datetime import datetime, timedelta
+
+    from ..profile.application_facts import load_application_facts
+
+    app_facts = load_application_facts(config)
+    if app_facts.get("serving_notice") and app_facts.get("last_working_day"):
+        lwd = _normalize_dob_answer(str(app_facts["last_working_day"]).strip())
+        if _parse_dob_parts(lwd):
+            return lwd
+    if re.search(r"\b(immediate|immediately|asap|now|joiner)\b", text, re.I) or text == "0":
+        days = int(app_facts.get("notice_period_days") or 0)
+        return (datetime.today() + timedelta(days=days)).strftime("%d/%m/%Y")
+    days_m = re.search(r"\b(\d+)\s*days?\b", text, re.I)
+    if days_m:
+        return (datetime.today() + timedelta(days=int(days_m.group(1)))).strftime("%d/%m/%Y")
+    return text
+
+
 async def _fill_text_playwright(page: Page, answer: str, *, question: str = "") -> bool:
     """Playwright fallback when JS fill cannot find the chatbot text input."""
     await _clear_chatbot_composer(page)
@@ -1989,8 +2028,9 @@ async def _fill_dob_triplet_playwright(page: Page, answer: str) -> bool:
     return await _click_chatbot_save(page)
 
 
-async def _fill_date_field(page: Page, label: str, answer: str) -> bool:
+async def _fill_date_field(page: Page, label: str, answer: str, *, config: AppConfig | None = None) -> bool:
     """Fill Naukri DOB triplet (DD / MM / YYYY) or fallback text input."""
+    answer = _coerce_date_answer(label, answer, config)
     answer = _normalize_dob_answer(answer)
 
     for _ in range(3):
@@ -2986,6 +3026,65 @@ async def _try_acknowledge_chatbot_info(page: Page, *, config: AppConfig | None 
     return False
 
 
+def _naukri_label_key(label: str) -> str:
+    """Collapse spacing/punctuation so echoed labels still match answered ones."""
+    return re.sub(r"[^a-z0-9]", "", label.strip().lower())
+
+
+def naukri_label_already_answered(label: str, answered_labels: set[str]) -> bool:
+    key = _naukri_label_key(label)
+    if not key:
+        return False
+    if label.strip().lower() in answered_labels:
+        return True
+    return any(_naukri_label_key(a) == key for a in answered_labels)
+
+
+def naukri_questions_are_stale_echo(
+    questions: list[dict[str, Any]],
+    answered_labels: set[str],
+) -> bool:
+    """True when every on-screen question was already answered this session (text or phantom options)."""
+    if not questions:
+        return False
+    return all(
+        naukri_label_already_answered(str(field.get("label", "")).strip(), answered_labels) for field in questions
+    )
+
+
+async def _try_advance_stale_naukri_echo(page: Page) -> bool:
+    """Nudge the chatbot past a stale re-render of an already-answered question."""
+    if await _click_skip_question(page):
+        await page.wait_for_timeout(500)
+        return True
+    if await _click_chatbot_save(page):
+        await page.wait_for_timeout(500)
+        return True
+    await _clear_chatbot_composer(page)
+    scope = page.locator(_CHATBOT_SCOPE).last
+    if await scope.count() > 0:
+        for sel in (
+            ".sendMsgbtn_container .sendMsg:not(.disabled)",
+            ".sendMsgbtn_container .send:not(.disabled)",
+        ):
+            send = scope.locator(sel)
+            if await send.count() > 0:
+                try:
+                    await send.first.click(timeout=2000)
+                    await page.wait_for_timeout(500)
+                    return True
+                except PlaywrightTimeout:
+                    continue
+    try:
+        before = await _latest_chatbot_bot_text(page)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(800)
+        after = await _latest_chatbot_bot_text(page)
+        return bool(after and after != before)
+    except Exception:
+        return False
+
+
 async def _click_skip_question(page: Page) -> bool:
     js = (
         _CHATBOT_HELPERS_JS
@@ -3316,7 +3415,7 @@ async def fill_naukri_chatbot_question(
                 label,
                 reason="last working day asked but user is not serving notice",
             )
-        if await _fill_date_field(page, label, answer):
+        if await _fill_date_field(page, label, answer, config=config):
             return await _advanced()
         logger.warning(
             "Could not fill Naukri chatbot question: %s (date-input)",

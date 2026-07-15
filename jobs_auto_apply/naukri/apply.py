@@ -23,10 +23,14 @@ from ..utils import (
 from .questions import (
     CannotAnswerTruthfully,
     _chatbot_flow_complete,
+    _naukri_label_key,
     _try_acknowledge_chatbot_info,
+    _try_advance_stale_naukri_echo,
     chatbot_is_open,
     discover_naukri_chatbot_questions,
     fill_naukri_chatbot_question,
+    naukri_label_already_answered,
+    naukri_questions_are_stale_echo,
     wait_for_chatbot,
 )
 
@@ -404,7 +408,7 @@ async def _confirm_naukri_apply(page: Page, job: JobListing, config: AppConfig) 
         return False
 
     if await _chatbot_flow_complete(page):
-        await page.wait_for_timeout(400)
+        await page.wait_for_timeout(1200)
         if await _naukri_post_apply_redirected(page):
             logger.info(
                 "Naukri apply confirmed (redirect after chatbot flow): %s",
@@ -414,6 +418,11 @@ async def _confirm_naukri_apply(page: Page, job: JobListing, config: AppConfig) 
             return True
         if await _aurus_already_applied(page):
             return True
+        logger.info(
+            "Naukri apply confirmed (chatbot terminal message): %s",
+            job.title,
+        )
+        return True
 
     if await _naukri_post_apply_redirected(page):
         await _stabilize_after_naukri_apply(page)
@@ -589,6 +598,10 @@ async def _handle_chatbot_questions(
             return True
 
         questions = await discover_naukri_chatbot_questions(page, config=config)
+        stale_cleared = False
+        if answered_labels and naukri_questions_are_stale_echo(questions, answered_labels):
+            stale_cleared = True
+            questions = []
         if not questions:
             if not await chatbot_is_open(page):
                 return True
@@ -597,6 +610,15 @@ async def _handle_chatbot_questions(
             if await _try_acknowledge_chatbot_info(page, config=config):
                 stable_empty = 0
                 await page.wait_for_timeout(step_delay)
+                continue
+            if stale_cleared:
+                if await _naukri_apply_completed(page):
+                    return True
+                if await _try_advance_stale_naukri_echo(page):
+                    stable_empty = 0
+                    await page.wait_for_timeout(step_delay)
+                    continue
+                await page.wait_for_timeout(step_delay * 2)
                 continue
             stable_empty += 1
             if stable_empty >= 4:
@@ -608,31 +630,6 @@ async def _handle_chatbot_questions(
             await page.wait_for_timeout(step_delay)
             continue
 
-        if answered_labels and all(field.get("label", "").strip().lower() in answered_labels for field in questions):
-            # Every "question" on screen is one we already answered this session —
-            # this is the chatbot echoing a completed step (e.g. a radio answer
-            # re-rendered as a text bubble) while the apply is being submitted.
-            # Give the post-apply state a beat to settle, then treat a completed
-            # application as success instead of re-filling a stale duplicate.
-            if await _naukri_apply_completed(page):
-                logger.info(
-                    "Naukri chatbot: application complete (echoed answered question): %s",
-                    job.title,
-                )
-                return True
-            await page.wait_for_timeout(step_delay)
-            if await _naukri_apply_completed(page):
-                logger.info(
-                    "Naukri chatbot: application complete after settle: %s",
-                    job.title,
-                )
-                return True
-            # Echoed question while apply is still submitting — don't re-fill.
-            stable_empty = 0
-            await page.wait_for_timeout(step_delay)
-            continue
-
-        stable_empty = 0
         logger.info(
             "Naukri: %d chatbot question(s) for %s (step %d)",
             len(questions),
@@ -750,6 +747,7 @@ async def _handle_chatbot_questions(
                 return None
 
             answered_labels.add(label.lower())
+            answered_labels.add(_naukri_label_key(label))
 
         await page.wait_for_timeout(step_delay)
 

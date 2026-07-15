@@ -942,6 +942,10 @@ _ZERO_OPTION_TEXT = re.compile(
     r"\bnone\b|\bnever\b|no relevant|haven't|have not|do not have|don't have",
     re.I,
 )
+_IMMEDIATE_NOTICE_OPTION = re.compile(
+    r"\bimmediate(?:ly)?\b|join\s*immediately|available\s*now|\b0\s*days?\b",
+    re.I,
+)
 
 
 def _option_represents_zero(opt: str) -> bool:
@@ -950,6 +954,8 @@ def _option_represents_zero(opt: str) -> bool:
     Used to decide whether a "no experience" (0) answer has any honest option to map
     onto (e.g. "0-2 years", "Less than 1 year", "Fresher", "None").
     """
+    if _IMMEDIATE_NOTICE_OPTION.search(opt):
+        return True
     bounds = _option_numeric_bounds(opt)
     if bounds is not None:
         return bounds[0] <= 0 <= bounds[1]

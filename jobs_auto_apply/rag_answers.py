@@ -123,31 +123,15 @@ def _expects_short_answer(question: str) -> bool:
 
 
 def _cities_from_question_label(question: str) -> list[str]:
-    """Parse city names from labels like 'Preferred Location (Bengaluru/Trivandrum)'."""
-    match = re.search(r"\(([^)]+)\)", question)
-    if not match:
-        return []
-    return [part.strip() for part in re.split(r"[/,|]", match.group(1)) if part.strip()]
+    from .answers.location import cities_from_question_label
+
+    return cities_from_question_label(question)
 
 
 def _city_name_matches(a: str, b: str) -> bool:
-    x, y = a.strip().lower(), b.strip().lower()
-    if not x or not y:
-        return False
-    if x == y or x in y or y in x:
-        return True
-    aliases = {
-        "bengaluru": ("bangalore", "bengaluru"),
-        "bangalore": ("bangalore", "bengaluru"),
-        "gurugram": ("gurgaon", "gurugram"),
-        "gurgaon": ("gurgaon", "gurugram"),
-    }
-    for left, rights in aliases.items():
-        if x == left and any(r in y for r in rights):
-            return True
-        if y == left and any(r in x for r in rights):
-            return True
-    return False
+    from .answers.location import city_name_matches
+
+    return city_name_matches(a, b)
 
 
 def _worked_at_company(facts: ResumeFacts, company_hint: str) -> bool:
@@ -255,12 +239,13 @@ def _yes_no_radio_answer(
         if days is not None:
             return "Yes" if int(days) <= threshold else "No"
     if re.search(
-        r"\bf2f\b|face[\s-]?to[\s-]?face|final.{0,24}(f2f|face)|(f2f|face).{0,24}final",
+        r"\bf2f\b|face[\s-]?to[\s-]?face|final.{0,24}(f2f|face)|(f2f|face).{0,24}final|" r"in[\s-]?person|inperson",
         norm,
     ):
         return str(app_facts.get("f2f_interview_available", "No"))
     if re.search(
-        r"comfortable|willing|work from office|\bwfo\b|relocat|gurgaon|gurugram|bangalore|bengaluru|hyderabad|mumbai|pune|delhi|ncr",
+        r"comfortable|willing|work from office|\bwfo\b|relocat|gurgaon|gurugram|bangalore|bengaluru|hyderabad|mumbai|pune|delhi|ncr|"
+        r"mandatory to relocate|job location|open for.{0,40}location",
         norm,
     ):
         return str(app_facts.get("willing_to_relocate", "Yes"))
@@ -455,7 +440,23 @@ def generate_rag_answer(
             return lwd
         return None
 
-    if group_id == "f2f_interview":
+    if group_id == "desired_start_date" or re.search(
+        r"\b(desired start date|start date|date of joining|joining date|earliest start|available from)\b",
+        norm,
+    ):
+        if app_facts.get("serving_notice") and app_facts.get("last_working_day"):
+            lwd = str(app_facts["last_working_day"]).strip()
+            if lwd:
+                return lwd
+        days = app_facts.get("notice_period_days")
+        if days is not None:
+            from datetime import datetime, timedelta
+
+            start = datetime.today() + timedelta(days=int(days))
+            return start.strftime("%d/%m/%Y")
+        return None
+
+    if group_id == "f2f_interview" or re.search(r"\bwalk[\s-]?in\b", norm):
         return str(app_facts.get("f2f_interview_available", "No"))
 
     if group_id == "notice_period":
@@ -483,9 +484,29 @@ def generate_rag_answer(
             native = str(app_facts.get("native_location", "")).strip()
             if native:
                 return f"Current: {current}; Native: {native}"
+        if kind in ("radio", "checkbox_group") and options:
+            from .answers.location import map_city_to_location_chip
+
+            chip = map_city_to_location_chip(current or facts.location, options)
+            if chip:
+                return chip
+            for opt in options:
+                if current and _city_name_matches(current, str(opt)):
+                    return str(opt)
         return current or facts.location
 
     if group_id == "preferred_location":
+        if re.search(
+            r"comfortable|willing|work from office|\bwfo\b|relocat|mandatory to relocate|"
+            r"job location|open for.{0,40}location|okay with|ok with",
+            norm,
+        ):
+            relocate = str(app_facts.get("willing_to_relocate", "Yes"))
+            if kind in ("radio", "checkbox_group") and options and _yes_no_option(options):
+                for opt in options:
+                    if relocate.lower() in str(opt).lower():
+                        return str(opt)
+            return relocate
         current = str(app_facts.get("current_location", "")).strip()
         if not current:
             current = facts.location.split(",")[0].strip()

@@ -339,6 +339,10 @@ def saved_answer_fits_field(
         return a in ("yes", "no", "true", "false", "1", "0", "checked", "agree", "accept")
     if kind == "checkbox_group" and options:
         label = str(field.get("label", ""))
+        from .location import map_city_to_location_chip
+
+        if map_city_to_location_chip(answer, options):
+            return True
         if re.search(
             r"\bselect\b.{0,30}\b(city|cities)\b|\b(city|cities)\b.{0,30}\b(residing|relocate)\b",
             label,

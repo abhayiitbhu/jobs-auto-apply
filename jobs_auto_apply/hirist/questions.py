@@ -39,7 +39,7 @@ _NOISE_LABEL = re.compile(
 
 _YES_NO_QUESTION = re.compile(
     r"\b(living in|currently residing|relocate|willing to|within \d+\s*days?|"
-    r"contractual role|face.to.face|f2f|ok with)\b",
+    r"contractual role|face.to.face|f2f|walk.?in|ok with)\b",
     re.I,
 )
 
@@ -152,7 +152,7 @@ def _repair_hirist_chip_fields(fields: list[dict[str, Any]]) -> list[dict[str, A
                     out["options"] = notice_pool
                 out["input_type"] = "notice_period"
             elif kind == "checkbox_group":
-                notice_opts = [o for o in opts if _is_notice_chip(o)] or notice_pool
+                notice_opts = [o for o in opts if _is_notice_chip(o)] or notice_pool or opts
                 if notice_opts:
                     out["options"] = notice_opts
                     out["input_type"] = "notice_period"
@@ -1079,6 +1079,15 @@ def _coerce_hirist_radio_answer(
                 if re.search(r"\b15\s*days?\b", opt, re.I):
                     return opt
 
+    if re.search(r"\b(walk.?in|face.?to.?face|f2f)\b", label, re.I) and config is not None:
+        from ..profile.application_facts import load_application_facts
+
+        avail = str(load_application_facts(config).get("f2f_interview_available", "No")).strip()
+        if opts_lower <= {"yes", "no"}:
+            return next((o for o in options if o.lower() == avail.lower()), avail)
+        if avail.lower() in ("yes", "no"):
+            return avail
+
     if opts_lower <= {"yes", "no"}:
         if a in ("yes", "y", "true", "1"):
             return next((o for o in options if o.lower() == "yes"), "Yes")
@@ -1401,6 +1410,19 @@ async def _playwright_fill_one_hirist_box(
                 return await box.locator("input[type=checkbox]:checked").count() > 0
             except Exception:
                 return False
+
+        if re.search(r"\b(walk.?in|face.?to.?face|f2f)\b", label, re.I):
+            if want in ("yes", "y", "true", "1", "available", "immediate", "immediately"):
+                for loc in (
+                    box.locator("input[type=checkbox]"),
+                    box.locator("label"),
+                    box.locator(".checkbox, .checkbox-container-hirist, .checkbox-container"),
+                ):
+                    if await loc.count() > 0:
+                        await loc.first.click()
+                        await page.wait_for_timeout(80)
+                        if await _checkbox_checked():
+                            return True
 
         def _option_matches(opt: str) -> bool:
             ol = opt.lower()
